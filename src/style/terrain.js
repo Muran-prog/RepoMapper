@@ -226,12 +226,77 @@ export function textureShadingLayers(t, { reduceMotion = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Hypsometric tint — raster PNG overlay generated from the tokens.hypsoStops
-// ramp via gdaldem color-relief (see tools/build-hypso.sh). Sits *below*
-// hillshade so the shading darkens the tint.
+// Hypsometric tint — delegated to the dedicated hypso subsystem so the
+// renderer can pick between native MapLibre `color-relief`, pre-rendered
+// raster PMTiles, or simply "off". See `src/style/hypso/` for the ramp
+// dictionary, expression generator, LAB densification and runtime
+// paint-property surface.
+//
+// The old single-archive `hypso_tint` layer is preserved here behind an
+// explicit `legacy: true` flag for backwards compatibility with style
+// builds that point `TERRAIN.hypsometric.url` at a generic archive built
+// against `tokens.hypsoStops` instead of one of the named ramp presets.
+// New code should call `composeHypsoLayers` from `src/style/hypso`.
 // ---------------------------------------------------------------------------
 
-export function hypsometricTintLayers(_t) {
+import { composeHypsoLayers } from './hypso/layers.js';
+import {
+  getRampStops,
+  DEFAULT_RAMP_ID,
+} from './hypso/ramps.js';
+import { DEFAULT_STRENGTH_STOPS } from './hypso/expression.js';
+
+/**
+ * @typedef {object} HypsoTintOpts
+ * @property {'native'|'raster'|'off'} mode
+ * @property {string}  rampId
+ * @property {'light'|'dark'} theme
+ * @property {number}  strength       0..1.5 multiplier on the opacity curve.
+ * @property {boolean} bathymetry     Include negative-elevation stops.
+ * @property {string|null} [rasterSourceId] Source id for raster mode.
+ * @property {Array<[number, number]>} [strengthStops]
+ */
+
+/**
+ * Compose the active hypsometric tint layer(s). Pure — no side effects.
+ *
+ * @param {object} _t Tokens (unused here, ramps come from `ramps.js`).
+ * @param {HypsoTintOpts} opts
+ * @returns {Array<object>}
+ */
+export function hypsometricTintLayers(_t, opts) {
+  const {
+    mode,
+    rampId = DEFAULT_RAMP_ID,
+    theme = 'light',
+    strength = 1.0,
+    bathymetry = true,
+    rasterSourceId = null,
+    strengthStops = DEFAULT_STRENGTH_STOPS,
+  } = opts ?? {};
+  const stops = getRampStops(rampId, theme);
+  return composeHypsoLayers({
+    mode,
+    rampId,
+    stops,
+    strength,
+    bathymetry,
+    rasterSourceId,
+    strengthStops,
+  });
+}
+
+/**
+ * Legacy hypsometric tint — single raster PMTiles built against the
+ * pre-hypso-subsystem ramp baked into tokens.hypsoStops. Emitted ONLY
+ * when the caller asks for it explicitly via `legacy: true`. Tracked
+ * here only to keep existing self-hosted builds rendering until the
+ * operator migrates to the new ramp dictionary.
+ *
+ * @param {object} _t
+ * @returns {Array<object>}
+ */
+export function legacyHypsoTintLayer(_t) {
   return [
     {
       id: 'hypso_tint',
@@ -251,39 +316,41 @@ export function hypsometricTintLayers(_t) {
   ];
 }
 
-// ---------------------------------------------------------------------------
-// color-relief — native MapLibre layer type that consumes the DEM directly
-// with an elevation→colour ramp. Still landing in maplibre-gl-js stable
-// (tracked in #5666); callers should feature-flag via FEATURES.colorRelief
-// AND verify runtime support before inserting these layers.
-// ---------------------------------------------------------------------------
-
 /**
- * Build the color-ramp expression from `tokens.hypsoStops`.
- * @param {object} t
+ * Bathymetry — pre-rendered seabed tint that sits *below* the
+ * hypsometric ramp so the 0 m boundary is the only seam. The Black-Sea
+ * trough is much deeper than any DEM tile we have (Terrarium maxes out
+ * around 0 m offshore), so this layer fills in the visual gap.
+ *
+ * @param {object} _t
+ * @returns {Array<object>}
  */
-function hypsoRampExpr(t) {
-  // tokens.hypsoStops = [[elevation_m, #rgb], ...]
-  const flat = t.hypsoStops.flat();
-  return ['interpolate', ['linear'], ['elevation'], ...flat];
-}
-
-export function colorReliefLayers(t) {
+export function bathymetryLayers(_t) {
   return [
     {
-      id: 'color_relief',
-      type: 'color-relief',
-      source: SOURCE_PRIMARY,
+      id: 'bathymetry',
+      type: 'raster',
+      source: 'bathymetry',
       paint: {
-        'color-relief-color': hypsoRampExpr(t),
-        'color-relief-opacity': linZoom([
-          [3, 0.35],
-          [8, 0.5],
-          [14, 0.25],
+        'raster-opacity': linZoom([
+          [3, 0.85],
+          [6, 0.75],
+          [10, 0.6],
+          [13, 0.45],
         ]),
+        'raster-resampling': 'linear',
       },
     },
   ];
+}
+
+/**
+ * Deprecated. Use `hypsometricTintLayers(t, { mode: 'native', … })`.
+ * Kept around so any external consumer importing this name doesn't
+ * suddenly crash; emits the same native-path layer as the new helper.
+ */
+export function colorReliefLayers(t, opts) {
+  return hypsometricTintLayers(t, { mode: 'native', ...opts });
 }
 
 // ---------------------------------------------------------------------------

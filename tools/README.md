@@ -13,7 +13,8 @@ maplibre-contour. The PMTiles archives below add region-specific detail:
 | ----------------------------- | ----------------------------------------------------- | ------------------------------- |
 | `carpathian-glo30.pmtiles`    | 30 m DEM (vs. Mapzen's 90 m there), maxzoom 14        | `build-carpathian-dem.sh`       |
 | `ukraine-texture-shading.pmtiles` | Leland Brown α=0.8 ridge/canyon emphasis          | `build-texture-shading.sh`      |
-| `ukraine-hypso.pmtiles`       | Pre-rendered Patterson hypsometric tint               | `build-hypso.sh`                |
+| `<ramp>-<theme>-hypso.pmtiles` | Per-ramp pre-rendered hypsometric tint (raster fallback for the native color-relief layer) | `build-hypso.sh --ramp=<id>` |
+| `black-sea-bathy.pmtiles`     | GEBCO 2024 seabed tint, joins seamlessly at 0 m       | `build-bathymetry.sh`           |
 | `carpathian-contours.pmtiles` | Pre-baked contours (lighter on CPU than dynamic)      | `build-contours.sh`             |
 | `carpathian-ridges.pmtiles`   | WhiteboxTools ridge lines (Imhof enhancement)         | `build-ridges.sh`               |
 | `carpathian-osm.pmtiles`      | Custom Planetiler with hiking_route / mountain_feature| `build-carpathian-osm.sh`       |
@@ -28,7 +29,8 @@ is designed for this.
 | ------------------------- | ------------------------------------------------------------------------------------- |
 | build-carpathian-dem.sh   | `aws` (AWS CLI v2), `gdal` ≥ 3.4, `rio-rgbify`, `pmtiles` (Protomaps CLI)             |
 | build-texture-shading.sh  | `python3`, `numpy`, `scipy`, `rasterio`, `rio-mbtiles`, `pmtiles`                     |
-| build-hypso.sh            | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `jq` (parses `src/style/tokens.js`)           |
+| build-hypso.sh            | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18 (runs `dump-ramp.mjs`)            |
+| build-bathymetry.sh       | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18, GEBCO 2024 source TIFF (`$GEBCO`) |
 | build-contours.sh         | `gdal`, `tippecanoe` (Felt fork), `pmtiles`                                           |
 | build-ridges.sh           | `whitebox_tools`, `gdal`, `tippecanoe`, `pmtiles`                                     |
 | build-carpathian-osm.sh   | `java` ≥ 17, `planetiler.jar`, `pmtiles`, ~16 GB RAM                                  |
@@ -79,10 +81,32 @@ download `planetiler.jar`, drop it next to the scripts (or set `PLANETILER_JAR`)
 
 ### Hypsometric tint
 
-- The ramp is generated from `tokens.hypsoStops` so light/dark themes
-  share the same elevation→colour spec. The build script greps the
-  array out of `src/style/tokens.js` — keep the LIGHT block's
-  `hypsoStops:` definition formatted on its own lines (one per stop).
+- Ramps are sourced from `src/style/hypso/ramps.js` — every named preset
+  (Patterson, Raisz–Henry, Swiss alpine, OSM physical, Carpathian focus,
+  Steppe flat, Colourblind-safe) has light + dark variants and includes
+  bathymetry stops below 0 m so the seabed and the land tint share their
+  coastline colour without a seam.
+- `tools/dump-ramp.mjs` parses the dictionary directly and emits a
+  gdaldem-compatible ramp text. The shell script invokes it under the
+  hood — run `tools/dump-ramp.mjs --list` to see all preset ids.
+- Stops are densified in CIELAB (no npm deps, ≤50 LOC inline converter
+  in `src/style/hypso/color.js`) before being handed to gdaldem so the
+  pre-rendered raster matches the native color-relief layer's
+  perceptually-uniform appearance.
+- `--ramp=all` builds every preset; `--theme=both` builds light + dark
+  variants. Add the resulting URLs to `HYPSO.rasterUrls` in
+  `src/config.js` for the runtime raster-fallback path.
+
+### Bathymetry (GEBCO 2024)
+
+- Free dataset, CC0 / attribution-only (`gebco.net`). Download the
+  global TIFF, point `GEBCO=…` at it, and run `build-bathymetry.sh`.
+- The script reuses one of the hypso ramp's negative-elevation stops so
+  the seabed colour blends seamlessly with the land tint at the 0 m
+  coastline. Override with `--ramp=<id>` to match a different default
+  ramp.
+- Default bbox covers the Black Sea + Sea of Azov shelf where the
+  Mapzen Terrarium DEM has no usable depth data.
 
 ### Contours
 

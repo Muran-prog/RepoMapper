@@ -32,6 +32,10 @@
  * @property {string|null}  connection      'slow-2g'|'2g'|'3g'|'4g'|... if exposed.
  * @property {boolean} saveData             True if the user requested data savings.
  * @property {boolean} prefersReducedMotion Honour OS-level reduce-motion.
+ * @property {boolean} prefersContrastMore  matchMedia(prefers-contrast: more).
+ *                                          When true the hypso subsystem
+ *                                          auto-flips into high-contrast
+ *                                          mode (denser luminance gaps).
  * @property {boolean} narrow               matchMedia(max-width: 720px).
  * @property {boolean} landscape            matchMedia(orientation: landscape).
  * @property {number}  viewportWidth        Current innerWidth (px).
@@ -53,6 +57,7 @@ export function detectCaps() {
       connection: '4g',
       saveData: false,
       prefersReducedMotion: false,
+      prefersContrastMore: false,
       narrow: false,
       landscape: true,
       viewportWidth: 1920,
@@ -74,6 +79,7 @@ export function detectCaps() {
     connection: conn?.effectiveType ?? null,
     saveData: !!conn?.saveData,
     prefersReducedMotion: m('(prefers-reduced-motion: reduce)'),
+    prefersContrastMore: m('(prefers-contrast: more)'),
     narrow: m('(max-width: 720px)'),
     landscape: m('(orientation: landscape)'),
     viewportWidth: window.innerWidth,
@@ -166,6 +172,24 @@ const PROFILE_DEFAULTS = Object.freeze({
     enableMultiDirHillshade: true,
     enableTextureShading: true,
     enableHypsoTint: true,
+    /**
+     * Hypso subsystem tier:
+     *   'native'     — pick native color-relief when available, raster
+     *                  fallback when not (full subsystem capability).
+     *   'raster'     — always use raster PMTiles. No editor/legend by
+     *                  default (caller can opt in).
+     *   'off'        — no hypso layer.
+     *
+     * The other hypso-* flags are independent feature gates: high gets
+     * editor + legend + viewport stats + profile drawing; medium drops
+     * the editor; low drops everything but raster paint.
+     */
+    hypsoTier: 'native',
+    enableHypsoEditor: true,
+    enableHypsoLegend: true,
+    enableHypsoStats: true,
+    enableHypsoProfile: true,
+    enableHypsoAutoRegion: true,
     enableContours: true,
     enableRidgeOverlay: true,
     enableCarpathianOverlay: true,
@@ -202,6 +226,12 @@ const PROFILE_DEFAULTS = Object.freeze({
     enableMultiDirHillshade: false,
     enableTextureShading: false,
     enableHypsoTint: true,
+    hypsoTier: 'native',
+    enableHypsoEditor: false,
+    enableHypsoLegend: true,
+    enableHypsoStats: true,
+    enableHypsoProfile: true,
+    enableHypsoAutoRegion: true,
     enableContours: true,
     enableRidgeOverlay: false,
     enableCarpathianOverlay: true,
@@ -232,7 +262,16 @@ const PROFILE_DEFAULTS = Object.freeze({
     enableTerrain3D: false,
     enableMultiDirHillshade: false,
     enableTextureShading: false,
-    enableHypsoTint: false,
+    // Hypso stays ON for low — but pinned to the raster path so the
+    // GPU doesn't have to evaluate a per-pixel elevation expression,
+    // and analytics / editor / legend stay off (see flags below).
+    enableHypsoTint: true,
+    hypsoTier: 'raster',
+    enableHypsoEditor: false,
+    enableHypsoLegend: false,
+    enableHypsoStats: false,
+    enableHypsoProfile: false,
+    enableHypsoAutoRegion: false,
     enableContours: false,
     enableRidgeOverlay: false,
     enableCarpathianOverlay: false,
@@ -317,6 +356,8 @@ export function watchViewport(callback) {
     window.matchMedia('(orientation: landscape)'),
     window.matchMedia('(hover: hover)'),
     window.matchMedia('(pointer: coarse)'),
+    window.matchMedia('(prefers-contrast: more)'),
+    window.matchMedia('(prefers-reduced-motion: reduce)'),
   ];
 
   let raf = 0;

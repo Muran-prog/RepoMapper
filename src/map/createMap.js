@@ -32,6 +32,7 @@ import {
   FEATURES,
   TERRAIN,
   CONTOURS,
+  HYPSO,
   DEFAULT_THEME,
 } from '../config.js';
 import { composeLayers, getTokens } from '../style/index.js';
@@ -48,6 +49,12 @@ import {
 import {
   CONTOURS_SOURCE_LAYER,
 } from '../style/contours.js';
+import {
+  detectHypsoCaps,
+  clearHypsoCaps,
+  seedHypsoState,
+  DEFAULT_RAMP_ID,
+} from '../style/hypso/index.js';
 import {
   detectCaps,
   deriveProfile,
@@ -171,12 +178,19 @@ async function resolveVectorTriple() {
 // and produces a full spec-valid style object ready for `map.setStyle`.
 // ---------------------------------------------------------------------------
 
-async function buildStyle({ theme, features, profileConfig, layerOpts, caps }) {
+async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState }) {
   const { vectorSource, glyphs, sprite } = await resolveVectorTriple();
+
+  // hypso ramp id is forwarded to composeSources so it pre-adds the
+  // active ramp's per-archive source when the raster path is taken.
+  const featuresWithHypsoRamp = {
+    ...features,
+    hypsoRampId: hypsoState?.rampId ?? HYPSO.defaultRampId,
+  };
 
   const sources = composeSources({
     vectorSource,
-    features,
+    features: featuresWithHypsoRamp,
   });
   const has = sourceAvailability(sources);
 
@@ -195,12 +209,19 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps }) {
     }
   }
 
+  const hypsoRampId = hypsoState?.rampId ?? HYPSO.defaultRampId;
+  const hypsoRasterSourceId = has.hypsoRasterRampId
+    ? `hypso-raster-${has.hypsoRasterRampId}`
+    : null;
+
   const finalLayerOpts = {
     ...layerOpts,
     theme,
     hasPrimaryDem: has.primaryDem,
     hasCarpathianDem: has.carpathianDem,
     hasHypsoSource: has.hypsometricTint,
+    hasHypsoRasterRamp: has.hypsoRasterRampId === hypsoRampId,
+    hasBathymetrySource: has.bathymetry,
     hasTextureSource: has.textureShading,
     hasRidgesSource: has.ridges,
     hasCarpathianOsmSource: has.carpathianOsm,
@@ -208,6 +229,13 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps }) {
     contoursSourceId,
     contoursMinzoom: CONTOURS.minzoom,
     reduceMotion: !!caps?.prefersReducedMotion,
+
+    // Hypso-specific options threaded through the composer.
+    hypsoMode: hypsoState?.mode ?? (features.colorRelief && has.primaryDem ? 'native' : 'off'),
+    hypsoRampId,
+    hypsoStrength: hypsoState?.strength ?? HYPSO.defaultStrength,
+    hypsoBathymetry: hypsoState?.bathymetry ?? HYPSO.bathymetryDefault,
+    hypsoRasterSourceId,
   };
 
   const tokens = getTokens(theme);
@@ -318,6 +346,8 @@ function profileToLayerOpts(profileConfig, features) {
       features.hillshade && profileConfig.enableMultiDirHillshade,
     hypsometricTint:
       features.hypsometricTint && profileConfig.enableHypsoTint,
+    bathymetry:
+      features.bathymetry && profileConfig.enableHypsoTint,
     textureShading:
       features.textureShading && profileConfig.enableTextureShading,
     contours: features.contours && profileConfig.enableContours,
@@ -387,12 +417,18 @@ export async function createMap(container, opts = {}) {
   const mapOpts = profileToMapOpts(profileConfig);
   const touchTuning = getTouchTuning(caps);
 
+  // Hypso initial state — caller can pre-seed via opts.hypsoState; the
+  // UI persists user preferences in localStorage and forwards them at
+  // boot. Falls back to the frozen HYPSO config defaults.
+  const hypsoState = resolveInitialHypsoState(opts.hypsoState, features, profileConfig);
+
   const style = await buildStyle({
     theme,
     features,
     profileConfig,
     layerOpts,
     caps,
+    hypsoState,
   });
 
   const map = new ml.Map({
@@ -442,9 +478,45 @@ export async function createMap(container, opts = {}) {
     // Live-updated by the UI slider; interactions.js multiplies with the
     // per-profile mul.
     userExaggerationMul: 1,
+    hypso: hypsoState,
   };
+  seedHypsoState(map, hypsoState);
+
+  // Probe native color-relief once the DEM source has loaded so the
+  // first ramp swap by the UI can take the fast path. Runs idempotently
+  // on every styledata, but the probe itself is cached on `_cart`.
+  map.once('styledata', () => detectHypsoCaps(map));
+  map.on('styledata', () => {
+    if (!map._cart?.hypsoCaps) detectHypsoCaps(map);
+  });
 
   return map;
+}
+
+/**
+ * Compute the initial hypso state for a fresh map. Caller-supplied
+ * `hypsoState` always wins so the UI can persist the user's last choice
+ * via localStorage; otherwise we read the frozen HYPSO defaults.
+ *
+ * @param {object|undefined} preSeeded
+ * @param {object} features
+ * @param {object} profileConfig
+ * @returns {object}
+ */
+function resolveInitialHypsoState(preSeeded, features, profileConfig) {
+  const enabledByProfile = !!profileConfig.enableHypsoTint;
+  const enabledByFeature = !!features.hypsometricTint;
+  const enabled = enabledByProfile && enabledByFeature;
+  const wantColorRelief = !!features.colorRelief && enabled;
+  return {
+    rampId: preSeeded?.rampId ?? HYPSO.defaultRampId ?? DEFAULT_RAMP_ID,
+    strength: preSeeded?.strength ?? HYPSO.defaultStrength,
+    mode: preSeeded?.mode ?? (wantColorRelief ? 'native' : enabled ? 'raster' : 'off'),
+    bathymetry: preSeeded?.bathymetry ?? HYPSO.bathymetryDefault,
+    highContrast: preSeeded?.highContrast ?? HYPSO.highContrastDefault,
+    theme: preSeeded?.theme ?? DEFAULT_THEME,
+    rasterUrls: { ...HYPSO.rasterUrls, ...(preSeeded?.rasterUrls ?? {}) },
+  };
 }
 
 /**
@@ -466,8 +538,22 @@ export async function applyStyle(map, patch = {}) {
   );
 
   const layerOpts = profileToLayerOpts(profileConfig, features);
-  const style = await buildStyle({ theme, features, profileConfig, layerOpts, caps });
+
+  // Hypso state survives style rebuilds. theme rides along so the
+  // ramp expression switches light↔dark in the new style spec without
+  // a second imperative step.
+  const hypsoState = {
+    ...(prev.hypso ?? {}),
+    ...(patch.hypsoState ?? {}),
+    theme,
+  };
+
+  const style = await buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState });
   map.setStyle(style, { diff: false });
+
+  // The new style means the native-color-relief probe (if any) needs
+  // re-running because the layer may have been recreated.
+  clearHypsoCaps(map);
 
   map._cart = {
     ...prev,
@@ -476,6 +562,8 @@ export async function applyStyle(map, patch = {}) {
     profileConfig,
     features,
     layerOpts,
+    hypso: hypsoState,
   };
+  seedHypsoState(map, hypsoState);
   return map;
 }

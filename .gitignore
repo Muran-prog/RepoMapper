@@ -40,3 +40,9 @@ tools/planetiler.jar
 # Environment overrides
 .env
 .env.local
+
+# Ad-hoc screenshots / reference images dropped in the repo root —
+# Cart's favicons are inline SVG, no PNGs should ever ship with the app.
+/[0-9]*.png
+/image.png
+/screenshot*.png

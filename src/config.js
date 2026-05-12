@@ -175,10 +175,15 @@ export const TERRAIN = Object.freeze({
     attribution: 'Texture shading: Leland Brown (CC BY)',
   }),
   /**
-   * Pre-rendered hypsometric tint. Generated via gdaldem color-relief with
-   * the `tokens.hypsoStops` ramp (see tools/build-hypso.sh). When native
-   * color-relief lands in MapLibre stable we can switch to that and drop
-   * this raster; see FEATURES.colorRelief below.
+   * Pre-rendered hypsometric tint. Generated via gdaldem color-relief
+   * with one of the ramp presets in `src/style/hypso/ramps.js` (see
+   * tools/build-hypso.sh). When the runtime supports the native
+   * MapLibre `color-relief` layer we route through that instead and
+   * leave this archive cold; see FEATURES.colorRelief + the HYPSO
+   * block below for finer-grained control.
+   *
+   * Per-ramp URLs live in HYPSO.rasterUrls — this URL is the legacy
+   * default, kept for backwards compatibility with older builds.
    */
   hypsometric: Object.freeze({
     url: null, // pmtiles://https://…/ukraine-hypso.pmtiles
@@ -186,6 +191,22 @@ export const TERRAIN = Object.freeze({
     minzoom: 2,
     maxzoom: 12,
     attribution: 'Hypsometric tint: generated from DEM',
+  }),
+  /**
+   * Bathymetry — pre-rendered seabed tint built from GEBCO 2024
+   * (CC0 / attribution-only). Stacks seamlessly with the hypsometric
+   * ramp at the 0 m coastline because each ramp preset carries
+   * negative-elevation stops; bathymetry colours the open-sea polygons
+   * where the DEM is too coarse to give the GPU usable height. See
+   * tools/build-bathymetry.sh for the build.
+   */
+  bathymetry: Object.freeze({
+    url: null, // pmtiles://https://…/black-sea-bathy.pmtiles
+    tileSize: 256,
+    minzoom: 3,
+    maxzoom: 9,
+    attribution:
+      'Bathymetry: <a href="https://www.gebco.net" target="_blank" rel="noopener">GEBCO 2024</a>',
   }),
   /**
    * Ridge/valley vector overlay for Imhof-style enhancement. Two paired
@@ -221,6 +242,87 @@ export const TERRAIN = Object.freeze({
   ],
   /** Terrain 3D is suppressed below this zoom — hillshade stays 2D. */
   terrain3DMinZoom: 7,
+});
+
+/**
+ * Hypsometric subsystem configuration.
+ *
+ * The visual ramps themselves live in `src/style/hypso/ramps.js` —
+ * they are palette tokens, not config. This block controls:
+ *
+ *   • Which ramp is active on cold boot
+ *   • Default strength (0..1.5 multiplier on the opacity curve)
+ *   • Which paths are reachable (native / raster / off) and the raster
+ *     PMTiles archives mapped to each ramp id
+ *   • Whether the live ramp editor is shown
+ *   • Region → ramp auto-pick mapping for the viewport heuristic
+ *
+ * Operations the user can drive from the UI:
+ *
+ *   ramp switch          setPaintProperty('color-relief-color', expr)
+ *                        (native) or surgical source swap (raster)
+ *   strength slider      setPaintProperty(['*-opacity'], expr)
+ *   bathymetry toggle    re-emits ramp expression with / without
+ *                        negative-elevation stops
+ *   custom ramps         persisted in localStorage under HYPSO.storageKey
+ *
+ * @typedef {object} HypsoConfig
+ * @property {string}  defaultRampId       Initial ramp id.
+ * @property {number}  defaultStrength     Initial strength (0..1.5).
+ * @property {boolean} bathymetryDefault   Render negative-elevation stops.
+ * @property {boolean} highContrastDefault Pump LAB lightness gap.
+ * @property {boolean} editorEnabled       Mount the live ramp editor UI.
+ * @property {boolean} legendEnabled       Mount the gradient legend.
+ * @property {boolean} viewportStats       Compute live min/mean/max.
+ * @property {boolean} profileMode         Enable elevation-profile drawing.
+ * @property {string}  storageKey          localStorage key for custom ramps.
+ * @property {boolean} preferNative        When true, prefer the native
+ *                                          color-relief layer if support
+ *                                          is detected; falls back to
+ *                                          raster otherwise.
+ * @property {Record<string, string|null>} rasterUrls
+ *     Map of rampId → pmtiles URL (raster fallback). Null means the
+ *     ramp has no raster archive yet — UI hides it from the picker when
+ *     mode is forced to 'raster'.
+ * @property {Record<string, string>} regionRamp
+ *     Default ramp id per detected viewport region.
+ */
+export const HYPSO = Object.freeze({
+  // Tourist-atlas vivid rainbow is the default — that's what users
+  // expect when they hear "hypsometric tint" without further context.
+  // The other six presets (Patterson, Raisz-Henry, Swiss alpine, OSM
+  // physical, Carpathian focus, Steppe flat, Colourblind-safe) sit
+  // one click away in the picker.
+  defaultRampId: 'touristAtlas',
+  // 1.0 is "as-authored". The default curve in expression.js already
+  // peaks near 0.9, so 1.0× lands hypso at ~90 % opacity at overview
+  // zooms — heavy enough to dominate without going opaque.
+  defaultStrength: 1.0,
+  bathymetryDefault: true,
+  highContrastDefault: false,
+  editorEnabled: true,
+  legendEnabled: true,
+  viewportStats: true,
+  profileMode: true,
+  storageKey: 'cart:hypso:custom-ramps:v1',
+  preferNative: true,
+  rasterUrls: Object.freeze({
+    touristAtlas: null,
+    patterson: null,
+    raiszHenry: null,
+    swissAlpine: null,
+    osmPhysical: null,
+    carpathianFocus: null,
+    steppeFlat: null,
+    colorblindSafe: null,
+  }),
+  regionRamp: Object.freeze({
+    global: 'touristAtlas',
+    alpine: 'swissAlpine',
+    carpathian: 'carpathianFocus',
+    steppe: 'steppeFlat',
+    sea: 'osmPhysical',
+  }),
 });
 
 export const CONTOURS = Object.freeze({
@@ -332,7 +434,13 @@ export const FEATURES = Object.freeze({
   terrain3D: true,
   contours: true,
   textureShading: false,
-  hypsometricTint: false,
+  /**
+   * Hypsometric tint — defaults to ON now that the subsystem auto-picks
+   * between native `color-relief` (MapLibre ≥ 5.6) and the raster PMTiles
+   * fallback. Turn off here only if you want the map to render without
+   * any colour-by-elevation wash at all.
+   */
+  hypsometricTint: true,
   ridgeOverlay: false,
   carpathian: false,
 
@@ -344,11 +452,20 @@ export const FEATURES = Object.freeze({
   globeProjection: false,
 
   /**
-   * Native `color-relief` layer. Still landing in maplibre-gl-js stable
-   * (tracked in maplibre-gl-js#5666); enabling this on an unsupported
-   * build degrades to no-op (feature detection at runtime).
+   * Native `color-relief` layer. Probed at runtime via the hypso
+   * subsystem's `detectHypsoCaps` helper — when this flag is true AND
+   * runtime support is detected, the renderer routes hypso through
+   * the GPU's elevation-driven ramp. When false (or runtime probe
+   * fails), it falls back to the raster PMTiles path or "off".
    */
-  colorRelief: false,
+  colorRelief: true,
+
+  /**
+   * Pre-rendered seabed (GEBCO 2024). Disabled by default until
+   * TERRAIN.bathymetry.url is populated by tools/build-bathymetry.sh.
+   * Source missing → silent no-op (graceful fallback).
+   */
+  bathymetry: false,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */

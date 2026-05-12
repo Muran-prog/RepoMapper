@@ -52,14 +52,15 @@ async function main() {
   const { composeSources, sourceAvailability } = await importEsm('src/style/sources.js');
   const { composeSky, composeTerrain, composeProjection } = await importEsm('src/style/terrain.js');
   const { getProfileConfig } = await importEsm('src/device.js');
-  const { FEATURES, TERRAIN, OPENFREEMAP } = await importEsm('src/config.js');
+  const { FEATURES, TERRAIN, OPENFREEMAP, HYPSO } = await importEsm('src/config.js');
   const { getTokens } = await importEsm('src/style/tokens.js');
+  const { RAMP_IDS } = await importEsm('src/style/hypso/ramps.js');
 
   // ---------------------------------------------------------------------
   // Build a full MapLibre style object the same way createMap.js would.
   // Everything here is deterministic — no network, no DOM.
   // ---------------------------------------------------------------------
-  const buildStyle = ({ theme, profile, features }) => {
+  const buildStyle = ({ theme, profile, features, hypso, sourceStubs }) => {
     const cfg = getProfileConfig(profile);
 
     // Stub vector source — the validator only checks its shape.
@@ -77,16 +78,19 @@ async function main() {
       terrain3D: features.terrain3D && cfg.enableTerrain3D,
       textureShading: features.textureShading && cfg.enableTextureShading,
       hypsometricTint: features.hypsometricTint && cfg.enableHypsoTint,
+      bathymetry: features.bathymetry && cfg.enableHypsoTint,
       contours: features.contours && cfg.enableContours,
       ridgeOverlay: features.ridgeOverlay && cfg.enableRidgeOverlay,
       carpathian: features.carpathian && cfg.enableCarpathianOverlay,
       globeProjection: features.globeProjection && cfg.enableGlobeProjection,
+      hypsoRampId: hypso?.rampId ?? HYPSO.defaultRampId,
     };
 
     const sources = composeSources({
       vectorSource,
       features: effectiveFeatures,
     });
+    if (sourceStubs) Object.assign(sources, sourceStubs);
     const has = sourceAvailability(sources);
 
     const layerOpts = {
@@ -113,6 +117,22 @@ async function main() {
       hasCarpathianDem: has.carpathianDem,
       hypsometricTint: effectiveFeatures.hypsometricTint,
       hasHypsoSource: has.hypsometricTint,
+      hasHypsoRasterRamp: !!has.hypsoRasterRampId,
+      hypsoMode: hypso?.mode ?? (features.colorRelief && has.primaryDem
+        ? 'native'
+        : has.hypsoRasterRampId
+        ? 'raster'
+        : has.hypsometricTint
+        ? 'legacy'
+        : 'off'),
+      hypsoRampId: hypso?.rampId ?? HYPSO.defaultRampId,
+      hypsoStrength: hypso?.strength ?? HYPSO.defaultStrength,
+      hypsoBathymetry: hypso?.bathymetry ?? HYPSO.bathymetryDefault,
+      hypsoRasterSourceId: has.hypsoRasterRampId
+        ? `hypso-raster-${has.hypsoRasterRampId}`
+        : null,
+      bathymetry: effectiveFeatures.bathymetry,
+      hasBathymetrySource: has.bathymetry,
       textureShading: effectiveFeatures.textureShading,
       hasTextureSource: has.textureShading,
       colorRelief: features.colorRelief && has.primaryDem,
@@ -199,8 +219,51 @@ async function main() {
         hypsometricTint: false,
         ridgeOverlay: false,
         carpathian: false,
+        bathymetry: false,
       },
     },
+    // Hypso-specific feature packs — every mode the renderer can pick.
+    {
+      name: 'hypso-native',
+      flags: { hypsometricTint: true, colorRelief: true },
+      hypso: { mode: 'native' },
+    },
+    {
+      name: 'hypso-raster',
+      flags: { hypsometricTint: true, colorRelief: false },
+      hypso: { mode: 'raster' },
+      // Stuff every preset's raster URL with a synthetic placeholder so
+      // composeSources adds the per-ramp source — without these URLs the
+      // raster path silently degrades to 'off' and we'd be testing the
+      // wrong path.
+      stubHypsoRasterUrls: true,
+    },
+    {
+      name: 'hypso-off',
+      flags: { hypsometricTint: false },
+      hypso: { mode: 'off' },
+    },
+    {
+      name: 'hypso-bathymetry',
+      flags: { hypsometricTint: true, bathymetry: true, colorRelief: true },
+      hypso: { mode: 'native', bathymetry: true },
+      stubBathymetryUrl: true,
+    },
+    {
+      name: 'hypso-no-bathy',
+      flags: { hypsometricTint: true, bathymetry: false },
+      hypso: { mode: 'native', bathymetry: false },
+    },
+    // Cycle through every named ramp once on light/high so a new ramp
+    // can't slip in with a syntactic bug (negative-elevation stop wrong
+    // type, etc.). The full theme × profile matrix already covers the
+    // default ramp via every other pack.
+    ...RAMP_IDS.map((rampId) => ({
+      name: `ramp-${rampId}`,
+      flags: { hypsometricTint: true, colorRelief: true },
+      hypso: { rampId, mode: 'native' },
+      onlyThemeProfile: { theme: 'light', profile: 'high' },
+    })),
   ];
 
   // ---------------------------------------------------------------------
@@ -208,15 +271,34 @@ async function main() {
   // ---------------------------------------------------------------------
   let failed = 0;
   const rows = [];
+
   for (const theme of themes) {
     for (const profile of profiles) {
       for (const pack of featurePacks) {
+        if (pack.onlyThemeProfile) {
+          const { theme: t, profile: p } = pack.onlyThemeProfile;
+          if (t && t !== theme) continue;
+          if (p && p !== profile) continue;
+        }
         const features = { ...FEATURES, ...pack.flags };
+
+        // Per-pack environment stubs are threaded through composeSources
+        // by way of an override on features.hypsoRasterUrls + an
+        // explicit sourceStubs param (see buildStyle below).
+        if (pack.stubHypsoRasterUrls) {
+          features.hypsoRasterUrls = Object.fromEntries(
+            Object.keys(HYPSO.rasterUrls).map((id) => [
+              id,
+              `pmtiles://https://example.com/${id}.pmtiles`,
+            ]),
+          );
+        }
+
         let status = 'ok';
         let details = '';
         let layerCount = 0;
         try {
-          const style = buildStyle({ theme, profile, features });
+          const style = buildStyleWithStubs({ theme, profile, features, pack });
           layerCount = style.layers.length;
           const errors = validate(style) || [];
           if (errors.length > 0) {
@@ -232,9 +314,30 @@ async function main() {
           details = err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : String(err);
           failed++;
         }
+
         rows.push({ theme, profile, pack: pack.name, status, layers: layerCount, details });
       }
     }
+  }
+
+  /**
+   * Wraps buildStyle with per-pack environment stubs that can't be
+   * cleanly expressed through `features`. Specifically: a synthetic
+   * bathymetry source when `pack.stubBathymetryUrl` is on.
+   */
+  function buildStyleWithStubs({ theme, profile, features, pack }) {
+    const hypso = pack.hypso ?? null;
+    const sourceStubs = {};
+    if (pack.stubBathymetryUrl) {
+      sourceStubs['bathymetry'] = {
+        type: 'raster',
+        url: 'pmtiles://https://example.com/gebco.pmtiles',
+        tileSize: 256,
+        minzoom: 3,
+        maxzoom: 9,
+      };
+    }
+    return buildStyle({ theme, profile, features, hypso, sourceStubs });
   }
 
   // ---------------------------------------------------------------------
@@ -271,7 +374,56 @@ async function main() {
 
   console.log();
   console.log(`Total: ${rows.length}   Failed: ${failed}`);
-  process.exit(failed > 0 ? 1 : 0);
+
+  // ---------------------------------------------------------------------
+  // Ramp dictionary sanity — sniff every preset for well-formed stops.
+  // Catches typos like '#abcd' or unsorted elevations before the live
+  // map sees them.
+  // ---------------------------------------------------------------------
+  const { RAMPS, FALLBACK_RAMP_ID } = await importEsm('src/style/hypso/ramps.js');
+  console.log();
+  console.log('Hypsometric ramp dictionary sanity:');
+  let rampFails = 0;
+  for (const [id, ramp] of Object.entries(RAMPS)) {
+    const errs = [];
+    if (typeof ramp.id !== 'string') errs.push('missing id');
+    if (typeof ramp.name !== 'string') errs.push('missing name');
+    for (const variant of ['light', 'dark']) {
+      const stops = ramp[variant];
+      if (!Array.isArray(stops) || stops.length < 2) {
+        errs.push(`${variant}: not an array of ≥ 2 stops`);
+        continue;
+      }
+      let lastElev = -Infinity;
+      let hasNeg = false;
+      for (const stop of stops) {
+        if (!Array.isArray(stop) || stop.length !== 2) {
+          errs.push(`${variant}: stop is not [number, '#rrggbb']`);
+          break;
+        }
+        const [elev, hex] = stop;
+        if (typeof elev !== 'number' || !Number.isFinite(elev)) errs.push(`${variant}: non-numeric elevation`);
+        if (typeof hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(hex)) errs.push(`${variant}: bad hex ${hex}`);
+        if (elev < lastElev) errs.push(`${variant}: stops not sorted ascending`);
+        lastElev = elev;
+        if (elev < 0) hasNeg = true;
+      }
+      if (!hasNeg) errs.push(`${variant}: no bathymetry stop (elev < 0)`);
+    }
+    if (errs.length === 0) {
+      console.log(`  OK   ${id}`);
+    } else {
+      rampFails++;
+      console.log(`  FAIL ${id}: ${errs.join('; ')}`);
+    }
+  }
+  if (!RAMPS[FALLBACK_RAMP_ID]) {
+    rampFails++;
+    console.log(`  FAIL fallback ramp '${FALLBACK_RAMP_ID}' is missing from RAMPS`);
+  }
+  console.log(`Total ramps: ${Object.keys(RAMPS).length}   Failed: ${rampFails}`);
+
+  process.exit(failed + rampFails > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

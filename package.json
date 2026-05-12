@@ -6,6 +6,9 @@
   "description": "Cart — interactive vector map of Ukraine. No bundler at runtime; this package.json exists only to pin developer tooling (style-spec validator).",
   "scripts": {
     "validate": "node validate.cjs",
+    "smoke": "node tools/smoke-hypso.mjs",
+    "dump-ramp": "node tools/dump-ramp.mjs",
+    "check": "npm run validate && npm run smoke",
     "serve": "python3 -m http.server 8080"
   },
   "devDependencies": {

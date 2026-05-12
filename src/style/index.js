@@ -9,10 +9,10 @@
  *    2. landcover                  — wood, grass, sand, ice, rock
  *    3. landuse                    — residential, industrial, cemetery, …
  *    4. parks                      — green polygons + outline
- *    5. water-fill                 — lake / ocean polygons (below relief)
- *    6. hypsometric tint           — raster elevation-tinted PNG
- *    7. color-relief (native)      — DEM-driven ramp (feature-flagged)
- *    8. hillshade stack            — 1× or 3× (Swiss-style) + Carpathian
+ *    5. hypsometric tint           — color-relief or raster, covers all land
+ *    6. hillshade stack            — 1× or 3× (Swiss-style) + Carpathian
+ *    7. water-fill                 — lake / sea polygons (LAND-ONLY MASK)
+ *    7a. bathymetry                — GEBCO raster, replaces water_fill in sea
  *    9. texture-shading            — Leland Brown fractional-Laplacian PNG
  *   10. contours (minor → major)   — topographic isolines
  *   11. contour labels             — line-placed elevation text
@@ -26,6 +26,13 @@
  *   19. cableway / ski piste       — mountain auxiliaries
  *   20. labels                     — places, roads, water, parks, POIs
  *   21. Carpathian labels          — peaks / passes / saddles (top priority)
+ *
+ * Land-only mask: layers 5–6 (hypso + hillshade) sit BELOW the water
+ * polygons in layer 7, so the colour wash never bleeds into lakes or
+ * the open sea — it's the cheapest "land mask" possible (z-order, no
+ * per-tile alpha). Bathymetry (7a) then re-fills the sea with depth
+ * tones via its raster alpha; lakes (which GEBCO doesn't cover) stay
+ * solid `t.water` blue.
  *
  * Each relief-specific group is gated by BOTH the feature flag and the
  * availability of its source — the style composer never emits a layer
@@ -49,8 +56,11 @@ import {
   hillshadeLayers,
   textureShadingLayers,
   hypsometricTintLayers,
-  colorReliefLayers,
+  bathymetryLayers,
+  legacyHypsoTintLayer,
 } from './terrain.js';
+import { DEFAULT_RAMP_ID } from './hypso/ramps.js';
+import { DEFAULT_STRENGTH_STOPS } from './hypso/expression.js';
 import { contourLayers } from './contours.js';
 import {
   ridgeLayers,
@@ -85,11 +95,18 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [multiDirHillshade=false] 3-layer Swiss-style stack.
  * @property {boolean} [hasPrimaryDem=false]    Primary DEM source exists.
  * @property {boolean} [hasCarpathianDem=false] Carpathian DEM source exists.
- * @property {boolean} [hypsometricTint=false]
- * @property {boolean} [hasHypsoSource=false]
+ * @property {boolean} [hypsometricTint=false]  Emit hypso layer(s).
+ * @property {'native'|'raster'|'off'} [hypsoMode='off']
+ * @property {string}  [hypsoRampId]            Active ramp id.
+ * @property {number}  [hypsoStrength=1.0]      0..1.5 opacity multiplier.
+ * @property {boolean} [hypsoBathymetry=true]   Include negative-elev stops.
+ * @property {string|null} [hypsoRasterSourceId] Source id when raster mode.
+ * @property {boolean} [bathymetry=false]       Pre-rendered seabed tint.
+ * @property {boolean} [hasBathymetrySource=false]
+ * @property {boolean} [hasHypsoSource=false]   Legacy hypso-tint source.
+ * @property {boolean} [hasHypsoRasterRamp=false] Active raster ramp source.
  * @property {boolean} [textureShading=false]
  * @property {boolean} [hasTextureSource=false]
- * @property {boolean} [colorRelief=false]      Native color-relief layer.
  *
  * Contours:
  * @property {boolean} [contours=false]
@@ -136,10 +153,18 @@ export function composeLayers(opts = {}) {
     hasPrimaryDem = false,
     hasCarpathianDem = false,
     hypsometricTint = false,
+    hypsoMode = 'off',
+    hypsoRampId = DEFAULT_RAMP_ID,
+    hypsoStrength = 1.0,
+    hypsoBathymetry = true,
+    hypsoRasterSourceId = null,
+    hypsoStrengthStops = DEFAULT_STRENGTH_STOPS,
+    bathymetry = false,
+    hasBathymetrySource = false,
     hasHypsoSource = false,
+    hasHypsoRasterRamp = false,
     textureShading = false,
     hasTextureSource = false,
-    colorRelief = false,
 
     contours = false,
     contoursSourceId = 'contours-dynamic',
@@ -164,23 +189,40 @@ export function composeLayers(opts = {}) {
   stack.push(...baseLanduse(t));
   stack.push(...baseParks(t));
 
-  // 5: Lakes and sea polygons — BELOW the relief stack so the sky
-  // colour of the water doesn't clash with the hypsometric tint.
-  stack.push(...baseWaterFill(t));
-
-  // 6: Hypsometric tint (raster PMTiles).
-  if (hypsometricTint && hasHypsoSource) {
-    stack.push(...hypsometricTintLayers(t));
+  // 5: Hypsometric tint — emitted BEFORE water_fill so the
+  //    land-only mask works: any pixel under a water polygon (lake /
+  //    ocean) gets masked by water_fill below, never tinted by hypso.
+  //    The composer in `hypso/layers.js` picks the path (native /
+  //    raster / off) based on `hypsoMode`; we just feed it options.
+  if (hypsometricTint) {
+    const mode = resolveHypsoMode({
+      hypsoMode,
+      hasPrimaryDem,
+      hasHypsoRasterRamp,
+      hasHypsoSource,
+    });
+    if (mode === 'legacy' && hasHypsoSource) {
+      stack.push(...legacyHypsoTintLayer(t));
+    } else if (mode !== 'off') {
+      stack.push(
+        ...hypsometricTintLayers(t, {
+          mode,
+          rampId: hypsoRampId,
+          theme,
+          strength: hypsoStrength,
+          bathymetry: hypsoBathymetry,
+          rasterSourceId: hypsoRasterSourceId,
+          strengthStops: hypsoStrengthStops,
+        }),
+      );
+    }
   }
 
-  // 7: Native color-relief (feature-flagged; MapLibre JS support landing).
-  if (colorRelief && hasPrimaryDem) {
-    stack.push(...colorReliefLayers(t));
-  }
-
-  // 8: Hillshade stack — 1 layer (low-profile default) or 3 (Swiss).
-  //    Plus an optional Carpathian high-res DEM hillshade that takes over
-  //    at higher zooms inside the bbox.
+  // 6: Hillshade stack — drawn on top of hypso so each slope's
+  //    highlight / shadow mixes WITH the elevation tint, producing
+  //    the topographic-atlas feel (colour-by-elevation + shaded
+  //    relief). 1 layer (low-profile) or 3 (Swiss-style), plus the
+  //    optional Carpathian high-res DEM hillshade.
   if (hillshade && hasPrimaryDem) {
     stack.push(
       ...hillshadeLayers(t, {
@@ -190,6 +232,22 @@ export function composeLayers(opts = {}) {
         reduceMotion,
       }),
     );
+  }
+
+  // 7: Water polygons — drawn AFTER hypso + hillshade so they act as
+  //    the canonical land-only mask. Lakes render as the flat blue
+  //    `t.water` colour; sea + ocean polygons get the same blue
+  //    initially and are then overpainted by the GEBCO bathymetry
+  //    raster (layer 7a) so the seabed reads as a depth gradient.
+  stack.push(...baseWaterFill(t));
+
+  // 7a: Bathymetry — pre-rendered GEBCO seabed tint that sits ABOVE
+  //     water_fill. The raster's alpha channel is 1 over ocean tiles
+  //     and 0 outside, so the layer overrides water_fill colour only
+  //     where there's actual sea. Lakes (which GEBCO doesn't cover)
+  //     stay flat blue.
+  if (bathymetry && hasBathymetrySource) {
+    stack.push(...bathymetryLayers(t));
   }
 
   // 9: Texture shading overlay (pre-rendered PNG).
@@ -271,3 +329,34 @@ export function composeLayers(opts = {}) {
 }
 
 export { getTokens };
+
+/**
+ * Resolve the effective hypso layer mode given availability flags.
+ *
+ * Priority:
+ *   1. Caller's preferred mode ('native' | 'raster' | 'legacy') if its
+ *      backing data is available.
+ *   2. Native if a DEM exists and the caller didn't object.
+ *   3. Raster if a per-ramp source is present.
+ *   4. Legacy if the old single-archive `hypso-tint` source is present.
+ *   5. 'off' — produce no hypso layer.
+ *
+ * @param {object} a
+ * @param {'native'|'raster'|'legacy'|'off'|undefined} a.hypsoMode
+ * @param {boolean} a.hasPrimaryDem
+ * @param {boolean} a.hasHypsoRasterRamp
+ * @param {boolean} a.hasHypsoSource
+ * @returns {'native'|'raster'|'legacy'|'off'}
+ */
+function resolveHypsoMode({ hypsoMode, hasPrimaryDem, hasHypsoRasterRamp, hasHypsoSource }) {
+  if (hypsoMode === 'native' && hasPrimaryDem) return 'native';
+  if (hypsoMode === 'raster' && hasHypsoRasterRamp) return 'raster';
+  if (hypsoMode === 'legacy' && hasHypsoSource) return 'legacy';
+  if (hypsoMode === 'off') return 'off';
+  // Fall-through preference order — same as the brief's graceful
+  // fallback policy: prefer native, then raster, then legacy, then off.
+  if (hasPrimaryDem) return 'native';
+  if (hasHypsoRasterRamp) return 'raster';
+  if (hasHypsoSource) return 'legacy';
+  return 'off';
+}

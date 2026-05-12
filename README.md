@@ -196,7 +196,7 @@ Cart/
 │   │   ├── tokens.js      # design tokens (light/dark)
 │   │   ├── sources.js     # composeSources() — pure source-dict builder
 │   │   ├── base.js        # background, landcover, water (split fill/way)
-│   │   ├── terrain.js     # hillshade × N, texture, hypso, color-relief,
+│   │   ├── terrain.js     # hillshade × N, texture, hypso delegate, bathymetry,
 │   │   │                  #   composeSky / composeTerrain / composeProjection
 │   │   ├── contours.js    # contour line + label specs (static & dynamic)
 │   │   ├── carpathian.js  # ridges, trails, peak/pass/saddle labels, cableway
@@ -205,24 +205,61 @@ Cart/
 │   │   │                  #   Carpathian double-casing
 │   │   ├── buildings.js   # 2D + 3D extrusion
 │   │   ├── boundaries.js  # admin lines
-│   │   └── labels.js      # density-aware, fade-in, shielded labels
+│   │   ├── labels.js      # density-aware, fade-in, shielded labels
+│   │   └── hypso/         # HYPSOMETRIC SUBSYSTEM
+│   │       ├── ramps.js      # 7 ramp presets × light/dark + bathymetry stops
+│   │       ├── color.js      # LAB ↔ sRGB converter, densifier, contrast boost
+│   │       ├── expression.js # MapLibre color-relief expression generator
+│   │       ├── layers.js     # native + raster + bathymetry layer factories
+│   │       ├── detect.js     # runtime native-color-relief feature probe
+│   │       ├── runtime.js    # imperative setPaintProperty surface (no rebuild)
+│   │       └── index.js      # public barrel
 │   ├── ui/
 │   │   ├── controls.js    # nav, theme, quality, layer + relief toggles,
-│   │   │                  #   exaggeration slider, fly-to presets
-│   │   └── hud.js         # FPS / zoom / coords / ELEV readout
+│   │   │                  #   exaggeration slider, fly-to presets, hypso mount
+│   │   ├── hud.js         # FPS / zoom / coords / ELEV readout
+│   │   └── hypso/         # HYPSOMETRIC UI
+│   │       ├── picker.js     # ramp radio list + CB-safe badge + strength slider
+│   │       ├── editor.js     # drag-stops editor, import/export JSON
+│   │       ├── legend.js     # gradient bar + ticks + you-are-here cursor
+│   │       ├── profile.js    # elevation-profile drawing mode + chart
+│   │       ├── autoregion.js # viewport-region auto-pick + min/mean/max stats
+│   │       ├── store.js      # localStorage for custom ramps + user prefs
+│   │       └── index.js      # mount + barrel
 │   ├── perf/monitor.js    # FPS + tile activity
 │   └── utils/interp.js    # zoom interp helpers
 └── tools/                 # OFFLINE BUILD PIPELINE (optional, see README.md)
     ├── _lib.sh
     ├── build-carpathian-dem.sh    # Copernicus GLO-30 → Terrarium PMTiles
     ├── build-texture-shading.sh   # Leland Brown α=0.8 → raster PMTiles
-    ├── build-hypso.sh             # gdaldem color-relief from tokens.hypsoStops
+    ├── build-hypso.sh             # gdaldem color-relief per ramp preset
+    ├── build-bathymetry.sh        # GEBCO 2024 seabed tint, joins at 0 m
     ├── build-contours.sh          # gdal_contour + tippecanoe → PMTiles
     ├── build-ridges.sh            # WhiteboxTools FindRidges → PMTiles
     ├── build-carpathian-osm.sh    # Planetiler with custom profile
     ├── carpathian-profile.yml     # Planetiler schema
+    ├── dump-ramp.mjs              # Node ramp-table parser (CIELAB densifier)
+    ├── smoke-hypso.mjs            # headless paint-property smoke test
     └── README.md
 ```
+
+### Hypsometric subsystem at a glance
+
+| Feature                | What it does                                                           | Toggle / config                |
+| ---------------------- | ---------------------------------------------------------------------- | ------------------------------ |
+| **7 ramp presets**     | Patterson, Raisz–Henry, Swiss alpine, OSM physical, Carpathian focus, Steppe flat, Colourblind-safe — each light + dark + bathymetry | `src/style/hypso/ramps.js`     |
+| **Native + raster**    | Native `color-relief` layer on supported runtimes; raster PMTiles fallback per ramp | feature-detected at boot       |
+| **Strength slider**    | 0 → 1.5× opacity multiplier, instant via `setPaintProperty`            | `HYPSO.defaultStrength`        |
+| **Bathymetry**         | GEBCO 2024 seabed tint, joins seamlessly with the ramp at 0 m          | `TERRAIN.bathymetry.url`       |
+| **Land-only mask**     | Hypso layer sits below `water_fill` — no tile-level masking needed     | z-order in `composeLayers`     |
+| **Smart hillshade**    | Hillshade exaggeration auto-fades when hypso is active                 | `HILLSHADE_BLEND` curve        |
+| **Auto-region**        | Viewport classifier (Carpathian / alpine / steppe / sea) picks the matching ramp | `HYPSO.regionRamp`             |
+| **Live editor**        | Drag colour stops along the elevation axis, save to localStorage, import/export JSON | `enableHypsoEditor` (high)     |
+| **Legend**             | Vertical gradient bar + ticks + "you-are-here" elevation marker        | `enableHypsoLegend`            |
+| **Stats**              | Live min/mean/max from a 5×5 viewport-DEM sample on each `idle`        | `enableHypsoStats`             |
+| **Elevation profile**  | Click-to-draw polyline → SVG chart with tooltip + CSV export           | `enableHypsoProfile` (high/med)|
+| **Colourblind-safe**   | Luminance-led palette, badge in picker, OS `prefers-contrast: more` auto-flip | per-ramp `colorblindSafe`     |
+| **Perceptual blend**   | CIELAB densification of every ramp before MapLibre's linear-RGB interp | `densifyStopsLab` (~50 LOC, no deps) |
 
 ## Controls
 

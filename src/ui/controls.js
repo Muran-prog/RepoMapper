@@ -14,6 +14,7 @@ import { applyStyle } from '../map/createMap.js';
 import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
 import { getProfileConfig } from '../device.js';
 import { FEATURES, DEFAULT_THEME } from '../config.js';
+import { mountHypsoUI } from './hypso/index.js';
 
 // ---------------------------------------------------------------------------
 // MapLibre-native controls (top-right column, scale + attribution on the
@@ -112,6 +113,7 @@ function renderSidebar(root) {
           <label class="row"><input type="checkbox" data-ctl="terrain3D"        checked> <span>3D terrain</span></label>
           <label class="row"><input type="checkbox" data-ctl="contours"         checked> <span>Contours</span></label>
           <label class="row"><input type="checkbox" data-ctl="hypsometricTint"> <span>Hypsometric tint</span></label>
+          <label class="row"><input type="checkbox" data-ctl="bathymetry"> <span>Bathymetry (Black + Azov)</span></label>
           <label class="row"><input type="checkbox" data-ctl="textureShading"> <span>Texture shading</span></label>
           <label class="row"><input type="checkbox" data-ctl="ridgeOverlay"> <span>Ridge overlay</span></label>
           <label class="row"><input type="checkbox" data-ctl="carpathian"> <span>Carpathian detail</span></label>
@@ -127,6 +129,20 @@ function renderSidebar(root) {
             value="1"
             data-ctl="exaggeration"
           />
+        </div>
+        <!-- Hypsometric subsystem mount point. mountHypsoUI() renders
+             the picker, strength slider, bathymetry + high-contrast
+             toggles, and (where the profile permits) the editor /
+             legend / profile-mode launcher into the slots below. -->
+        <div data-ctl="hypso-picker"></div>
+        <div data-ctl="hypso-profile-launcher" hidden>
+          <button class="hypso-launch" data-ctl="open-profile" type="button">Draw elevation profile</button>
+        </div>
+        <div data-ctl="hypso-stats" class="hypso-stats" hidden>
+          <span><span class="hypso-stat-label">min</span><span data-ctl="hypso-stat-min">— м</span></span>
+          <span><span class="hypso-stat-label">mean</span><span data-ctl="hypso-stat-mean">— м</span></span>
+          <span><span class="hypso-stat-label">max</span><span data-ctl="hypso-stat-max">— м</span></span>
+          <span><span class="hypso-stat-label">region</span><span data-ctl="hypso-stat-region">—</span></span>
         </div>
       </section>
 
@@ -228,6 +244,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       terrain3D: FEATURES.terrain3D,
       contours: FEATURES.contours,
       hypsometricTint: FEATURES.hypsometricTint,
+      bathymetry: FEATURES.bathymetry,
       textureShading: FEATURES.textureShading,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
@@ -303,6 +320,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('terrain3D');
   wireToggle('contours');
   wireToggle('hypsometricTint');
+  wireToggle('bathymetry');
   wireToggle('textureShading');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
@@ -334,9 +352,105 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     }),
   );
 
+  // ----- Hypso UI bundle -----------------------------------------------
+  // The picker / strength slider / bathymetry + high-contrast toggles
+  // live in a self-contained module that mutates the live map via
+  // setPaintProperty (no style rebuild). Editor / legend / profile
+  // launchers honour the device profile so 'low' just gets the picker.
+  installHypsoUI(map, sidebar, { caps, profile: effectiveProfile() });
+
   // ----- Reflect detected profile on the UI ----------------------------
   sidebar.dataset.detectedProfile = state.detectedProfile;
   document.documentElement.dataset.theme = state.theme;
 
   return state;
+}
+
+/**
+ * Mount the hypso UI bundle into the existing sidebar hosts. Manages
+ * its own teardown when the style is rebuilt (theme/quality swap) by
+ * unmounting and remounting via the cart:styleApplied event listener.
+ */
+function installHypsoUI(map, sidebar, { caps, profile } = {}) {
+  const pickerHost = sidebar.querySelector('[data-ctl=hypso-picker]');
+  if (!pickerHost) return;
+  const profileLauncher = sidebar.querySelector('[data-ctl=hypso-profile-launcher]');
+  const profileLauncherBtn = sidebar.querySelector('[data-ctl=open-profile]');
+  const statsHost = sidebar.querySelector('[data-ctl=hypso-stats]');
+  const statRefs = {
+    min: sidebar.querySelector('[data-ctl=hypso-stat-min]'),
+    mean: sidebar.querySelector('[data-ctl=hypso-stat-mean]'),
+    max: sidebar.querySelector('[data-ctl=hypso-stat-max]'),
+    region: sidebar.querySelector('[data-ctl=hypso-stat-region]'),
+  };
+
+  // Create / re-use a free-floating legend host on the canvas. Inserted
+  // as a sibling of `#map` so MapLibre's gesture detection isn't
+  // disturbed; CSS positions it as an absolute overlay.
+  const mapEl = map.getContainer();
+  let legendHost = document.getElementById('hypso-legend-host');
+  if (!legendHost) {
+    legendHost = document.createElement('div');
+    legendHost.id = 'hypso-legend-host';
+    mapEl.parentElement?.appendChild(legendHost);
+  }
+  // Editor + profile hosts are appended next to the legend host so they
+  // float over the map.
+  let editorHost = document.getElementById('hypso-editor-host');
+  if (!editorHost) {
+    editorHost = document.createElement('div');
+    editorHost.id = 'hypso-editor-host';
+    mapEl.parentElement?.appendChild(editorHost);
+  }
+  let profileHost = document.getElementById('hypso-profile-host');
+  if (!profileHost) {
+    profileHost = document.createElement('div');
+    profileHost.id = 'hypso-profile-host';
+    mapEl.parentElement?.appendChild(profileHost);
+  }
+
+  // Resolve per-profile capabilities. mountHypsoUI consumes the same
+  // `profile`-shaped block that getProfileConfig returns.
+  const profileConfig = getProfileConfig(profile, caps);
+
+  if (statsHost) statsHost.hidden = !profileConfig.enableHypsoStats;
+  // Honour prefers-reduced-motion: hide the profile launcher entirely
+  // so click-to-draw flow isn't even discoverable for users who opted
+  // out of motion. The hypso UI module no-ops the open call too.
+  const profileEnabled = profileConfig.enableHypsoProfile && !caps?.prefersReducedMotion;
+  if (profileLauncher) profileLauncher.hidden = !profileEnabled;
+
+  const handle = mountHypsoUI({
+    map,
+    pickerHost,
+    legendHost: profileConfig.enableHypsoLegend ? legendHost : null,
+    editorHost: profileConfig.enableHypsoEditor ? editorHost : null,
+    profileHost,
+    profile: profileConfig,
+    caps,
+    theme: document.documentElement.dataset.theme || DEFAULT_THEME,
+    showEditor: profileConfig.enableHypsoEditor,
+    showLegend: profileConfig.enableHypsoLegend,
+    showStats: profileConfig.enableHypsoStats,
+    showProfile: profileConfig.enableHypsoProfile,
+    autoRegion: profileConfig.enableHypsoAutoRegion,
+    onStats: profileConfig.enableHypsoStats
+      ? (stats) => {
+          if (!statRefs.min) return;
+          statRefs.min.textContent = stats.min == null ? '— м' : `${Math.round(stats.min)} м`;
+          statRefs.mean.textContent = stats.mean == null ? '— м' : `${Math.round(stats.mean)} м`;
+          statRefs.max.textContent = stats.max == null ? '— м' : `${Math.round(stats.max)} м`;
+          statRefs.region.textContent = stats.region;
+        }
+      : undefined,
+  });
+
+  if (profileLauncherBtn && profileEnabled) {
+    profileLauncherBtn.addEventListener('click', () => handle.openProfile());
+  }
+
+  // Expose handle for ad-hoc debugging.
+  if (typeof window !== 'undefined') {
+    window.__cart_hypso = handle;
+  }
 }

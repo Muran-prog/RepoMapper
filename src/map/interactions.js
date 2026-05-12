@@ -37,6 +37,12 @@ import {
   hillshadeExaggeration,
   HILLSHADE_BASE_MUL_META,
 } from '../style/terrain.js';
+import {
+  applyHypsoStrength,
+  applyHypsoRamp,
+  detectHypsoCaps,
+  findActiveHypsoLayer,
+} from '../style/hypso/index.js';
 
 export function installInteractionTuning(map, { caps } = {}) {
   const isTouch = !!caps?.isTouch;
@@ -89,6 +95,41 @@ export function installInteractionTuning(map, { caps } = {}) {
 
   // ----- Terrain lifecycle --------------------------------------------
   installTerrainLifecycle(map, { reduceMotion });
+
+  // ----- Hypso lifecycle ----------------------------------------------
+  installHypsoLifecycle(map, { reduceMotion });
+}
+
+/**
+ * Re-apply the hypso state (ramp + strength) after every style reload
+ * so theme switches / quality switches preserve the user's choice and
+ * the smart hillshade blend matches the live strength.
+ *
+ * Cold case: at boot, the style was composed with the initial state
+ * baked in, so applying again is a no-op. After the user picks a new
+ * ramp from the UI we don't rebuild the style — the runtime mutates
+ * the live layer in place; but a theme switch DOES rebuild, and we
+ * need the new style's hillshade layers to settle in the blended
+ * state.
+ */
+function installHypsoLifecycle(map, { reduceMotion }) {
+  const apply = () => {
+    detectHypsoCaps(map);
+    const state = map._cart?.hypso;
+    if (!state) return;
+    const layer = findActiveHypsoLayer(map);
+    if (!layer) return;
+    // Re-emit ramp + strength so the smart-blend cascade refreshes.
+    applyHypsoRamp(map, state.rampId, { dispatch: false });
+    applyHypsoStrength(map, state.strength, { dispatch: false });
+  };
+
+  map.on('styledata', apply);
+  map.once('load', apply);
+  /* reduceMotion is honoured downstream by buildBlendedHillshadeExaggeration's
+     consumer — we still want the blend even with reduced motion (it's not
+     animated). The arg is kept here so future tuning has a hook. */
+  void reduceMotion;
 }
 
 /**

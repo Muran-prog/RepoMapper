@@ -37,13 +37,18 @@
       load these as classic <script> tags so MapLibre's worker bootstrap
       works without import-map gymnastics; our own code uses ES modules.
     -->
+    <!--
+      MapLibre 5.6.0+ is required for the native `color-relief` layer
+      (PR #5742). On older builds the renderer silently skips the layer
+      and the hypsometric subsystem falls back to the raster path.
+    -->
     <link
       rel="stylesheet"
-      href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css"
+      href="https://unpkg.com/maplibre-gl@5.7.0/dist/maplibre-gl.css"
       crossorigin="anonymous"
     />
     <script
-      src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"
+      src="https://unpkg.com/maplibre-gl@5.7.0/dist/maplibre-gl.js"
       crossorigin="anonymous"
     ></script>
     <script src="https://unpkg.com/pmtiles@4.4.0/dist/pmtiles.js"></script>

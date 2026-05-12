@@ -23,7 +23,7 @@
  * layer referencing a missing source.
  */
 
-import { TERRAIN, CONTOURS } from '../config.js';
+import { TERRAIN, CONTOURS, HYPSO } from '../config.js';
 
 /**
  * Build a `raster-dem` source spec, or return null if the config is empty.
@@ -123,8 +123,41 @@ export function composeSources({
     if (tex) sources['texture-shading'] = tex;
   }
   if (features.hypsometricTint) {
+    // The hypso subsystem has two paths. When the native color-relief
+    // layer is available we don't need ANY raster source — the DEM
+    // backs the colour ramp directly. When it's not available we need
+    // the raster archive for the active ramp; the runtime swap path
+    // adds further per-ramp sources as the user picks new ramps.
+    // For style-compose time we add the legacy single-archive source
+    // (terrain.hypsometric.url) only if explicitly configured.
     const hyp = toRasterPmtilesSource(terrain.hypsometric);
     if (hyp) sources['hypso-tint'] = hyp;
+
+    // Also pre-add the active raster ramp if its URL is configured.
+    // The runtime will add others on demand to avoid loading multiple
+    // full-Ukraine archives at boot. The url lookup picks up overrides
+    // from `features.hypsoRasterUrls` so tests + UI overrides bypass
+    // the frozen HYPSO.rasterUrls dict without mutating it.
+    const activeRampId = features.hypsoRampId ?? HYPSO.defaultRampId;
+    const urlMap = features.hypsoRasterUrls ?? HYPSO.rasterUrls;
+    const activeRampUrl = urlMap?.[activeRampId];
+    if (typeof activeRampUrl === 'string' && activeRampUrl.length > 0) {
+      sources[`hypso-raster-${activeRampId}`] = {
+        type: 'raster',
+        url: activeRampUrl,
+        tileSize: terrain.hypsometric?.tileSize ?? 256,
+        minzoom: terrain.hypsometric?.minzoom ?? 2,
+        maxzoom: terrain.hypsometric?.maxzoom ?? 12,
+        attribution: terrain.hypsometric?.attribution,
+      };
+    }
+  }
+
+  // Bathymetry — GEBCO 2024 seabed tint. Stacks under hypso so the 0 m
+  // ramp boundary is the only continuous edge. URL-gated.
+  if (features.bathymetry && terrain.bathymetry) {
+    const bathy = toRasterPmtilesSource(terrain.bathymetry);
+    if (bathy) sources['bathymetry'] = bathy;
   }
 
   // Vector ridge/valley PMTiles (Imhof-style enhancement).
@@ -165,13 +198,31 @@ export function composeSources({
  * @returns {object} Availability flags keyed by overlay name.
  */
 export function sourceAvailability(sources) {
+  const rasterRampId = findHypsoRasterRampId(sources);
   return {
     primaryDem: 'terrain-dem' in sources,
     carpathianDem: 'terrain-dem-carpathian' in sources,
     textureShading: 'texture-shading' in sources,
     hypsometricTint: 'hypso-tint' in sources,
+    hypsoRasterRampId: rasterRampId,
+    bathymetry: 'bathymetry' in sources,
     ridges: 'ridges' in sources,
     carpathianOsm: 'carpathian-osm' in sources,
     contoursStatic: 'contours-static' in sources,
   };
+}
+
+/**
+ * Find any pre-added per-ramp raster source. Returns the ramp id (the
+ * suffix after `hypso-raster-`) or null. Used by the composer to decide
+ * whether to emit a raster hypso layer in compose-time.
+ *
+ * @param {Record<string, object>} sources
+ * @returns {string|null}
+ */
+function findHypsoRasterRampId(sources) {
+  for (const id of Object.keys(sources)) {
+    if (id.startsWith('hypso-raster-')) return id.slice('hypso-raster-'.length);
+  }
+  return null;
 }
