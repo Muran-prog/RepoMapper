@@ -1,15 +1,20 @@
 # Cart — Інтерактивна векторна карта України
 
-Production-grade, GPU-accelerated vector map of Ukraine. Built on MapLibre GL JS
-with a fully custom OpenMapTiles-schema style and a mobile-first responsive
-shell. No bundler, no API keys — open `index.html` and you're rendering.
+Production-grade, GPU-accelerated vector map of Ukraine with full relief
+treatment (multi-directional hillshade, 3D terrain, dynamic contours,
+hypsometric tint, ridge/trail detail in the Carpathians). Built on
+MapLibre GL JS with a fully custom OpenMapTiles-schema style and a
+mobile-first responsive shell. No bundler, no API keys — open
+`index.html` and you're rendering.
 
 ## Stack
 
-- **MapLibre GL JS 5.x** — WebGL-based vector tile renderer
+- **MapLibre GL JS 5.x** — WebGL-based vector tile renderer (sky / terrain / globe)
 - **PMTiles 4.x** — protocol registered for static archive support
+- **maplibre-contour** — worker-based topographic contours from raster-DEM
 - **OpenFreeMap** — live OpenMapTiles vector tiles, no API keys
-- Native ES modules — no bundler required
+- **AWS Open Data Terrain Tiles** — Mapzen Terrarium-encoded DEMs, no key
+- Native ES modules — no bundler required at runtime
 
 ## Run
 
@@ -121,41 +126,102 @@ Accessibility hooks:
 - `forced-colors` (Windows high-contrast): falls back to `CanvasText`.
 - Keyboard: arrow-keys pan, Esc collapses the sheet.
 
+### Relief stack
+
+Five layers stack between water and roads to give every map view the
+right level of topographic context:
+
+1. **Hypsometric tint** — Patterson cross-blended elevation→colour ramp
+   (tuned for Ukraine; top stop = Hoverla 2061m). Raster PMTiles, optional.
+2. **Hillshade** — single `hillshade-method: standard` on the low-profile
+   path; three stacked layers (azimuths 315° / 270° / 0°) on the
+   high-profile path for Swiss-style sculpted relief.
+3. **Texture shading** — Leland Brown fractional Laplacian (α=0.8). Raster
+   PMTiles, optional. Pulls ridges and stream networks forward.
+4. **Contours** — generated on-the-fly by `maplibre-contour` from the same
+   DEM source. Major/minor styling, `' м'`-suffixed elevation labels along
+   the line. Static-PMTiles fallback for low-CPU profiles.
+5. **Ridges (Imhof)** — vector PMTiles with double-stroke (dark below,
+   light above) for sculpted highland enhancement. Carpathian-only.
+
+3D terrain (`map.setTerrain`) is wired to a `zoomend` lifecycle so it
+fades in past zoom 7 with a profile-aware exaggeration multiplier and
+the user-controllable `0.5×–2×` slider in the sidebar.
+
+### Carpathian ultra-detail
+
+The Ukrainian Carpathians (`bbox = [22.0, 47.6, 27.0, 49.5]`) get a
+dedicated pipeline:
+
+- 30 m Copernicus GLO-30 DEM (built locally — see `tools/`)
+- Custom Planetiler vector PMTiles with hiking_route / mountain_feature /
+  forest_road / ski_piste / cableway source-layers
+- Trail emphasis: light casing + dashed inline (red by default, recoloured
+  per OSMC/colour tags)
+- Peak/pass/saddle labels with elevation, sorted by `rank` so taller
+  peaks win collisions
+- Optional ridge/valley overlay extracted via WhiteboxTools
+- Imhof-style "serpentine halo" — extra-wide soft casing on
+  primary/secondary/tertiary/minor inside the bbox at z ≥ 13
+
+Five preset fly-tos (Hoverla, Pip Ivan, Petros, Svydovets, Chornohora)
+ship with sensible pitch + bearing so terrain reads immediately on landing.
+
 ### PMTiles ready
 
 The `pmtiles://` protocol is registered at boot. To swap the live tile
 server for a self-hosted PMTiles archive, change `SOURCE_BACKEND` to
 `'pmtiles'` and set `PMTILES.url` in `src/config.js` — no other code change
-needed. Any OpenMapTiles-schema PMTiles file works (e.g. an extract from
-[Protomaps](https://maps.protomaps.com/builds/) or a self-built tile set).
+needed. The same protocol carries every relief overlay; see
+`tools/README.md` for offline build scripts.
 
 ## Layout
 
 ```
 Cart/
-├── index.html             # HTML shell + vendor imports
+├── index.html             # HTML shell + vendor imports (maplibre-gl,
+│                          # pmtiles, maplibre-contour)
 ├── styles.css             # UI styling (no map styling)
+├── validate.cjs           # style-spec validator (npm run validate)
+├── package.json           # dev-only deps (validator); no runtime bundling
 ├── src/
 │   ├── main.js            # bootstrap
-│   ├── config.js          # view defaults, sources, feature flags
-│   ├── device.js          # capability detection + perf profiles
+│   ├── config.js          # view, sources, TERRAIN, CONTOURS, CARPATHIAN, FEATURES
+│   ├── device.js          # capability detection + tri-tier relief profile
 │   ├── map/
-│   │   ├── createMap.js   # MapLibre factory, PMTiles, style assembly
-│   │   └── interactions.js# zoom curves, keyboard, touch tuning, presets
+│   │   ├── createMap.js   # protocol registration, source/style assembly
+│   │   └── interactions.js# zoom curves, terrain lifecycle, presets
 │   ├── style/             # MODULAR STYLE SYSTEM
-│   │   ├── index.js       # composeLayers()
+│   │   ├── index.js       # composeLayers() — z-ordered layer stack
 │   │   ├── tokens.js      # design tokens (light/dark)
-│   │   ├── base.js        # background, landcover, water
-│   │   ├── roads.js       # multi-tier road network
+│   │   ├── sources.js     # composeSources() — pure source-dict builder
+│   │   ├── base.js        # background, landcover, water (split fill/way)
+│   │   ├── terrain.js     # hillshade × N, texture, hypso, color-relief,
+│   │   │                  #   composeSky / composeTerrain / composeProjection
+│   │   ├── contours.js    # contour line + label specs (static & dynamic)
+│   │   ├── carpathian.js  # ridges, trails, peak/pass/saddle labels, cableway
+│   │   ├── roads.js       # 14-class table; lane-scaling, surface variants,
+│   │   │                  #   subclass splits (cycleway/footway/steps),
+│   │   │                  #   Carpathian double-casing
 │   │   ├── buildings.js   # 2D + 3D extrusion
 │   │   ├── boundaries.js  # admin lines
-│   │   └── labels.js      # density-aware, fade-in, variable-anchor labels
+│   │   └── labels.js      # density-aware, fade-in, shielded labels
 │   ├── ui/
-│   │   ├── controls.js    # nav, layers, theme, quality, presets, sheet
-│   │   └── hud.js         # FPS / zoom / coords readout (touch-aware)
+│   │   ├── controls.js    # nav, theme, quality, layer + relief toggles,
+│   │   │                  #   exaggeration slider, fly-to presets
+│   │   └── hud.js         # FPS / zoom / coords / ELEV readout
 │   ├── perf/monitor.js    # FPS + tile activity
 │   └── utils/interp.js    # zoom interp helpers
-└── README.md
+└── tools/                 # OFFLINE BUILD PIPELINE (optional, see README.md)
+    ├── _lib.sh
+    ├── build-carpathian-dem.sh    # Copernicus GLO-30 → Terrarium PMTiles
+    ├── build-texture-shading.sh   # Leland Brown α=0.8 → raster PMTiles
+    ├── build-hypso.sh             # gdaldem color-relief from tokens.hypsoStops
+    ├── build-contours.sh          # gdal_contour + tippecanoe → PMTiles
+    ├── build-ridges.sh            # WhiteboxTools FindRidges → PMTiles
+    ├── build-carpathian-osm.sh    # Planetiler with custom profile
+    ├── carpathian-profile.yml     # Planetiler schema
+    └── README.md
 ```
 
 ## Controls
@@ -195,17 +261,23 @@ Cart/
 
 ## Validation
 
-The project is verified end-to-end via:
+```bash
+npm install        # one-off: install the style-spec validator
+npm run validate   # walks the full theme × profile × feature matrix
+```
 
-- **Style spec validator** (`@maplibre/maplibre-gl-style-spec`) — all 6
-  theme/profile combinations and 4 feature-toggle variants validate cleanly.
-- **Headless browser tests** (Puppeteer) — 7 device viewports (1920×1080
-  desktop, 1366×768 laptop, 820×1180 tablet portrait, 1180×820 tablet
-  landscape, 393×852 iPhone, 852×393 iPhone landscape, 360×640 small
-  Android) each booting without JS errors / failed requests.
-- **Interaction tests** — sheet toggle, preset fly-to + auto-collapse,
-  dark theme rebuild, quality switch (Eco drops 3 label tiers).
+`validate.cjs` runs every (light/dark) × (high/medium/low) × 12
+feature-toggle pack through `@maplibre/maplibre-gl-style-spec` —
+72 combinations, all expected to pass. The validator covers source
+referential integrity (no layer points at a missing source), expression
+shape (every paint property is a valid expression), and root-block
+correctness (`sky`, `terrain`, `projection`).
 
 ## Attribution
 
-Tiles © [OpenFreeMap](https://openfreemap.org), © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright).
+- Vector tiles © [OpenFreeMap](https://openfreemap.org), © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
+- Terrain (default) © [Mapzen Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (AWS Open Data)
+- Optional Carpathian DEM © [Copernicus GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
+- Texture shading: Leland Brown (CC BY)
+- Ridge extraction: [WhiteboxTools](https://www.whiteboxgeo.com/geospatial-software/)
+- Tile pipeline: [Planetiler](https://github.com/onthegomap/planetiler), [tippecanoe](https://github.com/felt/tippecanoe), [maplibre-contour](https://github.com/onthegomap/maplibre-contour)

@@ -1,0 +1,166 @@
+# Planetiler custom schema for the Carpathian OSM overlay.
+#
+# Reference: https://github.com/onthegomap/planetiler/blob/main/CUSTOMSCHEMA.md
+#
+# This profile emits five source-layers that the renderer's src/style/carpathian.js
+# expects. The layer names and property names must match exactly — keep this
+# file in lockstep with that module.
+#
+# Build with:
+#   bash tools/build-carpathian-osm.sh
+schema_name: Cart Carpathian
+schema_description: |
+  Hiking routes, mountain features, forest roads, ski pistes and cableways
+  for the Ukrainian Carpathians. Built on top of OSM data; redistribution
+  follows the ODbL.
+attribution: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>
+
+# Pull only the OSM tags we actually consume — keeps tile size small.
+tag_mappings:
+  ele: integer
+
+layers:
+
+  # -----------------------------------------------------------------------
+  # hiking_route — every OSM relation tagged route=hiking inside the bbox.
+  # The Carpathian style renders these with a casing + dashed inline.
+  # -----------------------------------------------------------------------
+  - id: hiking_route
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 10
+        include_when:
+          __all__:
+            type: route
+            route: hiking
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: ref
+            tag_value: ref
+          - key: network
+            tag_value: network
+          - key: osmc_symbol
+            tag_value: osmc:symbol
+          - key: colour
+            tag_value: colour
+          - key: distance
+            tag_value: distance
+
+  # -----------------------------------------------------------------------
+  # mountain_feature — natural=peak / saddle / cliff / mountain_pass.
+  # Includes `rank` = -ele so symbol-sort-key naturally favours tall peaks
+  # (lower sort-key wins collisions in MapLibre).
+  # -----------------------------------------------------------------------
+  - id: mountain_feature
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 8
+        include_when:
+          natural: ["peak", "saddle", "cliff", "volcano"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: class
+            tag_value: natural
+          - key: ele
+            tag_value: ele
+          - key: prominence
+            tag_value: prominence
+          - key: rank
+            value: '${-feature.tags.get("ele", 0)}'
+      - source: osm
+        geometry: point
+        min_zoom: 11
+        include_when:
+          mountain_pass: "yes"
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: class
+            value: pass
+          - key: ele
+            tag_value: ele
+          - key: rank
+            value: '${-feature.tags.get("ele", 0)}'
+
+  # -----------------------------------------------------------------------
+  # forest_road — every highway=track inside the bbox with surface/tracktype
+  # info, plus highway=path with sac_scale (Alpine grading).
+  # -----------------------------------------------------------------------
+  - id: forest_road
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 12
+        include_when:
+          __any__:
+            - highway: ["track", "unclassified", "path"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: highway
+            tag_value: highway
+          - key: tracktype
+            tag_value: tracktype
+          - key: surface
+            tag_value: surface
+          - key: sac_scale
+            tag_value: sac_scale
+          - key: trail_visibility
+            tag_value: trail_visibility
+
+  # -----------------------------------------------------------------------
+  # ski_piste — piste:type=downhill | nordic | sled.
+  # -----------------------------------------------------------------------
+  - id: ski_piste
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 12
+        include_when:
+          piste:type: ["downhill", "nordic", "sled"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: piste_type
+            tag_value: piste:type
+          - key: difficulty
+            tag_value: piste:difficulty
+
+  # -----------------------------------------------------------------------
+  # cableway — aerialway=cable_car | gondola | chair_lift | drag_lift | etc.
+  # -----------------------------------------------------------------------
+  - id: cableway
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 12
+        include_when:
+          aerialway: ["cable_car", "gondola", "chair_lift", "drag_lift",
+                      "j-bar", "t-bar", "magic_carpet", "rope_tow"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: type
+            tag_value: aerialway
+
+sources:
+  osm:
+    type: osm
+    # build script supplies --osm_path so this URL is a fallback only.
+    url: geofabrik:ukraine

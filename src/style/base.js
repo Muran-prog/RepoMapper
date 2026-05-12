@@ -220,11 +220,90 @@ function parks(t) {
 }
 
 // ---------------------------------------------------------------------------
-// Water — bodies first, then their outlines, then waterways. Rivers thicken
-// with zoom; canals get a mild dash treatment so they read as engineered
-// channels rather than streams.
+// Water is defined below, split into baseWaterFill (polygons + outlines)
+// and baseWaterways (rivers, canals, streams). The split lets composeLayers
+// sandwich the relief stack between them — see the public-entry section.
 // ---------------------------------------------------------------------------
-function water(t) {
+
+// ---------------------------------------------------------------------------
+// Aeroway — runways and taxiways. Rendered as roads but in a distinct tier.
+// ---------------------------------------------------------------------------
+function aeroway(t) {
+  return [
+    {
+      id: 'aeroway_fill',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'aeroway',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      minzoom: 11,
+      paint: { 'fill-color': t.minor, 'fill-opacity': 0.6 },
+    },
+    {
+      id: 'aeroway_runway',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'aeroway',
+      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'class'], 'runway']],
+      minzoom: 9,
+      paint: {
+        'line-color': t.minor,
+        'line-width': expZoom([
+          [9, 0.5],
+          [12, 4],
+          [16, 14],
+          [20, 36],
+        ]),
+      },
+    },
+    {
+      id: 'aeroway_taxiway',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'aeroway',
+      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'class'], 'taxiway']],
+      minzoom: 11,
+      paint: {
+        'line-color': t.minor,
+        'line-width': expZoom([
+          [11, 0.4],
+          [14, 1.4],
+          [18, 5],
+          [22, 14],
+        ]),
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Public entry — combined in the legacy (pre-terrain) z-order. composeLayers
+// no longer calls this directly because it needs to interleave relief
+// layers between water-fill and waterway; the fine-grained exports below
+// are what it uses. Still exported so any future consumer that just wants
+// "everything below roads" has a single import.
+// ---------------------------------------------------------------------------
+export function baseLayers(t) {
+  return [
+    ...background(t),
+    ...landcover(t),
+    ...landuse(t),
+    ...parks(t),
+    ...baseWaterFill(t),
+    ...baseWaterways(t),
+    ...aeroway(t),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Water split — polygons (fills + outlines) separate from linear
+// waterways, so composeLayers can sandwich terrain/contour/ridge layers
+// between them. Lakes read better below the hillshade (water reflects
+// the sky); rivers read better above (so the hillshade doesn't bleed
+// their blue).
+// ---------------------------------------------------------------------------
+
+function baseWaterFill(t) {
   return [
     {
       id: 'water_fill',
@@ -268,7 +347,11 @@ function water(t) {
         'line-opacity': 0.7,
       },
     },
-    // Major rivers — wide stripe at zoom-out, geometric scaling at zoom-in.
+  ];
+}
+
+function baseWaterways(t) {
+  return [
     {
       id: 'waterway_river',
       type: 'line',
@@ -327,69 +410,11 @@ function water(t) {
   ];
 }
 
-// ---------------------------------------------------------------------------
-// Aeroway — runways and taxiways. Rendered as roads but in a distinct tier.
-// ---------------------------------------------------------------------------
-function aeroway(t) {
-  return [
-    {
-      id: 'aeroway_fill',
-      type: 'fill',
-      source: 'openmaptiles',
-      'source-layer': 'aeroway',
-      filter: ['==', ['geometry-type'], 'Polygon'],
-      minzoom: 11,
-      paint: { 'fill-color': t.minor, 'fill-opacity': 0.6 },
-    },
-    {
-      id: 'aeroway_runway',
-      type: 'line',
-      source: 'openmaptiles',
-      'source-layer': 'aeroway',
-      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'class'], 'runway']],
-      minzoom: 9,
-      paint: {
-        'line-color': t.minor,
-        'line-width': expZoom([
-          [9, 0.5],
-          [12, 4],
-          [16, 14],
-          [20, 36],
-        ]),
-      },
-    },
-    {
-      id: 'aeroway_taxiway',
-      type: 'line',
-      source: 'openmaptiles',
-      'source-layer': 'aeroway',
-      filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'class'], 'taxiway']],
-      minzoom: 11,
-      paint: {
-        'line-color': t.minor,
-        'line-width': expZoom([
-          [11, 0.4],
-          [14, 1.4],
-          [18, 5],
-          [22, 14],
-        ]),
-      },
-    },
-  ];
-}
-
-// ---------------------------------------------------------------------------
-// Public entry — combined in z-order: bg → landcover → landuse → parks →
-// water → aeroway. Roads, buildings and labels are layered on top of this in
-// other modules.
-// ---------------------------------------------------------------------------
-export function baseLayers(t) {
-  return [
-    ...background(t),
-    ...landcover(t),
-    ...landuse(t),
-    ...parks(t),
-    ...water(t),
-    ...aeroway(t),
-  ];
-}
+// Individual-group exports for composeLayers; each is a pure function of
+// tokens. Names mirror the layer groups above.
+export function baseBackground(t) { return background(t); }
+export function baseLandcover(t)  { return landcover(t); }
+export function baseLanduse(t)    { return landuse(t); }
+export function baseParks(t)      { return parks(t); }
+export { baseWaterFill, baseWaterways };
+export function baseAeroway(t)    { return aeroway(t); }

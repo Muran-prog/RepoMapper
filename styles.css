@@ -110,8 +110,18 @@ body {
 #app {
   position: relative;
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  grid-template-rows: 1fr;
+  /* `minmax(0, 1fr)` is critical here, both for rows and the canvas
+     column. CSS Grid tracks default to a `min-content` minimum, which
+     means a grid item with tall content (e.g. the sidebar's stack of
+     theme / quality / layers / relief / fly-to / tips sections) can
+     PUSH its track past the container's `height: 100dvh` — turning the
+     sidebar into a 1200-px-tall column that scrolls *the page* instead
+     of its own internal scroller. With `minmax(0, 1fr)` the row is
+     hard-capped at its 1fr share of `100dvh`, the sidebar is forced to
+     fit, and `.side-scroll`'s `overflow: auto` finally kicks in.
+     Same trick on the canvas column for symmetric safety. */
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   /* `<main>` comes before `<aside>` in DOM order (correct for a11y), so we
      pin them explicitly to grid areas rather than letting auto-placement
      send the sidebar into a phantom second row. */
@@ -162,6 +172,10 @@ body {
   grid-area: side;
   display: flex;
   flex-direction: column;
+  /* Belt-and-braces with #app's `minmax(0, 1fr)` rows. Without this, an
+     ancestor that loses the `minmax` (mobile media query, custom theme)
+     would let .sidebar grow past the viewport and break .side-scroll. */
+  min-height: 0;
   /* Hide the mobile handle on desktop. */
   padding-top: 0;
 }
@@ -314,6 +328,65 @@ body {
   inset: 0;
   background: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 L7 12 L13 4'/%3E%3C/svg%3E")
     no-repeat center / 14px 14px;
+}
+
+/* Exaggeration slider (Relief section) */
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 4px 0;
+}
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--fg-soft);
+  cursor: pointer;
+}
+.slider-label span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.slider-row input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-side-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+}
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-side);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.slider-row input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-side);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+/* Sub-header for the Carpathian peaks group — slightly less prominent. */
+.carpathian-h {
+  margin-top: 8px;
 }
 
 /* Preset buttons */

@@ -142,7 +142,9 @@ export function deriveProfile(caps) {
 
 const PROFILE_DEFAULTS = Object.freeze({
   high: Object.freeze({
-    maxTileCacheSize: 512,
+    // DEM tiles live in the same LRU as vector tiles; bump the cache so
+    // panning across the Carpathians doesn't constantly re-fetch DEMs.
+    maxTileCacheSize: 1024,
     fadeDuration: 220,
     antialias: true,
     refreshExpiredTiles: true,
@@ -157,11 +159,28 @@ const PROFILE_DEFAULTS = Object.freeze({
     enableNeighbourhoods: true,
     enableHamlets: true,
     enableSuburbs: true,
+    // Relief stack — every GPU-heavy toggle is only enabled on this tier.
+    // Every flag here is ANDed with the corresponding FEATURES flag, so
+    // a user who turned a feature off globally stays off regardless.
+    enableTerrain3D: true,
+    enableMultiDirHillshade: true,
+    enableTextureShading: true,
+    enableHypsoTint: true,
+    enableContours: true,
+    enableRidgeOverlay: true,
+    enableCarpathianOverlay: true,
+    enableGlobeProjection: true,
+    /** Multiplier on TERRAIN.exaggerationStops. User slider overrides. */
+    terrainExaggerationMul: 1.0,
+    /** Secondary/tertiary road cartographic shields. */
+    enableRoadShieldsMinor: true,
+    /** Imhof-style double-casing on serpentines inside Carpathian bbox. */
+    roadsCarpathianDoubleCasing: true,
     // Interaction
     flyToSpeed: 1.4,
   }),
   medium: Object.freeze({
-    maxTileCacheSize: 256,
+    maxTileCacheSize: 512,
     fadeDuration: 160,
     antialias: true,
     refreshExpiredTiles: true,
@@ -175,10 +194,25 @@ const PROFILE_DEFAULTS = Object.freeze({
     enableNeighbourhoods: true,
     enableHamlets: true,
     enableSuburbs: true,
+    // Mid-tier: 3D terrain + single-direction hillshade; skip the most
+    // expensive overlays (texture shading, multi-dir, ridges) but keep
+    // contours and the Carpathian vector overlay — they're mostly CPU on
+    // the worker thread.
+    enableTerrain3D: true,
+    enableMultiDirHillshade: false,
+    enableTextureShading: false,
+    enableHypsoTint: true,
+    enableContours: true,
+    enableRidgeOverlay: false,
+    enableCarpathianOverlay: true,
+    enableGlobeProjection: false,
+    terrainExaggerationMul: 0.85,
+    enableRoadShieldsMinor: true,
+    roadsCarpathianDoubleCasing: true,
     flyToSpeed: 1.3,
   }),
   low: Object.freeze({
-    maxTileCacheSize: 128,
+    maxTileCacheSize: 256,
     fadeDuration: 100,
     antialias: false,
     refreshExpiredTiles: false,
@@ -192,16 +226,47 @@ const PROFILE_DEFAULTS = Object.freeze({
     enableNeighbourhoods: false,
     enableHamlets: false,
     enableSuburbs: true,
+    // Low-tier: single hillshade only; no 3D terrain, no texture shading,
+    // no multi-dir, no ridges. The map still gets a subtle relief feel
+    // from that single hillshade but won't try to do real-time contouring.
+    enableTerrain3D: false,
+    enableMultiDirHillshade: false,
+    enableTextureShading: false,
+    enableHypsoTint: false,
+    enableContours: false,
+    enableRidgeOverlay: false,
+    enableCarpathianOverlay: false,
+    enableGlobeProjection: false,
+    terrainExaggerationMul: 0.6,
+    enableRoadShieldsMinor: false,
+    roadsCarpathianDoubleCasing: false,
     flyToSpeed: 1.1,
   }),
 });
 
 /**
  * @param {'high'|'medium'|'low'} profile
+ * @param {DeviceCaps} [caps] Optional caps snapshot. When `caps.prefersReducedMotion`
+ *                            is true we strip the GPU-heaviest relief features so the
+ *                            scene stays static and accessible (per WCAG 2.3.3 Animation
+ *                            from Interactions).
  * @returns {object} A copy of the profile config (mutable by callers).
  */
-export function getProfileConfig(profile) {
-  return { ...PROFILE_DEFAULTS[profile] ?? PROFILE_DEFAULTS.medium };
+export function getProfileConfig(profile, caps) {
+  const base = { ...(PROFILE_DEFAULTS[profile] ?? PROFILE_DEFAULTS.medium) };
+  if (!caps?.prefersReducedMotion) return base;
+  // Reduce-motion overlay: keep a single static hillshade + 2D relief,
+  // but drop the animated/expensive stack. Exaggeration collapses to 0
+  // downstream so terrain stays flat (no zoom-driven elevation ramps).
+  return {
+    ...base,
+    enableMultiDirHillshade: false,
+    enableTextureShading: false,
+    enableTerrain3D: false,
+    enableRidgeOverlay: false,
+    enableGlobeProjection: false,
+    terrainExaggerationMul: 0,
+  };
 }
 
 // ---------------------------------------------------------------------------

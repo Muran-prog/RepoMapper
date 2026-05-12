@@ -1,14 +1,19 @@
 /**
- * Heads-up display: FPS, current zoom, lat/lon under the cursor, and live
- * tile-loading activity.
+ * Heads-up display: FPS, current zoom, lat/lon under the cursor, live
+ * tile-loading activity, and DEM-sampled elevation under the cursor.
  *
  * The HUD is adaptive:
  *
  *   • On hover-capable pointers (desktop, laptop, some tablets with a
- *     mouse), all rows are visible including LAT/LON which track the
- *     cursor.
- *   • On touch-only devices, the LAT/LON rows are hidden because they're
+ *     mouse), all rows are visible including LAT/LON/ELEV which track
+ *     the cursor.
+ *   • On touch-only devices, LAT/LON/ELEV are hidden because they're
  *     meaningless without a hover pointer; only FPS, ZOOM and TILES show.
+ *
+ * The elevation reading uses `map.queryTerrainElevation(lngLat)` — which
+ * returns the elevation at the given coord IF terrain is enabled with a
+ * DEM. When terrain is off the function returns null/undefined, and the
+ * HUD shows an em-dash for the ELEV row instead of an error.
  *
  * The container's CSS positions the HUD top-left on phones (where the
  * bottom-left is occupied by the scale bar and the bottom sheet) and
@@ -17,6 +22,7 @@
 
 const FMT = new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const FMT_Z = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const FMT_ELEV = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 });
 
 export function mountHUD(map, perf, root, { caps } = {}) {
   const showMouseRows = !!caps?.hasHover && !!caps?.hasFinePointer;
@@ -41,6 +47,10 @@ export function mountHUD(map, perf, root, { caps } = {}) {
         <div class="hud-row">
           <span class="hud-label">LON</span>
           <span data-hud="lon" class="hud-value">—</span>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">ELEV</span>
+          <span data-hud="elev" class="hud-value">—</span>
         </div>`
           : ''
       }
@@ -56,6 +66,7 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     zoom: root.querySelector('[data-hud=zoom]'),
     lat: root.querySelector('[data-hud=lat]'),
     lon: root.querySelector('[data-hud=lon]'),
+    elev: root.querySelector('[data-hud=elev]'),
     tiles: root.querySelector('[data-hud=tiles]'),
   };
 
@@ -68,11 +79,52 @@ export function mountHUD(map, perf, root, { caps } = {}) {
 
   let onMouse = null;
   if (showMouseRows) {
+    // Throttle the elevation lookup to ~30 Hz; queryTerrainElevation
+    // walks the DEM source and is non-trivial under heavy mousemove.
+    let pendingElev = null;
+    let lastSample = 0;
+
+    const sampleElev = (lngLat) => {
+      if (!map.queryTerrainElevation) return null;
+      try {
+        return map.queryTerrainElevation(lngLat);
+      } catch {
+        return null;
+      }
+    };
+
     onMouse = (e) => {
       refs.lat.textContent = FMT.format(e.lngLat.lat);
       refs.lon.textContent = FMT.format(e.lngLat.lng);
+      const now = performance.now();
+      if (now - lastSample < 32) {
+        // Coalesce — schedule one more sample after the throttle window.
+        pendingElev = e.lngLat;
+        return;
+      }
+      lastSample = now;
+      pendingElev = null;
+      const elev = sampleElev(e.lngLat);
+      if (elev == null || !Number.isFinite(elev)) {
+        refs.elev.textContent = '—';
+      } else {
+        refs.elev.textContent = `${FMT_ELEV.format(elev)} м`;
+      }
     };
     map.on('mousemove', onMouse);
+
+    // Periodically flush coalesced samples so the readout settles when
+    // the mouse stops moving inside the throttle window.
+    const flush = setInterval(() => {
+      if (!pendingElev) return;
+      onMouse({ lngLat: pendingElev });
+    }, 100);
+
+    return () => {
+      stop();
+      map.off('mousemove', onMouse);
+      clearInterval(flush);
+    };
   }
 
   return () => {

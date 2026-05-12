@@ -31,6 +31,12 @@ build/
 *.mbtiles
 data/
 
+# tools/ working directory (raw DEM / GeoTIFF / mbtiles artefacts produced
+# by the build-*.sh scripts). The final PMTiles output is also git-ignored
+# above; this just keeps the working tree clean.
+tools/.work/
+tools/planetiler.jar
+
 # Environment overrides
 .env
 .env.local

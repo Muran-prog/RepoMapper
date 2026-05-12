@@ -3,25 +3,31 @@
  *
  * Approach
  * --------
- * Roads are described as data: each `class` in OpenMapTiles becomes one
- * entry in {@link ROAD_CLASSES}. From that entry we generate a casing
- * layer and an inline layer per `brunnel` level (ground, tunnel, bridge),
- * giving us full control over:
+ * Roads are described as data: each entry in {@link ROAD_CLASSES} maps to
+ * a `class` (and optionally a `subclass`) discriminator from the
+ * OpenMapTiles transportation source-layer. From that one entry we
+ * generate the right casing / inline / dash / surface / lane / halo
+ * layers for every `brunnel` tier (tunnel, ground, bridge), giving us
+ * fine control over:
  *
- *   • per-class colour and width across the entire zoom range
- *   • per-class minZoom so motorways appear at zoom 4 but residentials
- *     don't pop in until zoom 12
+ *   • per-class colour and zoom-driven width curves
+ *   • per-class minZoom so motorways appear at zoom 4 but cycleways don't
+ *     pop in until zoom 14
  *   • smooth multi-stop exponential width curves
- *   • casing/inline layering for crisp intersections
- *   • dashed treatment of tunnels and tracks/paths
- *   • bridge stacking on top of ground roads
+ *   • casing+inline layering for crisp intersections
+ *   • dashed treatment of tunnels, tracks, paths, stairs, unpaved
+ *   • bridge stacking on top of surface roads
+ *   • cartographic shield helper colours for secondary/tertiary
+ *   • lane-count-scaled widths on motorway / trunk / primary
+ *   • Carpathian serpentine double-casing at deep zoom inside the bbox
  *
- * The whole network thus reads as data, not boilerplate, and tuning the
- * map's "feel" is a matter of editing the config table at the top of the
- * file rather than hunting through dozens of layer specs.
+ * The whole network reads as data, not boilerplate, and tuning the map's
+ * "feel" is a matter of editing the config table at the top of the file
+ * rather than hunting through dozens of layer specs.
  */
 
-import { expZoom, linZoom, stepZoom, casingWidth, inFilter } from '../utils/interp.js';
+import { CARPATHIAN } from '../config.js';
+import { expZoom, stepZoom, casingWidth, inFilter } from '../utils/interp.js';
 
 // ---------------------------------------------------------------------------
 // Road class catalog. Order matters: lower priority first, highest last —
@@ -29,22 +35,93 @@ import { expZoom, linZoom, stepZoom, casingWidth, inFilter } from '../utils/inte
 // residentials at intersections, just like a paper atlas.
 // ---------------------------------------------------------------------------
 
-/** @typedef {Object} RoadClass
- *  @property {string}  id            stable layer prefix
- *  @property {string|string[]} match value(s) for the OMT `class` field
- *  @property {number}  minZoom       layer minzoom
- *  @property {string}  inlineKey     token key for inline colour
- *  @property {string}  casingKey     token key for casing colour
- *  @property {Array<[number, number]>} widths inline widths (zoom→px)
- *  @property {number}  casingExtra   how much wider the casing should be
- *  @property {boolean} [dashed]      render inline with a dash array
+/**
+ * @typedef {object} RoadClass
+ * @property {string}   id                  Stable layer prefix.
+ * @property {string|string[]} match        OMT `class` value(s).
+ * @property {string|string[]} [subclassMatch]
+ *     When present, restricts features to those with `subclass` in the set.
+ *     Used to split "path" into cycleway/footway/steps etc.
+ * @property {string[]} [subclassExclude]
+ *     When present, excludes features with these `subclass` values. Used on
+ *     the bare `path` class to avoid double-rendering cycleway/footway/steps.
+ * @property {number}   minZoom             Layer minzoom.
+ * @property {string}   inlineKey           Token key for inline colour.
+ * @property {string}   casingKey           Token key for casing colour.
+ * @property {Array<[number, number]>} widths   Inline widths (zoom→px).
+ * @property {number}   casingExtra         Extra px applied to casing.
+ * @property {boolean}  [dashed]            Render inline with a dash array.
+ * @property {boolean}  [surfaceAware]      Emit a separate dashed variant for
+ *                                          features with `surface=unpaved`.
+ * @property {boolean}  [laneScale]         Scale width by OMT `lanes` property.
+ * @property {boolean}  [carpathianDoubleCasing]
+ *     Emit an extra soft halo at deep zoom inside CARPATHIAN.bbox —
+ *     Imhof-style "serpentine halo" for mountain roads.
+ * @property {string}   [lineCap='round']
  */
 
+/** @type {RoadClass[]} */
 const ROAD_CLASSES = [
-  // path / pedestrian / track — finest tier, dashed
+  // -------------------------------------------------------------------------
+  // Subclass variants that live inside OMT's catch-all `path` class.
+  // These must precede the bare `path` entry so the exclude list there
+  // doesn't accidentally swallow them.
+  // -------------------------------------------------------------------------
+  {
+    id: 'steps',
+    match: 'path',
+    subclassMatch: 'steps',
+    minZoom: 15,
+    inlineKey: 'stairs',
+    casingKey: 'stairsCasing',
+    widths: [
+      [15, 0.6],
+      [17, 1.4],
+      [20, 3.6],
+      [22, 8],
+    ],
+    casingExtra: 1.0,
+    dashed: true,
+    lineCap: 'butt',
+  },
+  {
+    id: 'footway',
+    match: 'path',
+    subclassMatch: ['footway', 'pedestrian_way'],
+    minZoom: 15,
+    inlineKey: 'footway',
+    casingKey: 'footwayCasing',
+    widths: [
+      [15, 0.4],
+      [17, 1.1],
+      [20, 3.0],
+      [22, 6.5],
+    ],
+    casingExtra: 1.0,
+    dashed: true,
+  },
+  {
+    id: 'cycleway',
+    match: 'path',
+    subclassMatch: 'cycleway',
+    minZoom: 14,
+    inlineKey: 'cycleway',
+    casingKey: 'cyclewayCasing',
+    widths: [
+      [14, 0.4],
+      [16, 1.2],
+      [18, 2.6],
+      [20, 5.5],
+      [22, 10],
+    ],
+    casingExtra: 1.2,
+    dashed: true,
+  },
+  // Bare `path` — anything that's `class=path` and NOT one of the variants above.
   {
     id: 'path',
     match: 'path',
+    subclassExclude: ['steps', 'footway', 'pedestrian_way', 'cycleway'],
     minZoom: 14,
     inlineKey: 'path',
     casingKey: 'pathCasing',
@@ -89,8 +166,13 @@ const ROAD_CLASSES = [
       [22, 20],
     ],
     casingExtra: 1.0,
+    lineCap: 'butt',
   },
-  // service / minor — neighbourhood streets
+
+  // -------------------------------------------------------------------------
+  // Service & neighbourhood streets. Surface-aware so rural unpaved roads
+  // in the Carpathians read correctly without needing a separate `track` tag.
+  // -------------------------------------------------------------------------
   {
     id: 'service',
     match: 'service',
@@ -106,6 +188,23 @@ const ROAD_CLASSES = [
       [22, 20],
     ],
     casingExtra: 1.5,
+    surfaceAware: true,
+  },
+  {
+    id: 'bus_guideway',
+    match: 'bus_guideway',
+    minZoom: 12,
+    inlineKey: 'busGuideway',
+    casingKey: 'busGuidewayCasing',
+    widths: [
+      [12, 0.4],
+      [14, 1.6],
+      [16, 3.6],
+      [18, 7],
+      [20, 14],
+      [22, 26],
+    ],
+    casingExtra: 2.0,
   },
   {
     id: 'minor',
@@ -123,8 +222,15 @@ const ROAD_CLASSES = [
       [22, 28],
     ],
     casingExtra: 2.0,
+    surfaceAware: true,
+    carpathianDoubleCasing: true,
   },
-  // tertiary / secondary / primary / trunk / motorway — major hierarchy
+
+  // -------------------------------------------------------------------------
+  // Hierarchy tier: tertiary → secondary → primary → trunk → motorway.
+  // Lane-count scaling kicks in on the three biggest classes; serpentine
+  // halos on primary/secondary/tertiary inside the Carpathian bbox.
+  // -------------------------------------------------------------------------
   {
     id: 'tertiary',
     match: 'tertiary',
@@ -141,6 +247,8 @@ const ROAD_CLASSES = [
       [22, 34],
     ],
     casingExtra: 2.0,
+    surfaceAware: true,
+    carpathianDoubleCasing: true,
   },
   {
     id: 'secondary',
@@ -159,6 +267,7 @@ const ROAD_CLASSES = [
       [22, 42],
     ],
     casingExtra: 2.4,
+    carpathianDoubleCasing: true,
   },
   {
     id: 'primary',
@@ -178,6 +287,8 @@ const ROAD_CLASSES = [
       [22, 50],
     ],
     casingExtra: 2.4,
+    laneScale: true,
+    carpathianDoubleCasing: true,
   },
   {
     id: 'trunk',
@@ -197,6 +308,7 @@ const ROAD_CLASSES = [
       [22, 58],
     ],
     casingExtra: 2.6,
+    laneScale: true,
   },
   {
     id: 'motorway',
@@ -217,6 +329,7 @@ const ROAD_CLASSES = [
       [22, 64],
     ],
     casingExtra: 3.0,
+    laneScale: true,
   },
 ];
 
@@ -228,72 +341,161 @@ const SOURCE = 'openmaptiles';
 const LAYER = 'transportation';
 
 const roundCaps = { 'line-cap': 'round', 'line-join': 'round' };
-const buttCaps = { 'line-cap': 'butt', 'line-join': 'round' };
+const buttCaps  = { 'line-cap': 'butt',  'line-join': 'round' };
 
-/** Filter that selects features of the given class for the given brunnel. */
-function classFilter(rc, brunnel) {
-  const matchValues = Array.isArray(rc.match) ? rc.match : [rc.match];
-  const baseMatch =
-    matchValues.length === 1
-      ? ['==', ['get', 'class'], matchValues[0]]
-      : inFilter('class', matchValues);
-
-  if (brunnel === 'ground') {
-    return [
-      'all',
-      baseMatch,
-      ['!=', ['get', 'brunnel'], 'tunnel'],
-      ['!=', ['get', 'brunnel'], 'bridge'],
-    ];
-  }
-  return ['all', baseMatch, ['==', ['get', 'brunnel'], brunnel]];
+/** Convert `[w, s, e, n]` → a closed GeoJSON Polygon for `within` filters. */
+function bboxToPolygon([w, s, e, n]) {
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [w, s],
+        [e, s],
+        [e, n],
+        [w, n],
+        [w, s],
+      ],
+    ],
+  };
 }
 
-function casingLayer(rc, brunnel, t) {
-  const id = `road_${brunnel}_${rc.id}_casing`;
-  const baseOpacity =
-    brunnel === 'tunnel' ? 0.55 : 1.0;
+/** Computed once at module load. */
+const CARPATHIAN_BBOX_POLYGON = bboxToPolygon(CARPATHIAN.bbox);
 
+/**
+ * Lane-count factor expression. 2 lanes ≈ 1.0×, 4 ≈ 1.25×, 6 ≈ 1.45×, 8 ≈ 1.6×.
+ * Applied as a top-level multiplication on the zoom-driven width. Legal
+ * under the style spec because the zoom expression stays inside an
+ * `interpolate` — arithmetic only wraps the resulting number.
+ */
+function laneFactorExpr() {
+  return [
+    'interpolate',
+    ['linear'],
+    ['coalesce', ['get', 'lanes'], 2],
+    1, 0.85,
+    2, 1.0,
+    4, 1.25,
+    6, 1.45,
+    8, 1.6,
+  ];
+}
+
+/**
+ * Zoom-driven width, optionally scaled by the OMT `lanes` count. Inline
+ * and casing call through this so the two stay proportional.
+ *
+ * The style spec requires `['zoom']` to appear ONLY as direct input to a
+ * top-level `interpolate` or `step` — meaning we can't wrap the whole
+ * zoom interpolation in arithmetic. Instead we push the lane factor into
+ * each zoom-stop value: zoom stays at the top, the per-stop value is a
+ * pure data expression of `lanes` (no zoom inside).
+ *
+ * @param {Array<[number, number]>} stops Width stops (zoom→px).
+ * @param {number}  [extra=0]             Extra px added to every stop (for casings).
+ * @param {boolean} [laneScale=false]
+ */
+function widthExpr(stops, extra = 0, laneScale = false) {
+  if (!laneScale) {
+    return extra === 0 ? expZoom(stops) : casingWidth(stops, extra);
+  }
+  const factor = laneFactorExpr();
+  const flat = [];
+  for (const [z, w] of stops) {
+    flat.push(z, ['*', w + extra, factor]);
+  }
+  return ['interpolate', ['exponential', 1.4], ['zoom'], ...flat];
+}
+
+/**
+ * Build the feature filter for a class × brunnel × optional surface variant.
+ */
+function classFilter(rc, brunnel, { surface } = {}) {
+  const matchValues = Array.isArray(rc.match) ? rc.match : [rc.match];
+  const parts = ['all'];
+
+  parts.push(
+    matchValues.length === 1
+      ? ['==', ['get', 'class'], matchValues[0]]
+      : inFilter('class', matchValues),
+  );
+
+  if (brunnel === 'ground') {
+    parts.push(['!=', ['get', 'brunnel'], 'tunnel']);
+    parts.push(['!=', ['get', 'brunnel'], 'bridge']);
+  } else {
+    parts.push(['==', ['get', 'brunnel'], brunnel]);
+  }
+
+  if (rc.subclassMatch) {
+    const subs = Array.isArray(rc.subclassMatch) ? rc.subclassMatch : [rc.subclassMatch];
+    parts.push(subs.length === 1
+      ? ['==', ['get', 'subclass'], subs[0]]
+      : inFilter('subclass', subs));
+  }
+  if (Array.isArray(rc.subclassExclude)) {
+    for (const s of rc.subclassExclude) {
+      parts.push(['!=', ['get', 'subclass'], s]);
+    }
+  }
+
+  if (surface === 'paved') {
+    // Treat missing surface as paved — most major roads in OMT don't
+    // expose the property and we don't want them rendering as unpaved.
+    parts.push(['!=', ['get', 'surface'], 'unpaved']);
+  } else if (surface === 'unpaved') {
+    parts.push(['==', ['get', 'surface'], 'unpaved']);
+  }
+
+  return parts;
+}
+
+const layerCaps = (rc) => (rc.lineCap === 'butt' ? buttCaps : roundCaps);
+
+// ---------------------------------------------------------------------------
+// Casings & inlines
+// ---------------------------------------------------------------------------
+
+function casingLayer(rc, brunnel, t, { idSuffix = '', surface, opacityScale = 1 } = {}) {
+  const opacity = (brunnel === 'tunnel' ? 0.55 : 1.0) * opacityScale;
+  const paint = {
+    'line-color': t[rc.casingKey],
+    'line-width': widthExpr(rc.widths, rc.casingExtra, rc.laneScale),
+    'line-opacity': opacity,
+  };
+  if (brunnel === 'tunnel') {
+    paint['line-dasharray'] = stepZoom(
+      ['literal', [3, 2]],
+      [
+        [16, ['literal', [4, 2]]],
+        [20, ['literal', [6, 3]]],
+      ],
+    );
+  }
   return {
-    id,
+    id: `road_${brunnel}_${rc.id}${idSuffix}_casing`,
     type: 'line',
     source: SOURCE,
     'source-layer': LAYER,
     minzoom: rc.minZoom,
-    filter: classFilter(rc, brunnel),
-    layout: rc.id === 'pedestrian' ? buttCaps : roundCaps,
-    paint: {
-      'line-color': t[rc.casingKey],
-      'line-width': casingWidth(rc.widths, rc.casingExtra),
-      'line-opacity': baseOpacity,
-      ...(brunnel === 'tunnel'
-        ? {
-            'line-dasharray': stepZoom(
-              ['literal', [3, 2]],
-              [
-                [16, ['literal', [4, 2]]],
-                [20, ['literal', [6, 3]]],
-              ],
-            ),
-          }
-        : {}),
-    },
+    filter: classFilter(rc, brunnel, { surface }),
+    layout: layerCaps(rc),
+    paint,
   };
 }
 
-function inlineLayer(rc, brunnel, t) {
-  const id = `road_${brunnel}_${rc.id}`;
+function inlineLayer(rc, brunnel, t, { idSuffix = '', surface, forceDashed = false } = {}) {
   const baseOpacity = brunnel === 'tunnel' ? 0.7 : 1.0;
+  const dashed = rc.dashed || forceDashed;
 
   const paint = {
     'line-color': t[rc.inlineKey],
-    'line-width': expZoom(rc.widths),
+    'line-width': widthExpr(rc.widths, 0, rc.laneScale),
     'line-opacity': baseOpacity,
   };
-
-  if (rc.dashed) {
+  if (dashed) {
     // Step-based dashes avoid the swimming-dash artifact that exponential
-    // width interpolation would otherwise produce on dashed lines.
+    // width interpolation produces on dashed lines.
     paint['line-dasharray'] = stepZoom(
       ['literal', [2, 2]],
       [
@@ -302,27 +504,78 @@ function inlineLayer(rc, brunnel, t) {
       ],
     );
   }
-
   return {
-    id,
+    id: `road_${brunnel}_${rc.id}${idSuffix}`,
     type: 'line',
     source: SOURCE,
     'source-layer': LAYER,
     minzoom: rc.minZoom,
-    filter: classFilter(rc, brunnel),
-    layout: rc.id === 'pedestrian' ? buttCaps : roundCaps,
+    filter: classFilter(rc, brunnel, { surface }),
+    layout: layerCaps(rc),
     paint,
   };
 }
 
-/**
- * Generate (casing, inline) pair for every road class at the given brunnel
- * level, ordered low→high priority.
- */
-function brunnelStack(brunnel, t) {
+// ---------------------------------------------------------------------------
+// Carpathian double-casing — an extra-wide, soft, bg-tinted halo BEFORE
+// the regular ground casing, scoped to the bbox via `within` and to
+// deep zooms via minzoom 13. Reads as a quiet rim on serpentines.
+// ---------------------------------------------------------------------------
+
+const CARPATHIAN_DOUBLE_CASING_MINZOOM = 13;
+
+function carpathianHaloLayer(rc, t) {
+  return {
+    id: `road_ground_${rc.id}_carp_halo`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': LAYER,
+    minzoom: CARPATHIAN_DOUBLE_CASING_MINZOOM,
+    filter: [
+      ...classFilter(rc, 'ground'),
+      ['within', CARPATHIAN_BBOX_POLYGON],
+    ],
+    layout: layerCaps(rc),
+    paint: {
+      'line-color': t.bg,
+      'line-width': widthExpr(rc.widths, rc.casingExtra + 3, rc.laneScale),
+      'line-opacity': 0.45,
+      'line-blur': 1.5,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Brunnel-level stack emission. Each road class produces:
+//   (optional Carpathian halo) → casing → inline   [for each surface variant]
+// ---------------------------------------------------------------------------
+
+function brunnelStack(brunnel, t, opts) {
   const out = [];
-  for (const rc of ROAD_CLASSES) out.push(casingLayer(rc, brunnel, t));
-  for (const rc of ROAD_CLASSES) out.push(inlineLayer(rc, brunnel, t));
+
+  // 1) Carpathian halos (ground only, gated by feature flag from caller).
+  if (brunnel === 'ground' && opts.carpathianDoubleCasing) {
+    for (const rc of ROAD_CLASSES) {
+      if (rc.carpathianDoubleCasing) out.push(carpathianHaloLayer(rc, t));
+    }
+  }
+
+  // 2) Casings (one per class, never split by surface — the surface only
+  //    affects the inline's dashing, not the casing).
+  for (const rc of ROAD_CLASSES) {
+    out.push(casingLayer(rc, brunnel, t));
+  }
+
+  // 3) Inlines (surface-aware classes emit paved+unpaved; others a single layer).
+  for (const rc of ROAD_CLASSES) {
+    if (rc.surfaceAware) {
+      out.push(inlineLayer(rc, brunnel, t, { idSuffix: '_paved', surface: 'paved' }));
+      out.push(inlineLayer(rc, brunnel, t, { idSuffix: '_unpaved', surface: 'unpaved', forceDashed: true }));
+    } else {
+      out.push(inlineLayer(rc, brunnel, t));
+    }
+  }
+
   return out;
 }
 
@@ -330,6 +583,7 @@ function brunnelStack(brunnel, t) {
 // Railways — thin, dashed, drawn between ground roads and bridges so they
 // pass under elevated highways.
 // ---------------------------------------------------------------------------
+
 function railways(t) {
   return [
     {
@@ -380,16 +634,32 @@ function railways(t) {
 // Public entry — emits the full transportation stack, ordered for clean
 // intersections:
 //   1. tunnel casings + inlines  (lowest)
-//   2. ground casings + inlines
+//   2. ground casings + inlines (with optional Carpathian halos)
 //   3. railways
 //   4. bridge casings + inlines  (highest)
 // ---------------------------------------------------------------------------
-export function roadLayers(t) {
+
+/**
+ * @typedef {object} RoadOpts
+ * @property {boolean} [shieldsMinor=true]
+ *     Cartographic shields for secondary/tertiary (consumed by labels.js).
+ * @property {boolean} [carpathianDoubleCasing=true]
+ *     Imhof-style extra-wide halo on serpentine roads inside the Carpathian
+ *     bbox at deep zoom. Off-switchable for low-profile users.
+ */
+
+/**
+ * @param {object}   t
+ * @param {RoadOpts} [opts]
+ */
+export function roadLayers(t, opts = {}) {
+  const { carpathianDoubleCasing = true } = opts;
+  const passOpts = { carpathianDoubleCasing };
   return [
-    ...brunnelStack('tunnel', t),
-    ...brunnelStack('ground', t),
+    ...brunnelStack('tunnel', t, { carpathianDoubleCasing: false }),
+    ...brunnelStack('ground', t, passOpts),
     ...railways(t),
-    ...brunnelStack('bridge', t),
+    ...brunnelStack('bridge', t, { carpathianDoubleCasing: false }),
   ];
 }
 

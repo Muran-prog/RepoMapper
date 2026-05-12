@@ -1,17 +1,18 @@
 /**
  * UI controls: navigation, scale, attribution, geolocate, theme switcher,
- * quality picker, layer toggles, city presets, and a mobile bottom-sheet.
+ * quality picker, base-layer toggles, RELIEF toggles + exaggeration slider,
+ * city + Carpathian-peak fly-to presets, and a mobile bottom-sheet.
  *
  * On desktop the sidebar is a permanent left rail. On phones and small
  * tablets it collapses into a bottom-sheet with a drag handle that toggles
  * between a peek state (header + handle visible) and an expanded state
- * (everything visible). Layout is driven by CSS; this module only owns the
- * toggle state, the click handlers, and the style-rebuild plumbing.
+ * (everything visible). Layout is driven by CSS; this module only owns
+ * the toggle state, the click handlers, and the style-rebuild plumbing.
  */
 
 import { applyStyle } from '../map/createMap.js';
-import { flyToPreset } from '../map/interactions.js';
-import { getProfileConfig, deriveProfile } from '../device.js';
+import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
+import { getProfileConfig } from '../device.js';
 import { FEATURES, DEFAULT_THEME } from '../config.js';
 
 // ---------------------------------------------------------------------------
@@ -22,8 +23,6 @@ import { FEATURES, DEFAULT_THEME } from '../config.js';
 function installNativeControls(map, { isTouch }) {
   const ml = window.maplibregl;
 
-  // Navigation: zoom + compass + pitch. The compass disappears at bearing 0
-  // by default on touch, which is fine.
   map.addControl(
     new ml.NavigationControl({
       visualizePitch: true,
@@ -33,8 +32,6 @@ function installNativeControls(map, { isTouch }) {
     'top-right',
   );
 
-  // Geolocate is critical on mobile — the whole point of a phone map is
-  // "where am I". Track and show the heading arrow when available.
   map.addControl(
     new ml.GeolocateControl({
       positionOptions: { enableHighAccuracy: true, timeout: 10_000 },
@@ -55,17 +52,16 @@ function installNativeControls(map, { isTouch }) {
     'bottom-right',
   );
 
-  // Fullscreen is desktop-affordance; on iOS Safari it does nothing useful
-  // when the page is already in the home-screen web-app shell, so we still
-  // expose it but accept that it's a no-op there.
   if (!isTouch) {
     map.addControl(new ml.FullscreenControl({}), 'top-right');
   }
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar contents. The structure is the same across desktop / mobile —
-// only CSS decides whether it's a left rail or a bottom sheet.
+// Sidebar contents.
+//
+// The structure is the same across desktop / mobile — CSS decides whether
+// it's a left rail or a bottom-sheet.
 // ---------------------------------------------------------------------------
 
 function renderSidebar(root) {
@@ -110,6 +106,31 @@ function renderSidebar(root) {
       </section>
 
       <section class="side-section">
+        <h3 class="side-h">Relief</h3>
+        <div class="rows">
+          <label class="row"><input type="checkbox" data-ctl="hillshade"        checked> <span>Hillshade</span></label>
+          <label class="row"><input type="checkbox" data-ctl="terrain3D"        checked> <span>3D terrain</span></label>
+          <label class="row"><input type="checkbox" data-ctl="contours"         checked> <span>Contours</span></label>
+          <label class="row"><input type="checkbox" data-ctl="hypsometricTint"> <span>Hypsometric tint</span></label>
+          <label class="row"><input type="checkbox" data-ctl="textureShading"> <span>Texture shading</span></label>
+          <label class="row"><input type="checkbox" data-ctl="ridgeOverlay"> <span>Ridge overlay</span></label>
+          <label class="row"><input type="checkbox" data-ctl="carpathian"> <span>Carpathian detail</span></label>
+        </div>
+        <div class="slider-row">
+          <label class="slider-label" for="exaggeration">Exaggeration <span data-ctl="exaggeration-readout">1.0×</span></label>
+          <input
+            id="exaggeration"
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.1"
+            value="1"
+            data-ctl="exaggeration"
+          />
+        </div>
+      </section>
+
+      <section class="side-section">
         <h3 class="side-h">Quick fly-to</h3>
         <div class="presets" data-ctl="presets">
           <button data-preset="ukraine"     type="button">Україна</button>
@@ -118,6 +139,14 @@ function renderSidebar(root) {
           <button data-preset="odesa"       type="button">Одеса</button>
           <button data-preset="kharkiv"     type="button">Харків</button>
           <button data-preset="carpathians" type="button">Карпати</button>
+        </div>
+        <p class="side-h carpathian-h">Carpathian peaks</p>
+        <div class="presets" data-ctl="presets">
+          <button data-preset="hoverla"   type="button">Говерла 2061</button>
+          <button data-preset="pip_ivan"  type="button">Піп Іван 2028</button>
+          <button data-preset="petros"    type="button">Петрос 2020</button>
+          <button data-preset="svydovets" type="button">Свидовець</button>
+          <button data-preset="chornohora" type="button">Чорногора</button>
         </div>
       </section>
 
@@ -141,8 +170,7 @@ function renderSidebar(root) {
 }
 
 // ---------------------------------------------------------------------------
-// Sheet (mobile) toggle. The CSS handles the visuals — we only flip the
-// data-state attribute.
+// Sheet (mobile) toggle.
 // ---------------------------------------------------------------------------
 
 function installSheetToggle(sidebar, scrim, caps) {
@@ -153,7 +181,6 @@ function installSheetToggle(sidebar, scrim, caps) {
     if (scrim) scrim.dataset.visible = state === 'expanded' ? '1' : '0';
   };
 
-  // Default state depends on form factor.
   setState(caps?.narrow ? 'peek' : 'expanded');
 
   const toggle = () =>
@@ -162,7 +189,6 @@ function installSheetToggle(sidebar, scrim, caps) {
   handle?.addEventListener('click', toggle);
   scrim?.addEventListener('click', () => setState('peek'));
 
-  // Escape collapses the sheet for keyboard users.
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sidebar.dataset.state === 'expanded' && caps?.narrow) {
       setState('peek');
@@ -178,11 +204,11 @@ function installSheetToggle(sidebar, scrim, caps) {
 
 /**
  * @param {maplibregl.Map} map
- * @param {HTMLElement}    sidebar  The aside element.
- * @param {HTMLElement|null} scrim  Optional backdrop element.
+ * @param {HTMLElement}    sidebar
+ * @param {HTMLElement|null} scrim
  * @param {object} ctx
- * @param {DeviceCaps} ctx.caps    Device capabilities.
- * @param {string} ctx.profile     Auto-derived profile.
+ * @param {DeviceCaps} ctx.caps
+ * @param {string} ctx.profile
  */
 export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   installNativeControls(map, { isTouch: !!caps?.isTouch });
@@ -198,6 +224,13 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       labels: FEATURES.labels,
       pois: FEATURES.pois,
       buildings3D: FEATURES.buildings3D,
+      hillshade: FEATURES.hillshade,
+      terrain3D: FEATURES.terrain3D,
+      contours: FEATURES.contours,
+      hypsometricTint: FEATURES.hypsometricTint,
+      textureShading: FEATURES.textureShading,
+      ridgeOverlay: FEATURES.ridgeOverlay,
+      carpathian: FEATURES.carpathian,
     },
   };
 
@@ -209,7 +242,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     await applyStyle(map, {
       theme: state.theme,
       profile: profileName,
-      profileConfig: getProfileConfig(profileName),
+      profileConfig: getProfileConfig(profileName, caps),
       featureOverrides: state.layerFeatures,
     });
   };
@@ -248,17 +281,47 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   );
 
   // ----- Layer toggles -------------------------------------------------
-  const wireToggle = (selector, key) => {
+  /**
+   * Bind a checkbox to a key in state.layerFeatures. The data-ctl value
+   * is the checkbox attribute; key is the FEATURES dict key. Defaults to
+   * data-ctl name when key isn't passed.
+   */
+  const wireToggle = (selector, key = selector) => {
     const el = sidebar.querySelector(`[data-ctl=${selector}]`);
-    el.checked = state.layerFeatures[key];
+    if (!el) return;
+    el.checked = !!state.layerFeatures[key];
     el.addEventListener('change', async () => {
       state.layerFeatures[key] = el.checked;
       await rebuildStyle();
     });
   };
-  wireToggle('labels', 'labels');
-  wireToggle('pois', 'pois');
+
+  wireToggle('labels');
+  wireToggle('pois');
   wireToggle('b3d', 'buildings3D');
+  wireToggle('hillshade');
+  wireToggle('terrain3D');
+  wireToggle('contours');
+  wireToggle('hypsometricTint');
+  wireToggle('textureShading');
+  wireToggle('ridgeOverlay');
+  wireToggle('carpathian');
+
+  // ----- Exaggeration slider -------------------------------------------
+  // Live-updates the user-side multiplier without rebuilding the style;
+  // setUserExaggeration() pushes the new value to interactions.js which
+  // re-applies setTerrain() immediately.
+  const slider = sidebar.querySelector('[data-ctl=exaggeration]');
+  const readout = sidebar.querySelector('[data-ctl=exaggeration-readout]');
+  if (slider) {
+    const update = () => {
+      const v = Number(slider.value);
+      if (readout) readout.textContent = `${v.toFixed(1)}×`;
+      setUserExaggeration(map, v);
+    };
+    slider.addEventListener('input', update);
+    update();
+  }
 
   // ----- Preset buttons ------------------------------------------------
   const presetButtons = sidebar.querySelectorAll('[data-ctl=presets] [data-preset]');
@@ -267,14 +330,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       flyToPreset(map, b.dataset.preset, {
         reduceMotion: !!caps?.prefersReducedMotion,
       });
-      // On mobile, collapse the sheet so the user sees the map.
       if (caps?.narrow) sidebar.dataset.state = 'peek';
     }),
   );
 
   // ----- Reflect detected profile on the UI ----------------------------
-  // The dataset attribute lets CSS show a quiet badge ("auto · low" on
-  // weak devices) without us having to rerender the sidebar.
   sidebar.dataset.detectedProfile = state.detectedProfile;
   document.documentElement.dataset.theme = state.theme;
 

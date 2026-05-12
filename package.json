@@ -1,0 +1,17 @@
+{
+  "name": "cart",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Cart — interactive vector map of Ukraine. No bundler at runtime; this package.json exists only to pin developer tooling (style-spec validator).",
+  "scripts": {
+    "validate": "node validate.cjs",
+    "serve": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "@maplibre/maplibre-gl-style-spec": "^23.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

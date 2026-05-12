@@ -325,8 +325,16 @@ function roadLabels(t, opts) {
       size: ['interpolate', ['linear'], ['zoom'], 16, 9, 20, 12, 22, 13],
     }),
     // Highway shields — render `ref` (e.g. "M03", "H02", "E40") in a pill.
+    // The pill colour comes from the road's casing colour token, matching
+    // the inline that drew the road below. Two shield tiers:
+    //
+    //   • major: motorway / trunk / primary → motorwayCasing-tinted pill,
+    //     visible from zoom 7.5 (national overview).
+    //   • minor: secondary / tertiary → softer pill per class, visible
+    //     from zoom 9, controlled by the `enableRoadShieldsMinor` flag
+    //     (off on low-profile devices to reduce visual noise).
     {
-      id: 'label_road_shield',
+      id: 'label_road_shield_major',
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'transportation_name',
@@ -350,7 +358,14 @@ function roadLabels(t, opts) {
       },
       paint: {
         'text-color': t.textHalo,
-        'text-halo-color': t.motorwayCasing,
+        'text-halo-color': [
+          'match',
+          ['get', 'class'],
+          'motorway', t.motorwayCasing,
+          'trunk', t.trunkCasing,
+          'primary', t.primaryCasing,
+          t.motorwayCasing,
+        ],
         'text-halo-width': 4,
         'text-halo-blur': 0.0,
         'text-opacity': linZoom([
@@ -359,6 +374,50 @@ function roadLabels(t, opts) {
         ]),
       },
     },
+    ...(opts.enableRoadShieldsMinor
+      ? [
+          {
+            id: 'label_road_shield_minor',
+            type: 'symbol',
+            source: SOURCE,
+            'source-layer': 'transportation_name',
+            minzoom: 9,
+            filter: [
+              'all',
+              ['has', 'ref'],
+              ['<=', ['get', 'ref_length'], 6],
+              ['in', ['get', 'class'], ['literal', ['secondary', 'tertiary']]],
+            ],
+            layout: {
+              'text-field': ['get', 'ref'],
+              'text-font': t.font.bold,
+              'text-size': ['interpolate', ['linear'], ['zoom'], 10, 9, 16, 11, 22, 13],
+              'symbol-placement': 'line',
+              'symbol-spacing': 500,
+              'text-padding': Math.round(5 * textPaddingMul),
+              'text-rotation-alignment': 'viewport',
+              'text-pitch-alignment': 'viewport',
+              'text-letter-spacing': 0.04,
+            },
+            paint: {
+              'text-color': t.textHalo,
+              'text-halo-color': [
+                'match',
+                ['get', 'class'],
+                'secondary', t.secondaryCasing,
+                'tertiary', t.tertiaryCasing,
+                t.tertiaryCasing,
+              ],
+              'text-halo-width': 3.2,
+              'text-halo-blur': 0.0,
+              'text-opacity': linZoom([
+                [9, 0],
+                [9.6, 1],
+              ]),
+            },
+          },
+        ]
+      : []),
   ];
 }
 
@@ -531,6 +590,7 @@ function poiLayers(t, opts) {
  * @property {boolean} [enableNeighbourhoods=true]
  * @property {boolean} [enableHamlets=true]
  * @property {boolean} [enableSuburbs=true]
+ * @property {boolean} [enableRoadShieldsMinor=true]  Shields on secondary/tertiary.
  */
 
 /**
@@ -548,6 +608,7 @@ export function labelLayers(t, opts = {}) {
     enableNeighbourhoods: true,
     enableHamlets: true,
     enableSuburbs: true,
+    enableRoadShieldsMinor: true,
     ...opts,
   };
 

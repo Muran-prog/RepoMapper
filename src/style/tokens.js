@@ -4,7 +4,29 @@
  * to retheme the map you only need to edit this file.
  *
  * The dark and light variants share the same shape so that style modules
- * stay theme-agnostic.
+ * stay theme-agnostic. When adding a new semantic slot, add it to BOTH
+ * variants so style modules can dereference tokens unconditionally.
+ *
+ * Semantic groups:
+ *   font              — glyph fontstacks available on the tile server
+ *   bg / *            — base surfaces, landcover, landuse, parks
+ *   water*            — water polygons and waterway lines
+ *   *Border           — boundary lines
+ *   building*         — 2D + extruded buildings
+ *   motorway..path    — road inline fills
+ *   *Casing           — road casings
+ *   tunnelTint        — desaturated tunnel overlay
+ *   text*             — label colours + halos
+ *   poi*              — point-of-interest markers
+ *   hillshade*        — DEM hillshade colours (multi-directional stack)
+ *   sky*              — sky/atmosphere block colours
+ *   contour*          — topographic contour lines
+ *   hypsoStops        — hypsometric tint elevation→colour ramp (Patterson-ish,
+ *                       tuned for the Ukrainian Carpathians, top = Hoverla)
+ *   ridge*            — Imhof-style ridge enhancement lines
+ *   textPeak/Pass     — mountain feature labels
+ *   cycleway/stairs/footway/busGuideway* — secondary road classes
+ *   carpathianTrail*  — hiking route emphasis (casing + dashed inline)
  */
 
 // OpenFreeMap currently hosts only Regular / Bold / Italic. We keep four
@@ -102,6 +124,69 @@ const LIGHT = {
   // POI
   poiFill: '#5a6e84',
   poiHalo: '#ffffff',
+
+  // ---------------------------------------------------------------------
+  // Relief & atmosphere — Swiss-cartography inspired light-day palette.
+  // Shadow is a warm umber, highlight a soft cream, accent pulls toward
+  // the same umber to unify shaded slopes with the paper background.
+  // ---------------------------------------------------------------------
+  hillshadeShadow: '#4a3220',
+  hillshadeHighlight: '#fff9ec',
+  hillshadeAccent: '#7a5a38',
+
+  // Sky / atmosphere — daylight haze. Horizon is pale warm white, sky is
+  // a gentle blue, fog is high-key to let terrain peek through at pitch.
+  skyTop: '#8bb3d3',
+  skyHorizon: '#f6eed7',
+  skyFog: '#eadfc6',
+
+  // Contour lines — amber/sepia, minor is near-invisible, major reads as
+  // pencil. Labels use the same family with a cream halo.
+  contourMinor: '#b38a54',
+  contourMajor: '#8a6130',
+  contourLabel: '#5f3f16',
+  contourLabelHalo: '#fbf4e3',
+
+  // Hypsometric tint — Patterson cross-blended ramp tuned to Ukraine's
+  // relief: water→lowland green→foothill yellow→highland ochre→alpine
+  // grey→snowy white. Top = Hoverla (2061m). Stops are [elevation_m, rgb].
+  hypsoStops: [
+    [-10, '#a9cfe6'],
+    [0, '#d0dfb8'],
+    [200, '#e9e4a8'],
+    [500, '#d9b880'],
+    [900, '#ad8a55'],
+    [1400, '#8c7554'],
+    [1800, '#b3a69a'],
+    [2100, '#f1ecea'],
+  ],
+
+  // Ridge enhancement — Imhof-style double-stroke: dark bottom offset,
+  // light top offset for a sculpted feel. Lighter of the two must sit on
+  // top of the darker one.
+  ridgeDark: '#3a2a1b',
+  ridgeLight: '#fff4d9',
+
+  // Mountain feature labels.
+  textPeak: '#3a2a1b',
+  textPeakHalo: '#fbf4e3',
+  textPass: '#5f4420',
+  textPassHalo: '#f8edd3',
+
+  // Extra road classes (cycleway / stairs / footway / bus guideway).
+  cycleway: '#ebd7f2',
+  cyclewayCasing: '#8f5aa3',
+  stairs: '#eadac0',
+  stairsCasing: '#a08960',
+  footway: '#f4ebdb',
+  footwayCasing: '#a8946e',
+  busGuideway: '#d9dfe9',
+  busGuidewayCasing: '#5a6f8f',
+
+  // Hiking trail emphasis — casing (light halo), dashed red inline.
+  carpathianTrail: '#cc3b1f',
+  carpathianTrailCasing: '#fff8e8',
+  carpathianTrailDim: '#b65030',
 };
 
 const DARK = {
@@ -175,6 +260,57 @@ const DARK = {
 
   poiFill: '#a5b6c8',
   poiHalo: '#0e131a',
+
+  // ---------------------------------------------------------------------
+  // Relief & atmosphere — inverted twilight palette. Shadow is deep cold
+  // slate; highlight is a dim cream that still keeps ridges legible
+  // against the black background without glaring.
+  // ---------------------------------------------------------------------
+  hillshadeShadow: '#050812',
+  hillshadeHighlight: '#5b6570',
+  hillshadeAccent: '#263145',
+
+  skyTop: '#0a1220',
+  skyHorizon: '#1a2330',
+  skyFog: '#0a0e14',
+
+  contourMinor: '#5a4a34',
+  contourMajor: '#8a6f48',
+  contourLabel: '#d0b67c',
+  contourLabelHalo: '#0e1318',
+
+  // Darker tint ramp — keep the hue sequence but pull all values down.
+  hypsoStops: [
+    [-10, '#0e2a3c'],
+    [0, '#16231a'],
+    [200, '#232b1f'],
+    [500, '#302a1b'],
+    [900, '#3e3224'],
+    [1400, '#46382a'],
+    [1800, '#4f463e'],
+    [2100, '#6f6b66'],
+  ],
+
+  ridgeDark: '#0a0a0a',
+  ridgeLight: '#f0e1b4',
+
+  textPeak: '#f0e6cf',
+  textPeakHalo: '#0e131a',
+  textPass: '#cbb38a',
+  textPassHalo: '#0e131a',
+
+  cycleway: '#34263a',
+  cyclewayCasing: '#a37ab6',
+  stairs: '#332a1f',
+  stairsCasing: '#8a7250',
+  footway: '#2c2820',
+  footwayCasing: '#6f6244',
+  busGuideway: '#222933',
+  busGuidewayCasing: '#8096b6',
+
+  carpathianTrail: '#ff5b3d',
+  carpathianTrailCasing: '#0e1318',
+  carpathianTrailDim: '#c2432a',
 };
 
 export const TOKENS = Object.freeze({ light: LIGHT, dark: DARK });
