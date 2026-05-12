@@ -1,0 +1,845 @@
+/* =====================================================================
+ *  Cart — UI styles.
+ *
+ *  Three-tier responsive layout:
+ *    • desktop  (≥ 960px)         sidebar on the left, fixed 320px
+ *    • tablet   (540–960px)       sidebar overlays the map as a floating panel
+ *    • mobile   (< 540px or narrow)  sidebar becomes a bottom-sheet with a
+ *                                   handle, peek and expanded states
+ *
+ *  All theming is driven by [data-theme] on <html>. Device data attributes
+ *  set by src/main.js ([data-touch], [data-hover], [data-narrow], …) let CSS
+ *  branch without JS noise.
+ *
+ *  Notable techniques:
+ *    – 100dvh / svh viewport units (handles iOS URL-bar collapse)
+ *    – env(safe-area-inset-*) for notch / home-indicator
+ *    – touch-action: none on map, pan-y on sheet
+ *    – hover-only affordances guarded by @media (hover: hover)
+ *    – reduced-motion fallbacks for splash + sheet transitions
+ * ===================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  --bg-page: #f4f1ea;
+  --bg-side: #ffffff;
+  --bg-side-soft: #f7f5ef;
+  --bg-elevated: #ffffff;
+  --fg: #2a2520;
+  --fg-soft: #6b645a;
+  --fg-muted: #95897a;
+  --accent: #d97706;
+  --accent-soft: rgba(217, 119, 6, 0.12);
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-strong: rgba(0, 0, 0, 0.16);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08), 0 24px 64px rgba(0, 0, 0, 0.12);
+  --radius: 10px;
+  --radius-lg: 16px;
+  --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+
+  /* Touch hitbox baseline — overridden on coarse pointers. */
+  --hit: 36px;
+
+  /* Sheet peek height (mobile bottom-sheet collapsed). */
+  --sheet-peek: 88px;
+  --sheet-radius: 18px;
+
+  /* Sidebar width on desktop. */
+  --sidebar-w: 320px;
+}
+
+[data-theme="dark"] {
+  --bg-page: #0e1318;
+  --bg-side: #11161c;
+  --bg-side-soft: #161c23;
+  --bg-elevated: #1a212a;
+  --fg: #e8e5dd;
+  --fg-soft: #a9a59a;
+  --fg-muted: #6c6a64;
+  --accent: #f0a850;
+  --accent-soft: rgba(240, 168, 80, 0.16);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.18);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4), 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+/* Touch baseline: WCAG/Apple HIG recommend 44pt minimum hitbox. */
+[data-pointer="coarse"],
+:where([data-touch="1"]) {
+  --hit: 44px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-page);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Prevent rubber-band overscroll bleeding into the body on iOS */
+  overscroll-behavior: none;
+}
+
+body {
+  /* `dvh` shrinks when the iOS URL bar appears, expands when it collapses,
+     avoiding the legacy 100vh bottom-cropping issue. */
+  height: 100dvh;
+  /* iOS double-tap zoom suppression */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* =====================================================================
+ *  App grid — desktop default, mobile overrides further down.
+ * ===================================================================== */
+
+#app {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: 1fr;
+  /* `<main>` comes before `<aside>` in DOM order (correct for a11y), so we
+     pin them explicitly to grid areas rather than letting auto-placement
+     send the sidebar into a phantom second row. */
+  grid-template-areas: "side canvas";
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+@supports (height: 100svh) {
+  body,
+  #app {
+    height: 100svh; /* small viewport — never grows */
+  }
+}
+
+#canvas {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-page);
+  grid-area: canvas;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  /* MapLibre sets touch-action itself but reaffirm to defeat platform
+     gestures (pull-to-refresh, scroll-up) over the canvas area. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+.map:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* =====================================================================
+ *  Sidebar — desktop variant.
+ * ===================================================================== */
+
+.sidebar {
+  position: relative;
+  background: var(--bg-side);
+  border-right: 1px solid var(--hairline);
+  z-index: 5;
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  /* Hide the mobile handle on desktop. */
+  padding-top: 0;
+}
+
+.sheet-handle {
+  display: none;
+}
+
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* Prevent the scrollbar gutter from rendering on Firefox where it
+     overlaps the content; rely on default thin scrollbars. */
+  scrollbar-gutter: stable;
+}
+
+.side-header {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.side-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.side-title .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex: 0 0 auto;
+}
+.side-sub {
+  margin: 6px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.side-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-h {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+/* Segmented control */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg-side-soft);
+  padding: 3px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+}
+.seg.seg-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 10px;
+  height: var(--hit);
+  font: inherit;
+  color: var(--fg-soft);
+  cursor: pointer;
+  border-radius: calc(var(--radius) - 3px);
+  transition: background 120ms, color 120ms;
+  /* Prevent iOS button highlights */
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .seg button:hover {
+    color: var(--fg);
+  }
+}
+.seg button:active {
+  background: var(--hairline);
+}
+.seg button.on {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+
+/* Toggle rows */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  min-height: var(--hit);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .row:hover {
+    background: var(--bg-side-soft);
+  }
+}
+.row:active {
+  background: var(--hairline);
+}
+.row input[type="checkbox"] {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 5px;
+  border: 1.5px solid var(--hairline-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+  background: var(--bg-side);
+}
+.row input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 L7 12 L13 4'/%3E%3C/svg%3E")
+    no-repeat center / 14px 14px;
+}
+
+/* Preset buttons */
+.presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.presets button {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side-soft);
+  color: var(--fg);
+  padding: 0 10px;
+  min-height: var(--hit);
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .presets button:hover {
+    background: var(--bg-elevated);
+    border-color: var(--hairline-strong);
+    color: var(--accent);
+  }
+}
+.presets button:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Tips — show one variant per pointer type. */
+.tips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg-soft);
+  font-size: 12px;
+}
+.tips kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  background: var(--bg-side-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--fg);
+}
+.tips[data-pointer="fine"] {
+  display: none;
+}
+.tips[data-pointer="coarse"] {
+  display: none;
+}
+[data-pointer="fine"]  .tips[data-pointer="fine"]  { display: flex; }
+[data-pointer="coarse"] .tips[data-pointer="coarse"] { display: flex; }
+
+.side-meta {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* =====================================================================
+ *  Scrim — backdrop behind the mobile sheet when expanded.
+ * ===================================================================== */
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  visibility: hidden;
+  z-index: 4;
+  transition: opacity 220ms ease, visibility 220ms ease;
+  pointer-events: none;
+}
+.scrim[data-visible="1"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* =====================================================================
+ *  HUD
+ * ===================================================================== */
+
+.hud-host {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  left: 14px;
+  bottom: calc(50px + env(safe-area-inset-bottom));
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 14px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  box-shadow: var(--shadow);
+}
+
+.hud-row {
+  display: contents;
+}
+.hud-label {
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+}
+.hud-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.hud-value[data-tier="good"] {
+  color: #2da356;
+}
+.hud-value[data-tier="mid"] {
+  color: #c69214;
+}
+.hud-value[data-tier="low"] {
+  color: #c4402f;
+}
+
+/* =====================================================================
+ *  Splash + fatal-error overlay
+ * ===================================================================== */
+
+.splash {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg-page);
+  z-index: 10;
+  transition: opacity 320ms ease, visibility 320ms ease;
+}
+#app[data-state="ready"] .splash {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  color: var(--fg-soft);
+}
+.splash-loader {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid var(--hairline);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fatal {
+  max-width: 540px;
+  margin: 60px auto;
+  padding: 24px 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+.fatal h1 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: #c4402f;
+}
+.fatal pre {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--bg-side-soft);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow: auto;
+  color: var(--fg);
+}
+.fatal code {
+  font-family: var(--mono);
+  background: var(--bg-side-soft);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* =====================================================================
+ *  MapLibre control restyling — touch-friendly hitboxes, theme-aware
+ *  glass background, safe-area aware positioning.
+ * ===================================================================== */
+
+.maplibregl-ctrl-top-right {
+  /* Avoid overlapping the iOS notch / device cutouts. */
+  margin-top: max(10px, env(safe-area-inset-top));
+  margin-right: max(10px, env(safe-area-inset-right));
+}
+.maplibregl-ctrl-bottom-right {
+  margin-bottom: max(10px, env(safe-area-inset-bottom));
+  margin-right: max(10px, env(safe-area-inset-right));
+}
+.maplibregl-ctrl-bottom-left {
+  margin-bottom: max(10px, env(safe-area-inset-bottom));
+  margin-left: max(10px, env(safe-area-inset-left));
+}
+
+.maplibregl-ctrl-group {
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline) !important;
+  box-shadow: var(--shadow) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+  color: var(--fg) !important;
+  width: var(--hit) !important;
+  height: var(--hit) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--hairline) !important;
+}
+@media (hover: hover) {
+  .maplibregl-ctrl-group button:hover {
+    background: var(--bg-side-soft) !important;
+  }
+}
+.maplibregl-ctrl-group button:active {
+  background: var(--hairline) !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.86);
+}
+
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: 8px !important;
+  padding: 2px 8px !important;
+  color: var(--fg-soft) !important;
+  font-size: 11px !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--accent) !important;
+}
+
+.maplibregl-ctrl-scale {
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent) !important;
+  border: 1px solid var(--hairline) !important;
+  border-top: 0 !important;
+  border-radius: 0 0 6px 6px !important;
+  color: var(--fg) !important;
+  font-family: var(--mono);
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+}
+
+/* Popup styling — for future use. */
+.maplibregl-popup-content {
+  background: var(--bg-elevated) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--hairline) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--bg-elevated) !important;
+}
+
+/* =====================================================================
+ *  TABLET breakpoint — sidebar becomes a floating overlay panel anchored
+ *  to the left, but stays open by default.
+ * ===================================================================== */
+
+@media (max-width: 960px) and (min-width: 540px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-areas: "canvas";
+  }
+  .sidebar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: min(320px, 86vw);
+    border-right: 0;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(0);
+    transition: transform 260ms cubic-bezier(0.32, 0.72, 0.27, 1);
+  }
+  .sidebar[data-state="peek"] {
+    transform: translateX(calc(-100% - 14px));
+  }
+  /* On tablet, show a small floating "show panel" button on the canvas
+     side so the user can pull the panel back when it's hidden. */
+  .sheet-handle {
+    display: flex;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: var(--hit);
+    height: var(--hit);
+    border: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+    z-index: 6;
+    pointer-events: auto;
+  }
+  .sidebar[data-state="expanded"] .sheet-handle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    left: auto;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .sheet-handle-bar {
+    width: 16px;
+    height: 2px;
+    background: var(--fg);
+    border-radius: 2px;
+    position: relative;
+  }
+  .sidebar[data-state="expanded"] .sheet-handle-bar {
+    background: var(--fg-muted);
+  }
+  .sidebar[data-state="expanded"] .sheet-handle-bar::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 2px;
+    background: var(--fg-muted);
+    border-radius: 2px;
+    transform: rotate(45deg);
+    top: -1px;
+    left: 0;
+  }
+  .sidebar[data-state="expanded"] .sheet-handle-bar {
+    transform: rotate(-45deg);
+  }
+}
+
+/* =====================================================================
+ *  MOBILE breakpoint — sidebar becomes a bottom-sheet.
+ * ===================================================================== */
+
+@media (max-width: 540px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-areas: "canvas";
+  }
+
+  .sidebar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* Max height when expanded; peek state is set via transform. */
+    max-height: calc(100% - 64px);
+    height: auto;
+    border-right: 0;
+    border-top: 1px solid var(--hairline);
+    border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
+    box-shadow: var(--shadow-lg);
+
+    /* Animation: peek = mostly off-screen; expanded = at rest. */
+    transition: transform 320ms cubic-bezier(0.32, 0.72, 0.27, 1);
+    will-change: transform;
+    /* In the peek state, leave just the handle + the title-row visible. */
+    transform: translateY(calc(100% - var(--sheet-peek) - env(safe-area-inset-bottom)));
+
+    /* Touch-action on the sheet: vertical scroll, but pinch-zoom blocked. */
+    touch-action: pan-y;
+  }
+
+  .sidebar[data-state="expanded"] {
+    transform: translateY(0);
+  }
+
+  .sheet-handle {
+    display: flex;
+    width: 100%;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    /* Big invisible hitbox extending above the visible bar */
+    padding-top: 4px;
+    flex: 0 0 32px;
+  }
+  .sheet-handle-bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--hairline-strong);
+    transition: background 160ms;
+  }
+  .sheet-handle:active .sheet-handle-bar {
+    background: var(--fg-muted);
+  }
+
+  .side-scroll {
+    padding: 0 18px calc(20px + env(safe-area-inset-bottom));
+    gap: 18px;
+    /* In peek state the scroll container is still rendered; we just
+       overflow it visually thanks to the transform. */
+    overscroll-behavior: contain;
+  }
+
+  /* Compact peek: title is the only thing on display. */
+  .side-header {
+    padding-top: 4px;
+  }
+
+  /* HUD lives at top-left on mobile so the bottom sheet doesn't collide. */
+  .hud-host {
+    left: 12px;
+    bottom: auto;
+    top: max(12px, env(safe-area-inset-top));
+  }
+
+  /* Make sure the native MapLibre controls don't get hidden behind the
+     peek of the sheet — scoot them upward. */
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left {
+    margin-bottom: calc(var(--sheet-peek) + 14px + env(safe-area-inset-bottom));
+  }
+
+  /* On mobile keep the layer rows extra spacious. */
+  .row {
+    gap: 14px;
+  }
+
+  /* When sheet is collapsed, hide the scrim/dim so the map stays bright. */
+  .scrim {
+    background: rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* =====================================================================
+ *  ULTRAWIDE — give the sidebar a little more breathing room and lower
+ *  the HUD/control z-density.
+ * ===================================================================== */
+
+@media (min-width: 1800px) {
+  :root {
+    --sidebar-w: 360px;
+  }
+  .side-scroll {
+    padding: 22px 24px calc(24px + env(safe-area-inset-bottom));
+    gap: 22px;
+  }
+}
+
+/* =====================================================================
+ *  Reduce-motion compliance — collapse all heavy transitions.
+ * ===================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .splash-loader {
+    /* Loader still spins, but at a slow tempo */
+    animation-duration: 1.6s !important;
+  }
+}
+
+/* =====================================================================
+ *  Forced-colours / Windows high-contrast — keep the map visible.
+ * ===================================================================== */
+
+@media (forced-colors: active) {
+  :root {
+    --hairline: CanvasText;
+    --hairline-strong: CanvasText;
+    --shadow: none;
+    --shadow-lg: none;
+  }
+  .maplibregl-ctrl-group {
+    border: 1px solid CanvasText !important;
+  }
+}

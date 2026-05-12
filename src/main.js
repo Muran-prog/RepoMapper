@@ -1,0 +1,110 @@
+/**
+ * Bootstrap.
+ *
+ * Wires device detection, the rendering pipeline (createMap), interaction
+ * tuning, UI controls, the perf monitor, and the HUD. Everything else is
+ * concerned with its own domain — this file only orchestrates the lifecycle.
+ */
+
+import { createMap } from './map/createMap.js';
+import { installInteractionTuning } from './map/interactions.js';
+import { mountControls } from './ui/controls.js';
+import { mountHUD } from './ui/hud.js';
+import { createPerfMonitor } from './perf/monitor.js';
+import { detectCaps, deriveProfile, watchViewport } from './device.js';
+import { FEATURES } from './config.js';
+
+async function boot() {
+  const root = document.getElementById('app');
+  if (!root) throw new Error('#app container missing from DOM');
+
+  // Mark the app as booting so CSS can render the splash overlay.
+  root.dataset.state = 'booting';
+
+  // ----- Device detection ----------------------------------------------
+  const caps = detectCaps();
+  const profile = deriveProfile(caps);
+
+  // Stamp data-attributes on <html> so CSS can use them as selectors.
+  applyDeviceAttributes(caps, profile);
+
+  // ----- DOM refs ------------------------------------------------------
+  const mapEl = document.getElementById('map');
+  const sidebar = document.getElementById('sidebar');
+  const scrim = document.getElementById('scrim');
+  const hudRoot = document.getElementById('hud');
+
+  // ----- Map -----------------------------------------------------------
+  let map;
+  try {
+    map = await createMap(mapEl, { caps, profile });
+  } catch (err) {
+    showFatal(root, err);
+    throw err;
+  }
+
+  installInteractionTuning(map, { caps });
+  mountControls(map, sidebar, scrim, { caps, profile });
+
+  if (FEATURES.hud) {
+    const perf = createPerfMonitor(map);
+    perf.start();
+    mountHUD(map, perf, hudRoot, { caps });
+  }
+
+  // ----- Responsive listeners -----------------------------------------
+  // Reflect orientation / viewport changes on <html> so CSS can react. We
+  // never re-derive the *performance* profile (RAM/CPU don't change), but
+  // we do want the layout media-query data to stay current for JS too.
+  watchViewport((newCaps) => applyDeviceAttributes(newCaps, profile));
+
+  // ----- First-paint signal -------------------------------------------
+  map.once('idle', () => {
+    root.dataset.state = 'ready';
+  });
+
+  // Resize the map after a brief delay to settle iOS Safari URL-bar
+  // collapse, which otherwise leaves a black strip at the bottom.
+  setTimeout(() => map.resize(), 100);
+  window.addEventListener('orientationchange', () =>
+    setTimeout(() => map.resize(), 200),
+  );
+
+  // Expose for ad-hoc console exploration during development.
+  window.__cart = { map, caps, profile };
+}
+
+/**
+ * Stamp device attributes on the document element so CSS can use them as
+ * selectors (`[data-touch=1]`, `[data-narrow=1]`, etc.).
+ */
+function applyDeviceAttributes(caps, profile) {
+  const html = document.documentElement;
+  html.dataset.touch = caps.isTouch ? '1' : '0';
+  html.dataset.hover = caps.hasHover ? '1' : '0';
+  html.dataset.narrow = caps.narrow ? '1' : '0';
+  html.dataset.landscape = caps.landscape ? '1' : '0';
+  html.dataset.reduceMotion = caps.prefersReducedMotion ? '1' : '0';
+  html.dataset.profile = profile;
+  html.dataset.pointer = caps.isCoarse ? 'coarse' : 'fine';
+}
+
+function showFatal(root, err) {
+  root.dataset.state = 'error';
+  const msg = (err && err.message) || String(err);
+  const fatal = document.createElement('div');
+  fatal.className = 'fatal';
+  fatal.innerHTML = `
+    <h1>Map failed to initialise</h1>
+    <pre>${msg}</pre>
+    <p>Check the network: tile/source/glyph requests must reach
+       <code>tiles.openfreemap.org</code>.</p>
+  `;
+  root.appendChild(fatal);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+  boot();
+}

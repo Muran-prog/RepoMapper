@@ -1,0 +1,36 @@
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# Editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local tooling (none used by Cart itself, but reserved for future add-ons)
+node_modules/
+.parcel-cache/
+.cache/
+dist/
+build/
+
+# Local data — e.g. self-hosted PMTiles archives
+*.pmtiles
+*.mbtiles
+data/
+
+# Environment overrides
+.env
+.env.local
