@@ -39,12 +39,12 @@
  * @typedef {[number, string]} HypsoStop
  */
 
-import { linZoom } from '../../utils/interp.js';
 import {
   buildColorReliefExpression,
   buildStrengthExpression,
   DEFAULT_STRENGTH_STOPS,
 } from './expression.js';
+import { HYPSO_HILLSHADE_BLEND } from './curves.js';
 
 /** Stable ids used by the rest of the pipeline. */
 export const HYPSO_NATIVE_LAYER_ID = 'hypso_color_relief';
@@ -53,30 +53,13 @@ export const HYPSO_NATIVE_DEM_SOURCE = 'terrain-dem';
 export const HYPSO_LAYER_META = 'cart:hypso';
 
 /**
- * Per-zoom hillshade-exaggeration multiplier applied WHEN hypso is
- * active.
- *
- * Each stop is the fraction of the hillshade's standalone strength
- * that survives when hypso is at full strength (1.0). At z=3 we keep
- * 55 % because hypso visually dominates the overview anyway; at z=12+
- * we restore hillshade to ~95 % so the city zoom reads as terrain
- * texture under a colour bias, NOT as a flat orange wash.
- *
- * The previous (more aggressive) curve dropped hillshade to 45 % at
- * z=8 and 70 % at z=12. Combined with a full-opacity hypso layer that
- * was the recipe for the "everything melts together" bug — see the
- * screenshots in the repo root.
- *
- * interactions.js + runtime.js read this curve.
- *
- * @type {ReadonlyArray<[number, number]>}
+ * Re-export the canonical hillshade-blend curve under its historical
+ * name. Kept for backwards-compatibility with any external consumer
+ * that imported `HILLSHADE_BLEND` from the hypso barrel before the
+ * move; the authoritative copy lives in `./curves.js` because both
+ * `terrain.js` and this file need it without a circular import.
  */
-export const HILLSHADE_BLEND = Object.freeze([
-  [3, 0.55],
-  [8, 0.7],
-  [12, 0.95],
-  [15, 1.0],
-]);
+export const HILLSHADE_BLEND = HYPSO_HILLSHADE_BLEND;
 
 /**
  * @typedef {object} HypsoLayerOpts
@@ -135,6 +118,18 @@ function nativeColorReliefLayer({ rampId, stops, strength, bathymetry, strengthS
     paint: {
       'color-relief-color': buildColorReliefExpression(stops, { bathymetry }),
       'color-relief-opacity': buildStrengthExpression(strength, { baseStops: strengthStops }),
+      // Zero transition: opacity updates from the runtime (ramp swap,
+      // strength change, theme flip, autoregion pick) must land
+      // instantly. The 220ms style-wide transition drifts opacity
+      // through intermediate values and produces the "ramp swap is
+      // sometimes visible, sometimes not" symptom — pinning the
+      // per-property transition to 0 makes the runtime's
+      // setPaintProperty calls deterministic.
+      //
+      // Note: only opacity is transitionable per the style spec
+      // (`color-relief-color` itself has `transition: false`), so we
+      // only emit the opacity-transition override.
+      'color-relief-opacity-transition': { duration: 0, delay: 0 },
     },
   };
 }
@@ -155,29 +150,40 @@ function rasterHypsoLayer({ rampId, strength, sourceId, strengthStops }) {
     },
     paint: {
       'raster-opacity': buildStrengthExpression(strength, { baseStops: strengthStops }),
+      'raster-opacity-transition': { duration: 0, delay: 0 },
       'raster-resampling': 'linear',
     },
   };
 }
 
 /**
- * Standalone hillshade-opacity expression for when hypso is active.
- * interactions.js uses this to fade the hillshade layer's exaggeration
- * with a single setPaintProperty call.
+ * Hillshade-exaggeration helper for callers that want the blended
+ * curve emitted directly. Thin wrapper around
+ * `terrain.js::buildHillshadeExaggerationExpr` — kept under its
+ * historical signature so external consumers continue to compile.
  *
- * @param {number} strength 0..1.5 — current hypso strength.
- * @param {number} hillshadeBaseMul Per-direction baseline multiplier on
- *   the hillshade layer (see HILLSHADE_BASE_MUL_META in terrain.js).
- * @returns {Array} MapLibre interpolate expression.
+ * IMPORTANT: this used to live here and held a now-fixed bug where it
+ * emitted the blend factor as an ABSOLUTE exaggeration instead of a
+ * multiplier on the base curve. New code should call the terrain
+ * helper directly so user-mul, reduce-motion, and the per-direction
+ * baseMul stay coherent.
+ *
+ * The import is dynamic to dodge the circular dep with `terrain.js`
+ * (which imports `composeHypsoLayers` from this file). The function
+ * is only ever called at runtime, never at module-init, so the cycle
+ * never bites.
+ *
+ * @param {number} strength 0..1.5
+ * @param {number} hillshadeBaseMul
+ * @returns {Promise<Array>|Array} MapLibre interpolate expression.
  */
-export function buildBlendedHillshadeExaggeration(strength, hillshadeBaseMul) {
-  // When strength is low (hypso barely visible) the blend should leave
-  // hillshade alone — multiply HILLSHADE_BLEND's reduction by
-  // (1 - strength) and add it back to 1.
-  const s = Math.max(0, Math.min(1.5, Number(strength) || 0));
-  const stops = HILLSHADE_BLEND.map(([z, reduction]) => {
-    const factor = 1 - (1 - reduction) * Math.min(s, 1);
-    return [z, Number((factor * hillshadeBaseMul).toFixed(4))];
+export async function buildBlendedHillshadeExaggeration(strength, hillshadeBaseMul) {
+  const { buildHillshadeExaggerationExpr } = await import('../terrain.js');
+  return buildHillshadeExaggerationExpr({
+    baseMul: hillshadeBaseMul,
+    userMul: 1,
+    hypsoStrength: strength,
+    hypsoActive: strength > 0,
+    reduceMotion: false,
   });
-  return linZoom(stops);
 }

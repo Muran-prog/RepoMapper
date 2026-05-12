@@ -28,6 +28,7 @@
 
 import { CARPATHIAN, HYPSO } from '../../config.js';
 import { applyHypsoRamp } from '../../style/hypso/index.js';
+import { hasPersistedRampPref, savePrefs } from './store.js';
 
 /** [west, south, east, north] of the Ukrainian Black Sea + Azov shelf. */
 const SEA_BBOX = [29.0, 41.0, 41.5, 47.5];
@@ -63,7 +64,14 @@ const SAMPLE_GRID = 5;
 export function installAutoRegion(opts) {
   const { map, autoPick = true, stats = true, onStats } = opts;
 
-  let userOverrode = false;
+  // If the user has a persisted ramp preference in localStorage they
+  // have already made a choice — auto-pick must NEVER override it.
+  // The previous behaviour fired on the first `idle` after boot and
+  // silently swapped their saved ramp for a region-matched one, while
+  // the picker UI continued to show the saved choice as selected.
+  // Result: persistent UI ↔ map state desync — exactly the
+  // "сменa ramp/strength иногда видна, иногда нет" symptom.
+  let userOverrode = autoPick && hasPersistedRampPref();
   /** Track the last applied region so we don't thrash setPaintProperty. */
   let lastRegion = null;
 
@@ -96,7 +104,14 @@ export function installAutoRegion(opts) {
       lastRegion = region;
       const rampId = HYPSO.regionRamp[region] ?? HYPSO.regionRamp.global;
       applyHypsoRamp(map, rampId);
-      // Tag this dispatch so onHypso doesn't lock us out.
+      // Persist the auto-picked ramp so subsequent reloads see it as
+      // the user's "current choice" and `hasPersistedRampPref` short-
+      // circuits auto-pick on those reloads. Without this the user
+      // gets a different ramp every hard-refresh as auto-pick keeps
+      // re-firing — exactly the "ramp leaks at hard-refresh" symptom.
+      savePrefs({ rampId });
+      userOverrode = true;
+      // Tag this dispatch so onHypso doesn't lock us out a second time.
       window.dispatchEvent(new CustomEvent('cart:hypso', { detail: { _autopick: true, rampId } }));
     }
   };

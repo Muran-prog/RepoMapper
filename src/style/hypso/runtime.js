@@ -42,16 +42,17 @@ import {
   HYPSO_NATIVE_LAYER_ID,
   HYPSO_NATIVE_DEM_SOURCE,
   HYPSO_RASTER_LAYER_PREFIX,
-  buildBlendedHillshadeExaggeration,
 } from './layers.js';
 import {
   buildColorReliefExpression,
   buildStrengthExpression,
+  evaluateStrengthAtZoom,
   DEFAULT_STRENGTH_STOPS,
 } from './expression.js';
 import {
   HILLSHADE_BASE_MUL_META,
-  hillshadeExaggeration,
+  buildHillshadeExaggerationExpr,
+  evaluateHillshadeExaggeration,
 } from '../terrain.js';
 import { getRamp, getRampStops, DEFAULT_RAMP_ID } from './ramps.js';
 import { contrastBoostStops } from './color.js';
@@ -229,8 +230,20 @@ function swapRasterRamp(map, oldLayer, rampId) {
 
 /**
  * Update the strength (opacity curve scaler) of the active hypso
- * layer. Also rebalances the hillshade exaggeration so the relief
- * stack stays readable when both layers are on.
+ * layer.
+ *
+ * Two writes happen here in this order:
+ *   1. The zoom-driven expression goes on the layer so MapLibre has a
+ *      curve to fall back to even if the runtime's zoom-handler is
+ *      disabled (tests, headless).
+ *   2. The opacity-at-current-zoom cache is invalidated so the very
+ *      next `move` event re-pushes the constant. That guarantees the
+ *      visible opacity matches `evaluateStrengthAtZoom(zoom, s)` even
+ *      if MapLibre's evaluation of the zoom expression on
+ *      `color-relief-opacity` ever drifts from the spec.
+ *
+ * Then we rebalance hillshade so the smart blend tracks the new
+ * strength.
  *
  * @param {maplibregl.Map} map
  * @param {number} strength 0..1.5
@@ -243,6 +256,9 @@ export function applyHypsoStrength(map, strength, opts = {}) {
   const state = getState(map);
   const clamped = Math.max(0, Math.min(1.5, Number(strength) || 0));
   state.strength = clamped;
+  // Invalidate the per-zoom opacity memo so the next move/zoom event
+  // sees the new strength even at the same zoom level.
+  state._lastOpacity = {};
 
   const layer = findActiveHypsoLayer(map);
   if (layer) {
@@ -253,6 +269,11 @@ export function applyHypsoStrength(map, strength, opts = {}) {
     } catch {
       /* swallow — UI will retry on next styledata */
     }
+    // Immediately push the current-zoom constant so the change is
+    // visible without waiting for the next move event. Safe even if
+    // the expression above hasn't taken effect yet — the latest
+    // setPaintProperty call wins.
+    applyHypsoStrengthAtZoom(map);
   }
 
   if (smartBlend) {
@@ -263,27 +284,93 @@ export function applyHypsoStrength(map, strength, opts = {}) {
 }
 
 /**
- * Repaint each hillshade layer's exaggeration in light of the active
- * hypso strength. When strength is 0 hillshade is left alone.
+ * Repaint every hillshade layer's exaggeration with the unified
+ * formula `base(z) × baseMul × userMul × hypsoBlend(z, s)`. This is
+ * the SINGLE write path for `hillshade-exaggeration` post-boot — see
+ * the docblock in `interactions.js::installHillshadeLifecycle` for
+ * the full ordering invariant.
+ *
+ * Idempotent: we record the last-applied [strength, userMul] tuple
+ * per layer on `_cart.hypso._lastHillshade` and skip setPaintProperty
+ * when nothing changed. That prevents a `styledata` storm during
+ * style swaps from rebuilding the curve dozens of times per frame —
+ * each rebuild was triggering a transition (now zero-duration, but
+ * still wasteful).
+ *
+ * @param {maplibregl.Map} map
+ * @param {number} strength  Effective hypso strength (0..1.5).
  */
-function rebalanceHillshadeForHypso(map, strength) {
+export function rebalanceHillshadeForHypso(map, strength) {
   if (typeof map.getStyle !== 'function') return;
   const style = map.getStyle();
   if (!style?.layers) return;
-  const reduceMotion = !!map._cart?.caps?.prefersReducedMotion;
-  const userMul = map._cart?.userExaggerationMul ?? 1;
+  const cart = map._cart ?? {};
+  const reduceMotion = !!cart.caps?.prefersReducedMotion;
+  const userMul = typeof cart.userExaggerationMul === 'number' ? cart.userExaggerationMul : 1;
+  const hypsoActive = (cart.hypso?.mode ?? 'off') !== 'off' && strength > 0;
+  const sig = `${strength.toFixed(3)}|${userMul.toFixed(3)}|${hypsoActive ? 1 : 0}|${reduceMotion ? 1 : 0}`;
+  const memo = (cart.hypso && (cart.hypso._lastHillshade ??= {})) || {};
   for (const layer of style.layers) {
     if (layer.type !== 'hillshade') continue;
+    if (memo[layer.id] === sig) continue;
     const baseMul = layer.metadata?.[HILLSHADE_BASE_MUL_META] ?? 1;
-    const effMul = baseMul * userMul;
-    const expr = strength > 0
-      ? buildBlendedHillshadeExaggeration(strength, effMul)
-      : hillshadeExaggeration(effMul, reduceMotion);
+    const expr = buildHillshadeExaggerationExpr({
+      baseMul,
+      userMul,
+      hypsoStrength: strength,
+      hypsoActive,
+      reduceMotion,
+    });
     try {
       map.setPaintProperty(layer.id, 'hillshade-exaggeration', expr);
+      memo[layer.id] = sig;
     } catch {
       /* layer not attached — next styledata will pick it up */
     }
+  }
+}
+
+/**
+ * Push a CONSTANT `color-relief-opacity` (or `raster-opacity`) to the
+ * active hypso layer based on the current zoom + strength. This is the
+ * runtime's defensive fallback: even if MapLibre's evaluation of a
+ * zoom-driven opacity expression on `color-relief-opacity` is ever
+ * broken (some early `color-relief` builds carried such regressions),
+ * we re-push a plain number on every `move` event so the visual stays
+ * pinned to `evaluateStrengthAtZoom(zoom, strength)`.
+ *
+ * Idempotent: we cache the last-pushed value per zoom-quantum on the
+ * map state and skip `setPaintProperty` when the same number lands.
+ * That bounds the cost at a few hundred no-ops per second during a
+ * vigorous pinch-zoom rather than a fresh transition each frame.
+ *
+ * @param {maplibregl.Map} map
+ * @returns {boolean} true when an update was actually pushed.
+ */
+export function applyHypsoStrengthAtZoom(map) {
+  const state = getState(map);
+  const layer = findActiveHypsoLayer(map);
+  if (!layer) return false;
+  const zoom = typeof map.getZoom === 'function' ? map.getZoom() : 0;
+  const value = evaluateStrengthAtZoom({
+    zoom,
+    strength: state.strength,
+    baseStops: state.strengthStops ?? DEFAULT_STRENGTH_STOPS,
+  });
+  // Quantize to 4 decimals so micro-jitter from continuous zoom doesn't
+  // spam setPaintProperty. The shader's u_opacity is a float; sub-1e-4
+  // changes are imperceptible.
+  const quantized = Math.round(value * 10000) / 10000;
+  const memoKey = `${layer.id}:${state.strength}`;
+  state._lastOpacity ??= {};
+  if (state._lastOpacity[memoKey] === quantized) return false;
+  state._lastOpacity[memoKey] = quantized;
+  const paintProp = layer.type === 'color-relief' ? 'color-relief-opacity' : 'raster-opacity';
+  try {
+    map.setPaintProperty(layer.id, paintProp, quantized);
+    return true;
+  } catch {
+    return false;
   }
 }
 

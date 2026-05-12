@@ -204,4 +204,5 @@ export {
   upsertCustomRamp,
   deleteCustomRamp,
   validateCustomRamp,
+  hasPersistedRampPref,
 } from './store.js';

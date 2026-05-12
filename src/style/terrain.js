@@ -59,13 +59,17 @@ const SOURCE_CARPATHIAN = 'terrain-dem-carpathian';
 /** Default per-zoom exaggeration stops. Pre-multiplied into the stops by
  *  the caller — the MapLibre style spec forbids wrapping a zoom expression
  *  in arithmetic, so we scale values in JS before building the `interpolate`.
+ *
+ *  Exported so the unified helper below + the test harness can reason
+ *  about the base curve without re-declaring it.
  */
-const HILLSHADE_STOPS = [
-  [5, 0.1],
-  [7, 0.3],
-  [10, 0.45],
-  [14, 0.55],
-];
+export const HILLSHADE_STOPS = Object.freeze([
+  [5, 0.30],
+  [7, 0.42],
+  [10, 0.55],
+  [14, 0.65],
+  [18, 0.65],
+]);
 
 /**
  * Layer-metadata key that records each hillshade layer's per-direction
@@ -78,17 +82,138 @@ const HILLSHADE_STOPS = [
  */
 export const HILLSHADE_BASE_MUL_META = 'cart:hillshadeBaseMul';
 
+// The hypso↔hillshade blend curve + the linear-interp helper live in
+// `hypso/curves.js` because they're shared with `hypso/layers.js`. We
+// re-export them here under their existing names so callers that
+// imported them from `terrain.js` continue to work without churn.
+import { HYPSO_HILLSHADE_BLEND, evalLinearStops } from './hypso/curves.js';
+export { HYPSO_HILLSHADE_BLEND, evalLinearStops };
+
 /**
- * Build a `hillshade-exaggeration` expression. Reduce-motion collapses to
- * a flat number; otherwise we return a linear zoom interp with values
- * pre-scaled by `mul`.
+ * Pure scalar evaluator for the FINAL hillshade-exaggeration at a
+ * specific zoom, taking every contributor into account in one place:
  *
- * Exported so interactions.js can rebuild the expression at runtime when
- * the slider changes the user-facing multiplier.
+ *   final = base(zoom) × baseMul × userMul × hypsoBlend(zoom, strength)
+ *
+ *   where:
+ *     base(zoom)        — HILLSHADE_STOPS interpolated at zoom
+ *     baseMul           — per-direction multiplier (1.0/0.65/0.4/1.1)
+ *     userMul           — exaggeration slider (0.5..2)
+ *     hypsoBlend(z, s)  — 1 - s × (1 - HYPSO_HILLSHADE_BLEND(z))
+ *                         (s clamped to [0,1] for the blend; strength
+ *                         above 1.0 doesn't deepen the reduction)
+ *
+ * The result is clamped to [0, 1] because the MapLibre style spec
+ * limits `hillshade-exaggeration` to that range.
+ *
+ * @param {object} opts
+ * @param {number} opts.zoom
+ * @param {number} [opts.baseMul=1]
+ * @param {number} [opts.userMul=1]
+ * @param {number} [opts.hypsoStrength=0]  0 = no blend (hypso off / s=0)
+ * @param {boolean} [opts.hypsoActive=false] If false, blend is bypassed.
+ * @param {boolean} [opts.reduceMotion=false]
+ * @returns {number}
+ */
+export function evaluateHillshadeExaggeration({
+  zoom,
+  baseMul = 1,
+  userMul = 1,
+  hypsoStrength = 0,
+  hypsoActive = false,
+  reduceMotion = false,
+}) {
+  const base = reduceMotion ? 0.4 : evalLinearStops(HILLSHADE_STOPS, zoom);
+  let blend = 1;
+  if (hypsoActive && hypsoStrength > 0) {
+    const s = Math.max(0, Math.min(1, Number(hypsoStrength) || 0));
+    const factor = evalLinearStops(HYPSO_HILLSHADE_BLEND, zoom);
+    blend = 1 - s * (1 - factor);
+  }
+  const raw = base * baseMul * (Number(userMul) || 0) * blend;
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.min(1, raw));
+}
+
+/**
+ * Build a `hillshade-exaggeration` expression that bakes in every
+ * contributor. Returns a zoom interpolation when reduce-motion is off
+ * (and constants otherwise) so MapLibre can re-evaluate per frame
+ * without an extra JS hop. The same factors are also exposed via the
+ * scalar `evaluateHillshadeExaggeration` for test / fallback paths.
+ *
+ * @param {object} opts  — same shape as evaluateHillshadeExaggeration,
+ *                         except `zoom` is omitted.
+ * @returns {Array|number}
+ */
+export function buildHillshadeExaggerationExpr(opts = {}) {
+  const {
+    baseMul = 1,
+    userMul = 1,
+    hypsoStrength = 0,
+    hypsoActive = false,
+    reduceMotion = false,
+  } = opts;
+  if (reduceMotion) {
+    return evaluateHillshadeExaggeration({
+      zoom: 0,
+      baseMul,
+      userMul,
+      hypsoStrength,
+      hypsoActive,
+      reduceMotion: true,
+    });
+  }
+  // Sample the analytic curve at every integer zoom from the lowest
+  // contributing stop to the highest. We sample densely (not just at
+  // the original `[zoom, value]` knots) because the spec clamps
+  // `hillshade-exaggeration` to [0, 1], and MapLibre interpolates the
+  // expression's stops linearly — without intermediate samples the
+  // interpolation between a clamped stop (e.g. 1.0) and an unclamped
+  // neighbour drifts noticeably from the analytic curve.
+  //
+  // Sampling at every integer zoom keeps the worst-case interpolation
+  // error well below 1 % of the curve's range, which the test harness
+  // verifies.
+  const allZooms = [
+    ...HILLSHADE_STOPS.map((s) => s[0]),
+    ...HYPSO_HILLSHADE_BLEND.map((s) => s[0]),
+  ];
+  const lo = Math.floor(Math.min(...allZooms));
+  const hi = Math.ceil(Math.max(...allZooms));
+  const stops = [];
+  for (let z = lo; z <= hi; z++) {
+    stops.push([
+      z,
+      Number(evaluateHillshadeExaggeration({
+        zoom: z,
+        baseMul,
+        userMul,
+        hypsoStrength,
+        hypsoActive,
+        reduceMotion: false,
+      }).toFixed(4)),
+    ]);
+  }
+  return linZoom(stops);
+}
+
+/**
+ * Backwards-compatible thin wrapper around the new helper. Kept under
+ * its old name so any external consumer (or a stale validator import)
+ * doesn't break. New code should call `buildHillshadeExaggerationExpr`
+ * directly so hypso state is propagated.
+ *
+ * @param {number} mul   Combined baseMul × userMul.
+ * @param {boolean} reduceMotion
  */
 export function hillshadeExaggeration(mul, reduceMotion) {
-  if (reduceMotion) return 0.4 * mul;
-  return linZoom(HILLSHADE_STOPS.map(([z, v]) => [z, v * mul]));
+  return buildHillshadeExaggerationExpr({
+    baseMul: 1,
+    userMul: mul,
+    hypsoActive: false,
+    reduceMotion,
+  });
 }
 
 /**
@@ -111,7 +236,21 @@ function oneHillshade(t, { id, source, direction, exaggerationMul, method, reduc
       'hillshade-illumination-direction': direction,
       'hillshade-illumination-anchor': 'viewport',
       'hillshade-method': method ?? 'standard',
-      'hillshade-exaggeration': hillshadeExaggeration(mul, reduceMotion),
+      // Initial value is the base curve with the per-direction mul; the
+      // hypso lifecycle in `interactions.js` overwrites this with the
+      // unified expression (base × userMul × hypso blend) on every
+      // styledata so the live result tracks state correctly. The
+      // transition is collapsed to 0 so subsequent setPaintProperty
+      // updates don't drift through 220ms easing — that was the source
+      // of the "hillshade flickers" symptom when the user dragged the
+      // exaggeration slider or toggled hypso.
+      'hillshade-exaggeration': buildHillshadeExaggerationExpr({
+        baseMul: mul,
+        userMul: 1,
+        hypsoActive: false,
+        reduceMotion,
+      }),
+      'hillshade-exaggeration-transition': { duration: 0, delay: 0 },
     },
   };
   if (typeof minzoom === 'number') layer.minzoom = minzoom;

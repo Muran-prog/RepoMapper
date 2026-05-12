@@ -423,7 +423,109 @@ async function main() {
   }
   console.log(`Total ramps: ${Object.keys(RAMPS).length}   Failed: ${rampFails}`);
 
-  process.exit(failed + rampFails > 0 ? 1 : 0);
+  // ---------------------------------------------------------------------
+  // Layer-level invariants — assert that the relief stack carries the
+  // exact paint properties the renderer relies on. The style-spec
+  // validator only checks that EACH property is well-formed; these
+  // invariants check the relationships BETWEEN properties (e.g. zero
+  // transition on opacity, single owner of hillshade-exaggeration).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Layer invariants:');
+  let invariantFails = 0;
+  const invariantStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, hypsometricTint: true, colorRelief: true, hillshade: true },
+    hypso: { mode: 'native', rampId: HYPSO.defaultRampId, strength: 1, bathymetry: true },
+  });
+  for (const layer of invariantStyle.layers) {
+    // 1. Native hypso layer carries a zero-duration opacity transition.
+    if (layer.type === 'color-relief') {
+      const tr = layer.paint?.['color-relief-opacity-transition'];
+      if (!tr || tr.duration !== 0) {
+        invariantFails++;
+        console.log(`  FAIL ${layer.id}: missing or non-zero color-relief-opacity-transition`);
+      } else {
+        console.log(`  OK   ${layer.id}: color-relief-opacity-transition.duration === 0`);
+      }
+      // The color-relief-color expression must use ['elevation'] (the
+      // sentinel introduced for `color-relief` layers). Anything else
+      // means the ramp won't read DEM data.
+      const colorExpr = layer.paint?.['color-relief-color'];
+      if (!Array.isArray(colorExpr)) {
+        invariantFails++;
+        console.log(`  FAIL ${layer.id}: color-relief-color is not an expression`);
+      } else {
+        const usesElevation = JSON.stringify(colorExpr).includes('"elevation"');
+        if (!usesElevation) {
+          invariantFails++;
+          console.log(`  FAIL ${layer.id}: color-relief-color does not use ["elevation"]`);
+        } else {
+          console.log(`  OK   ${layer.id}: color-relief-color uses ["elevation"]`);
+        }
+      }
+      // The opacity expression must be a zoom interpolation.
+      const opaExpr = layer.paint?.['color-relief-opacity'];
+      if (!Array.isArray(opaExpr) || opaExpr[0] !== 'interpolate') {
+        invariantFails++;
+        console.log(`  FAIL ${layer.id}: color-relief-opacity is not an interpolate expression`);
+      } else {
+        console.log(`  OK   ${layer.id}: color-relief-opacity is a zoom interpolation`);
+      }
+    }
+    // 2. Every hillshade layer carries a zero-duration exaggeration
+    //    transition and the cart:hillshadeBaseMul metadata that the
+    //    runtime needs for the smart-blend formula.
+    if (layer.type === 'hillshade') {
+      const tr = layer.paint?.['hillshade-exaggeration-transition'];
+      if (!tr || tr.duration !== 0) {
+        invariantFails++;
+        console.log(`  FAIL ${layer.id}: missing or non-zero hillshade-exaggeration-transition`);
+      } else {
+        console.log(`  OK   ${layer.id}: hillshade-exaggeration-transition.duration === 0`);
+      }
+      if (typeof layer.metadata?.['cart:hillshadeBaseMul'] !== 'number') {
+        invariantFails++;
+        console.log(`  FAIL ${layer.id}: missing cart:hillshadeBaseMul metadata`);
+      } else {
+        console.log(`  OK   ${layer.id}: cart:hillshadeBaseMul = ${layer.metadata['cart:hillshadeBaseMul']}`);
+      }
+    }
+  }
+
+  // 3. Layer ordering invariant: hypso must come BEFORE water_fill so
+  //    the land-only mask works (water polygons paint over hypso).
+  const ids = invariantStyle.layers.map((l) => l.id);
+  const hypsoIdx = ids.findIndex((id) => id.startsWith('hypso_'));
+  const waterIdx = ids.indexOf('water_fill');
+  if (hypsoIdx === -1) {
+    invariantFails++;
+    console.log('  FAIL no hypso layer emitted in default style');
+  } else if (waterIdx === -1) {
+    invariantFails++;
+    console.log('  FAIL no water_fill layer emitted in default style');
+  } else if (hypsoIdx >= waterIdx) {
+    invariantFails++;
+    console.log(`  FAIL hypso layer (idx ${hypsoIdx}) renders ABOVE water_fill (idx ${waterIdx})`);
+  } else {
+    console.log(`  OK   hypso (idx ${hypsoIdx}) renders BELOW water_fill (idx ${waterIdx})`);
+  }
+  // Hillshade must be BETWEEN hypso and water_fill so hillshade
+  // shadows/highlights mix WITH the elevation tint.
+  const hillshadeIdx = ids.findIndex((id) => id.startsWith('hillshade'));
+  if (hillshadeIdx === -1) {
+    invariantFails++;
+    console.log('  FAIL no hillshade layer emitted in default style');
+  } else if (hillshadeIdx > hypsoIdx && hillshadeIdx < waterIdx) {
+    console.log(`  OK   hillshade (idx ${hillshadeIdx}) sits between hypso and water_fill`);
+  } else {
+    invariantFails++;
+    console.log(`  FAIL hillshade (idx ${hillshadeIdx}) not between hypso (${hypsoIdx}) and water_fill (${waterIdx})`);
+  }
+  console.log(`Layer invariants: ${invariantFails === 0 ? 'all OK' : `${invariantFails} FAILED`}`);
+
+  process.exit(failed + rampFails + invariantFails > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

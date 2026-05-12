@@ -34,12 +34,12 @@
 import { TERRAIN } from '../config.js';
 import {
   evalExaggeration,
-  hillshadeExaggeration,
-  HILLSHADE_BASE_MUL_META,
 } from '../style/terrain.js';
 import {
   applyHypsoStrength,
+  applyHypsoStrengthAtZoom,
   applyHypsoRamp,
+  rebalanceHillshadeForHypso,
   detectHypsoCaps,
   findActiveHypsoLayer,
 } from '../style/hypso/index.js';
@@ -93,11 +93,33 @@ export function installInteractionTuning(map, { caps } = {}) {
     }
   });
 
-  // ----- Terrain lifecycle --------------------------------------------
+  // ----- Combined relief lifecycle ------------------------------------
+  //
+  // We deliberately use a single owner for hillshade-exaggeration to
+  // avoid the race that used to exist between three independent
+  // `styledata` listeners (terrain hillshade rewrite + hypso
+  // smart-blend rewrite + user-mul rewrite). Each path used a slightly
+  // different formula and the last-writer-wins ordering changed the
+  // visible relief depending on timing.
+  //
+  // Now the ordering is:
+  //   1. installTerrainLifecycle    → 3D terrain (setTerrain) only.
+  //   2. installHillshadeLifecycle  → SOLE owner of
+  //                                   hillshade-exaggeration. Applies
+  //                                   the unified base × userMul ×
+  //                                   hypsoBlend formula via
+  //                                   rebalanceHillshadeForHypso.
+  //   3. installHypsoLifecycle      → applies persisted ramp/strength
+  //                                   to the live hypso layer.
+  //   4. installHypsoZoomBinding    → pushes constant
+  //                                   color-relief-opacity on every
+  //                                   move event so the visible
+  //                                   opacity matches
+  //                                   evaluateStrengthAtZoom exactly.
   installTerrainLifecycle(map, { reduceMotion });
-
-  // ----- Hypso lifecycle ----------------------------------------------
+  installHillshadeLifecycle(map, { reduceMotion });
   installHypsoLifecycle(map, { reduceMotion });
+  installHypsoZoomBinding(map);
 }
 
 /**
@@ -111,33 +133,90 @@ export function installInteractionTuning(map, { caps } = {}) {
  * the live layer in place; but a theme switch DOES rebuild, and we
  * need the new style's hillshade layers to settle in the blended
  * state.
+ *
+ * Idempotent via `applyHypsoRamp`/`applyHypsoStrength`'s deepEqual
+ * short-circuit and our own last-state memo, so it's safe to fire on
+ * every styledata burst.
  */
 function installHypsoLifecycle(map, { reduceMotion }) {
+  void reduceMotion;
+  let lastSig = '';
   const apply = () => {
     detectHypsoCaps(map);
     const state = map._cart?.hypso;
     if (!state) return;
     const layer = findActiveHypsoLayer(map);
     if (!layer) return;
-    // Re-emit ramp + strength so the smart-blend cascade refreshes.
+    const sig = [
+      state.mode,
+      state.rampId,
+      state.theme,
+      state.strength,
+      state.bathymetry ? 1 : 0,
+      state.highContrast ? 1 : 0,
+    ].join('|');
+    // No state delta? Skip — the layer already has the right paint.
+    if (sig === lastSig) return;
+    lastSig = sig;
     applyHypsoRamp(map, state.rampId, { dispatch: false });
     applyHypsoStrength(map, state.strength, { dispatch: false });
   };
 
   map.on('styledata', apply);
   map.once('load', apply);
-  /* reduceMotion is honoured downstream by buildBlendedHillshadeExaggeration's
-     consumer — we still want the blend even with reduced motion (it's not
-     animated). The arg is kept here so future tuning has a hook. */
+}
+
+/**
+ * SOLE owner of `hillshade-exaggeration`. Recomputes the unified
+ * `base × baseMul × userMul × hypsoBlend` curve on every styledata
+ * event and on every zoom event (so the visible exaggeration tracks
+ * both the camera and the slider without lag).
+ *
+ * The runtime's `rebalanceHillshadeForHypso` is idempotent: it caches
+ * a [strength, userMul, active, reduceMotion] signature per layer id
+ * and skips setPaintProperty when nothing changed.
+ */
+function installHillshadeLifecycle(map, { reduceMotion }) {
   void reduceMotion;
+  const apply = () => {
+    const cart = map._cart ?? {};
+    const hypso = cart.hypso;
+    const strength = hypso && hypso.mode !== 'off' ? hypso.strength ?? 0 : 0;
+    rebalanceHillshadeForHypso(map, strength);
+  };
+  map.on('styledata', apply);
+  map.on('zoom', apply);
+  map.once('load', apply);
+}
+
+/**
+ * Bind a `move` handler that re-pushes the current zoom's hypso
+ * opacity as a CONSTANT scalar. This is the runtime's defensive
+ * fallback: even if MapLibre's evaluator for the zoom-driven
+ * `color-relief-opacity` expression ever drifts from the spec (some
+ * earlier `color-relief` builds did), the constant we push every
+ * move event pins the visible opacity to
+ * `evaluateStrengthAtZoom(zoom, strength)`.
+ *
+ * Idempotent per-zoom quantum via `applyHypsoStrengthAtZoom`'s
+ * cache — at most a handful of setPaintProperty calls during a
+ * scroll-zoom burst, not one per frame.
+ */
+function installHypsoZoomBinding(map) {
+  const push = () => {
+    applyHypsoStrengthAtZoom(map);
+  };
+  map.on('move', push);
+  map.on('zoom', push);
+  map.on('styledata', push);
+  map.once('load', push);
 }
 
 /**
  * Attach a `zoomend` handler that enables/disables 3D terrain and
- * updates its exaggeration based on the current zoom. Also re-applies
- * the user's slider multiplier to all hillshade layers on every
- * `styledata` (so style rebuilds — theme switch, layer toggle — keep
- * the slider's effect).
+ * updates its exaggeration based on the current zoom. Hillshade lives
+ * in `installHillshadeLifecycle` — this function deliberately no
+ * longer touches `hillshade-exaggeration`.
  *
  * Safe to call on maps without a terrain-capable style — `setTerrain`
  * is called defensively only when the style has a `terrain-dem` source.
@@ -176,24 +255,9 @@ function installTerrainLifecycle(map, { reduceMotion }) {
     map.setTerrain({ source: 'terrain-dem', exaggeration });
   };
 
-  /**
-   * Re-apply the user's slider mul to hillshade layers. Run on style
-   * reloads so the slider position survives `applyStyle` rebuilds. Skipped
-   * on plain zoom events because hillshade's own zoom-interp already
-   * handles those without intervention.
-   */
-  const applyHillshade = () => {
-    const cart = map._cart ?? {};
-    const userMul = typeof cart.userExaggerationMul === 'number' ? cart.userExaggerationMul : 1;
-    if (userMul === 1) return; // common case: nothing to override
-    applyHillshadeExaggeration(map, userMul, reduceMotion);
-  };
-
   map.on('zoomend', applyTerrain);
   map.on('styledata', applyTerrain);
-  map.on('styledata', applyHillshade);
   map.once('load', applyTerrain);
-  map.once('load', applyHillshade);
 }
 
 /**
@@ -239,51 +303,29 @@ export function flyToPreset(map, name, { reduceMotion = false } = {}) {
 }
 
 /**
- * Re-apply the user's exaggeration multiplier to every hillshade layer in
- * the current style by rewriting their `hillshade-exaggeration` paint
- * property in-place. Each hillshade layer carries its per-direction
- * baseline mul on `metadata['cart:hillshadeBaseMul']` (set by
- * src/style/terrain.js); we multiply by `userMul` and rebuild the same
- * zoom-interp expression that compose-time produced.
+ * Update the user-controlled exaggeration multiplier and re-run BOTH
+ * the hillshade lifecycle (which owns hillshade-exaggeration and knows
+ * how to blend it with hypso) AND the 3D terrain lifecycle.
  *
- * Why bother: 3D terrain is only visible at zoom ≥ 7 with pitch > 0, so
- * a user moving the slider at the default Ukraine view (zoom 5.6, pitch 0)
- * sees nothing change unless the slider also drives the always-visible
- * hillshade exaggeration.
- */
-function applyHillshadeExaggeration(map, userMul, reduceMotion) {
-  if (typeof map.getStyle !== 'function') return;
-  const style = map.getStyle();
-  if (!style || !Array.isArray(style.layers)) return;
-  for (const layer of style.layers) {
-    if (layer.type !== 'hillshade') continue;
-    const baseMul = layer.metadata?.[HILLSHADE_BASE_MUL_META] ?? 1;
-    const expr = hillshadeExaggeration(baseMul * userMul, reduceMotion);
-    try {
-      map.setPaintProperty(layer.id, 'hillshade-exaggeration', expr);
-    } catch {
-      /* Layer not yet attached — happens during a style swap; the next
-         compose will pick up the new userMul anyway. */
-    }
-  }
-}
-
-/**
- * Update the user-controlled exaggeration multiplier and immediately
- * re-apply it to BOTH 3D terrain (root-level `terrain.exaggeration` via
- * setTerrain in the zoomend handler) AND every hillshade layer (via
- * setPaintProperty). Called from the UI slider on every `input` event.
+ * Called from the UI slider on every `input` event.
  *
  * @param {maplibregl.Map} map
- * @param {number} mul  0.5..2.0
+ * @param {number} mul  0.5..2.0 (clamped to [0, 2.5] defensively)
  */
 export function setUserExaggeration(map, mul) {
   const clamped = Math.max(0, Math.min(2.5, Number(mul) || 1));
   if (!map._cart) map._cart = {};
   map._cart.userExaggerationMul = clamped;
 
-  const reduceMotion = !!map._cart.caps?.prefersReducedMotion;
-  applyHillshadeExaggeration(map, clamped, reduceMotion);
+  // Invalidate the hillshade memo so rebalance actually pushes new
+  // values now that userMul has changed. Single owner formula:
+  // base × baseMul × userMul × hypsoBlend.
+  if (map._cart.hypso) map._cart.hypso._lastHillshade = {};
+  const strength =
+    map._cart.hypso && map._cart.hypso.mode !== 'off'
+      ? map._cart.hypso.strength ?? 0
+      : 0;
+  rebalanceHillshadeForHypso(map, strength);
 
   // Re-evaluate 3D terrain via the zoomend lifecycle. Synthesising the
   // event is cheaper than rebuilding the style for a slider drag, and

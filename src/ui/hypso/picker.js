@@ -137,6 +137,35 @@ export function mountHypsoPicker(opts) {
   };
   renderList();
 
+  // Sync the picker UI to external state changes — the autoregion
+  // heuristic, the live editor's "save" flow, and any console-level
+  // `applyHypsoRamp` call dispatch `cart:hypso` events with the new
+  // state. If we don't listen, the radio buttons drift from the live
+  // ramp and the user sees "ramp change isn't sticking". The
+  // bathy/contrast/strength toggles get the same treatment so their
+  // UI stays in lock-step too.
+  const onExternalHypso = (e) => {
+    const detail = e?.detail;
+    if (!detail) return;
+    let dirty = false;
+    if (typeof detail.rampId === 'string' && detail.rampId !== prefs.rampId) {
+      prefs.rampId = detail.rampId;
+      dirty = true;
+    }
+    if (refs.bathy && typeof detail.bathymetry === 'boolean' && refs.bathy.checked !== detail.bathymetry) {
+      refs.bathy.checked = detail.bathymetry;
+    }
+    if (refs.contrast && typeof detail.highContrast === 'boolean' && refs.contrast.checked !== detail.highContrast) {
+      refs.contrast.checked = detail.highContrast;
+    }
+    if (refs.strength && typeof detail.strength === 'number' && Number(refs.strength.value) !== detail.strength) {
+      refs.strength.value = String(detail.strength);
+      if (refs.strengthRO) refs.strengthRO.textContent = formatStrength(detail.strength);
+    }
+    if (dirty) renderList();
+  };
+  window.addEventListener('cart:hypso', onExternalHypso);
+
   refs.bathy?.addEventListener('change', () => {
     applyHypsoBathymetry(map, refs.bathy.checked);
     savePrefs({ bathymetry: refs.bathy.checked });
@@ -163,6 +192,7 @@ export function mountHypsoPicker(opts) {
       renderList();
     },
     unmount() {
+      window.removeEventListener('cart:hypso', onExternalHypso);
       host.innerHTML = '';
     },
   };

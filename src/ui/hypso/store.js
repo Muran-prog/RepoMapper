@@ -230,3 +230,33 @@ function clampStrength(v) {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null;
   return Math.max(0, Math.min(1.5, v));
 }
+
+/**
+ * Predicate: does localStorage carry an explicit rampId preference?
+ *
+ * Used by `autoregion.js` to decide whether the auto-pick heuristic
+ * is allowed to swap the active ramp on its own. The rule is simple:
+ * if the user has ever interacted with the picker, the saved rampId
+ * is the source of truth and auto-pick must defer. Without this
+ * predicate the picker UI ↔ map state would silently drift apart on
+ * every load, surfacing as "ramp change isn't sticking" in the user
+ * report.
+ *
+ * Returns false in environments without localStorage (Safari private,
+ * Node tests, server-side) — those cases never had a saved pref to
+ * begin with.
+ *
+ * @returns {boolean}
+ */
+export function hasPersistedRampPref() {
+  const storage = ls();
+  if (!storage) return false;
+  try {
+    const raw = storage.getItem(PREFS_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.rampId === 'string' && parsed.rampId.length > 0;
+  } catch {
+    return false;
+  }
+}

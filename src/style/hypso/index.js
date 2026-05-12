@@ -41,11 +41,18 @@ export {
 export {
   buildColorReliefExpression,
   buildStrengthExpression,
+  evaluateStrengthAtZoom,
   buildDensifiedStops,
   buildGdaldemRamp,
   DEFAULT_STRENGTH_STOPS,
+  STRENGTH_OPACITY_CEILING,
   DEFAULT_DENSIFY,
 } from './expression.js';
+
+export {
+  HYPSO_HILLSHADE_BLEND,
+  evalLinearStops,
+} from './curves.js';
 
 export {
   composeHypsoLayers,
@@ -65,9 +72,11 @@ export {
 export {
   applyHypsoRamp,
   applyHypsoStrength,
+  applyHypsoStrengthAtZoom,
   applyHypsoTheme,
   applyHypsoBathymetry,
   applyHypsoHighContrast,
+  rebalanceHillshadeForHypso,
   findActiveHypsoLayer,
   seedHypsoState,
 } from './runtime.js';
