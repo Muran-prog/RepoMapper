@@ -282,6 +282,98 @@
 }
 
 /* ---------------------------------------------------------------------
+ * Optimise-route action — lives just below the connection-mode radio
+ * group. Visually distinct from the radios so users read it as a ONE-
+ * TIME ACTION rather than a fifth mode. Uses the accent colour with
+ * a tinted background so it reads as "primary call to action" without
+ * overloading the panel's visual vocabulary.
+ * ------------------------------------------------------------------- */
+
+.draw-optimize {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  min-height: calc(var(--hit) + 6px);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-side-soft));
+  color: var(--fg);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+.draw-optimize .draw-optimize-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  flex: 0 0 32px;
+}
+.draw-optimize svg {
+  width: 20px;
+  height: 20px;
+}
+.draw-optimize .draw-optimize-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.draw-optimize .draw-optimize-text strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.15;
+  color: var(--accent);
+}
+.draw-optimize .draw-optimize-text small {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--fg-muted);
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .draw-optimize:not(:disabled):hover {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-side-soft));
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+.draw-optimize:not(:disabled):active { transform: scale(0.99); }
+.draw-optimize:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  /* Keep the accent tint faintly visible even when disabled so the
+   * button's identity stays recognisable across state changes — the
+   * user knows they just need markers to unlock it. */
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-side-soft));
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.draw-optimize:disabled .draw-optimize-icon {
+  background: color-mix(in srgb, var(--accent) 40%, var(--bg-elevated));
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ---------------------------------------------------------------------
  * Style controls
  * ------------------------------------------------------------------- */
 

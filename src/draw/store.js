@@ -18,7 +18,10 @@
  *
  * @typedef {object} DrawPrefs
  * @property {string} tool                 Active tool slug (select/marker/…)
- * @property {string} connectionMode       'none'|'sequence'|'optimal'|'mesh'|'hub'
+ * @property {string} connectionMode       'none'|'sequence'|'mesh'|'hub'
+ *   `optimal` is deliberately NOT a persisted mode — it is an action
+ *   (`engine.optimizeRoute()`), not a state. Stale persisted `optimal`
+ *   from earlier schema versions is migrated to `none` on load.
  * @property {string} shapeType            'circle'|'rectangle'|'regular'|'arrow'|'star'
  * @property {number} shapeSides           Sides count for regular polygon.
  * @property {number} shapeSize            Placement radius in PIXELS at the
@@ -39,6 +42,15 @@
 
 const FEATURES_KEY = 'cart:draw:features:v1';
 const PREFS_KEY = 'cart:draw:prefs:v1';
+
+/**
+ * Allow-list of connection modes recognised by the current schema.
+ * Matches `VALID_CONNECTION_MODES` in engine.js — kept here in
+ * addition so the storage layer can sanitise stale values BEFORE
+ * they reach the live engine state. Pre-refactor builds persisted
+ * `'optimal'` as a mode; that value is migrated to `'none'` on load.
+ */
+const VALID_MODES = new Set(['none', 'sequence', 'mesh', 'hub']);
 
 /** Probe localStorage availability without throwing. */
 function ls() {
@@ -85,12 +97,19 @@ export function loadPrefs() {
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return fallback;
-    return {
+    const merged = {
       ...fallback,
       ...Object.fromEntries(
         Object.entries(parsed).filter(([k]) => k in fallback),
       ),
     };
+    // Migrate stale `connectionMode: 'optimal'` from pre-refactor
+    // builds. Optimal is no longer a mode — it's an action — so we
+    // coerce it to the safe default. The user can re-trigger the TSP
+    // any time via the optimise button; we never silently re-draw
+    // their committed routes for them on load.
+    if (!VALID_MODES.has(merged.connectionMode)) merged.connectionMode = 'none';
+    return merged;
   } catch {
     return fallback;
   }

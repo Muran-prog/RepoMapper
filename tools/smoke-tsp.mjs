@@ -3,7 +3,7 @@
  *
  *   node tools/smoke-tsp.mjs
  *
- * Covers two invariants:
+ * Covers four invariants:
  *
  *   1. OPEN-TSP solver: every converged tour has NO self-intersecting
  *      segments over Euclidean-in-lng/lat layouts. A converged 2-opt
@@ -17,7 +17,19 @@
  *      what makes the drawing tab predictable: the user's route stays
  *      exactly as drawn, regardless of what the mode picker shows.
  *
- * Both invariants are tested without MapLibre — the engine's map
+ *   3. OPTIMISE-ROUTE as an explicit action, not a mode. Calling
+ *      `engine.optimizeRoute()` replaces every auto-gen line with the
+ *      TSP tour, leaves `connectionMode` alone, and coalesces into
+ *      a single undoable history entry. The old "click optimal,
+ *      silently revert to none" UX is intentionally gone.
+ *
+ *   4. UNDO coalescing + PERSISTENCE round-trip. One user operation
+ *      equals one history entry: dropping a marker in `sequence` mode
+ *      pushes a single snapshot that covers the marker AND the auto-
+ *      line. Persisting state and re-creating the engine yields a
+ *      byte-identical feature collection.
+ *
+ * All invariants are tested without MapLibre — the engine's map
  * dependency is mocked down to the handful of methods it actually
  * calls during marker placement / mode switching.
  */
@@ -26,13 +38,26 @@ import { optimalTour, haversine } from '../src/draw/connections.js';
 // ---------------------------------------------------------------------------
 // Global shims — the drawing engine was written for a browser runtime, so
 // `window`, `document`, rAF and timers need cooperative stubs before we can
-// import it under Node. Store.js already guards against a missing
-// localStorage, so we just provide enough surface for the keydown listener
-// and the pencil recorder's rAF coalescing (the latter never fires for the
-// select tool, but it's cheap to stub).
+// import it under Node. In addition to the usual DOM surface we install an
+// in-memory `localStorage` so the persistence round-trip test can save
+// features in one engine instance and read them back in the next.
 // ---------------------------------------------------------------------------
+
+/** Shared in-memory localStorage used by every engine instance. */
+const fakeStorage = new Map();
+const localStorage = {
+  getItem: (k) => (fakeStorage.has(k) ? fakeStorage.get(k) : null),
+  setItem: (k, v) => { fakeStorage.set(k, String(v)); },
+  removeItem: (k) => { fakeStorage.delete(k); },
+  clear: () => { fakeStorage.clear(); },
+};
+
 if (typeof globalThis.window === 'undefined') {
-  globalThis.window = { addEventListener() {}, removeEventListener() {} };
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    localStorage,
+  };
 }
 if (typeof globalThis.document === 'undefined') {
   globalThis.document = { documentElement: { dataset: {} } };
@@ -41,6 +66,13 @@ if (typeof globalThis.requestAnimationFrame === 'undefined') {
   globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 }
+
+/**
+ * Wipe the in-memory storage between tests so persisted features from
+ * one block cannot contaminate the next. Every test that touches the
+ * engine starts with a clean slate.
+ */
+function resetStorage() { fakeStorage.clear(); }
 
 const { createDrawEngine } = await import('../src/draw/engine.js');
 
@@ -259,9 +291,12 @@ const PTS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Test 1: sequence → hub switch must not touch existing lines.
+// Test 1: sequence → hub → mesh → none chain must not touch existing lines.
+// The raw assertion the architecture is built around: connectionMode is a
+// pure preference. Auto-gen lines are permanent data.
 // ---------------------------------------------------------------------------
 {
+  resetStorage();
   const engine = createDrawEngine(makeMockMap());
   engine.setConnectionMode('sequence');
   for (const p of PTS) placeMarker(engine, p);
@@ -273,9 +308,28 @@ const PTS = [
     PTS.length - 1,
   );
 
-  engine.setConnectionMode('hub');
-  const after = onlyLines(engine).map(lineKey).sort();
-  invariantCheck('sequence→hub preserves lines', after, before);
+  // Flip through every remaining mode and verify NONE of them mutates
+  // the committed route — not the count, not the coordinates, not any
+  // property. This is the regression signature of the old bug, where
+  // switching to hub/mesh re-drew the graph under the new rules.
+  for (const nextMode of ['hub', 'mesh', 'none', 'sequence']) {
+    engine.setConnectionMode(nextMode);
+    const snapshot = onlyLines(engine).map(lineKey).sort();
+    invariantCheck(`sequence→${nextMode} preserves lines (count + coords)`, snapshot, before);
+  }
+
+  // Properties must also match, including autoMode.
+  const allProps = onlyLines(engine).map((l) => ({
+    autoMode: l.properties.autoMode,
+    color: l.properties.color,
+    fromId: l.properties.fromId,
+    toId: l.properties.toId,
+  }));
+  invariantCheck(
+    'every line is still autoMode=sequence after the mode carousel',
+    allProps.every((p) => p.autoMode === 'sequence'),
+    true,
+  );
 
   engine.dispose();
 }
@@ -285,6 +339,7 @@ const PTS = [
 // lines remain unchanged.
 // ---------------------------------------------------------------------------
 {
+  resetStorage();
   const engine = createDrawEngine(makeMockMap());
   engine.setConnectionMode('sequence');
   for (const p of PTS) placeMarker(engine, p);
@@ -320,6 +375,7 @@ const PTS = [
 // prior marker), and switching back to sequence leaves them all alone.
 // ---------------------------------------------------------------------------
 {
+  resetStorage();
   const engine = createDrawEngine(makeMockMap());
   engine.setConnectionMode('mesh');
   placeMarker(engine, PTS[0]);
@@ -340,57 +396,60 @@ const PTS = [
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: optimal is a one-shot — selecting it runs TSP, commits lines, and
-// reverts the persisted mode to 'none'. Subsequent marker placements must
-// NOT trigger further auto-connections.
+// Test 4: setConnectionMode is pure — 'optimal' is no longer a mode so
+// attempting to set it should be a defensive no-op. The TSP action lives
+// on engine.optimizeRoute() instead.
 // ---------------------------------------------------------------------------
 {
+  resetStorage();
   const engine = createDrawEngine(makeMockMap());
-  engine.setConnectionMode('none');
+  engine.setConnectionMode('sequence');
   for (const p of PTS) placeMarker(engine, p);
-  invariantCheck('none mode: zero auto lines', onlyLines(engine).length, 0);
+  const before = onlyLines(engine).map(lineKey).sort();
 
+  // Attempt to set the deprecated 'optimal' mode — must be ignored.
   engine.setConnectionMode('optimal');
-
-  const linesAfter = onlyLines(engine);
-  invariantCheck('optimal commits N-1 tour legs', linesAfter.length, PTS.length - 1);
   invariantCheck(
-    'every committed leg is autoMode=optimal',
-    linesAfter.every((l) => l.properties.autoMode === 'optimal'),
-    true,
-  );
-  invariantCheck(
-    'optimal reverts persisted mode to none',
+    'setConnectionMode("optimal") is a no-op (not a valid mode)',
     engine.getPrefs().connectionMode,
-    'none',
+    'sequence',
+  );
+  invariantCheck(
+    'setConnectionMode("optimal") does not mutate existing lines',
+    onlyLines(engine).map(lineKey).sort(),
+    before,
   );
 
-  const afterOptimal = linesAfter.map(lineKey).sort();
-  placeMarker(engine, [25.0, 48.3]);
-  const afterPlacement = onlyLines(engine).map(lineKey).sort();
+  // Garbage strings are also rejected defensively.
+  engine.setConnectionMode('bogus');
   invariantCheck(
-    'placing a marker after optimal does not add auto-connections',
-    afterPlacement,
-    afterOptimal,
+    'setConnectionMode("bogus") is a no-op',
+    engine.getPrefs().connectionMode,
+    'sequence',
   );
 
   engine.dispose();
 }
 
 // ---------------------------------------------------------------------------
-// Test 4b (regression): optimal REPLACES existing auto-gen lines, it does
-// not stack on top of them. The screenshot bug was "sequence route visible,
-// click optimal, now I see BOTH sets of lines at once". After the fix the
-// prior sequence lines must be gone and only optimal legs remain. User-
-// drawn lines (non-autoGen) stay untouched.
+// Test 5: engine.optimizeRoute() — the explicit TSP action.
+//
+// Contract:
+//   • Replaces every auto-gen line with the optimal tour legs.
+//   • Hand-drawn lines (non-autoGen) are untouched.
+//   • connectionMode is NOT changed — the user's preference for future
+//     placements is their own decision, not a side-effect of optimise.
+//   • One history entry — a single undo restores pre-optimise state.
+//   • Subsequent marker placements follow the (unchanged) mode.
 // ---------------------------------------------------------------------------
 {
+  resetStorage();
   const engine = createDrawEngine(makeMockMap());
   engine.setConnectionMode('sequence');
   for (const p of PTS) placeMarker(engine, p);
-  invariantCheck('pre-optimal has sequence lines', onlyLines(engine).length, PTS.length - 1);
+  invariantCheck('pre-optimise has sequence lines', onlyLines(engine).length, PTS.length - 1);
 
-  // Inject a hand-drawn (NON auto-gen) line so we can verify optimal
+  // Inject a hand-drawn (NON auto-gen) line so we can verify optimise
   // doesn't nuke user content.
   engine._addFeature({
     type: 'Feature',
@@ -399,43 +458,176 @@ const PTS = [
   });
   const userLinesBefore = engine.exportGeoJSON().features
     .filter((f) => f.properties?.kind === 'line' && !f.properties?.autoGen);
+  const sequenceLinesBefore = onlyLines(engine)
+    .filter((l) => l.properties.autoMode === 'sequence')
+    .map(lineKey)
+    .sort();
 
-  engine.setConnectionMode('optimal');
+  const added = engine.optimizeRoute();
 
   const after = engine.exportGeoJSON().features;
   const autoAfter = after.filter((f) => f.properties?.autoGen);
   const userAfter = after.filter((f) => f.properties?.kind === 'line' && !f.properties?.autoGen);
 
-  invariantCheck('optimal produces exactly N-1 tour legs', autoAfter.length, PTS.length - 1);
+  invariantCheck('optimizeRoute returns number of legs committed', added, PTS.length - 1);
+  invariantCheck('optimise produces exactly N-1 tour legs', autoAfter.length, PTS.length - 1);
   invariantCheck(
     'every remaining auto-gen line is autoMode=optimal (no stale sequence legs)',
     autoAfter.every((l) => l.properties.autoMode === 'optimal'),
     true,
   );
   invariantCheck(
-    'hand-drawn lines survive the optimal recompute',
+    'hand-drawn lines survive the optimise recompute',
     userAfter.map((l) => l.geometry.coordinates),
     userLinesBefore.map((l) => l.geometry.coordinates),
   );
-
-  // And one undo must restore the previous state exactly — the replace
-  // + commit is a SINGLE history entry, not two.
-  engine.undo();
-  const restored = engine.exportGeoJSON().features.filter((f) => f.properties?.autoGen);
   invariantCheck(
-    'undo after optimal restores prior sequence lines',
-    restored.every((l) => l.properties.autoMode === 'sequence'),
+    'optimizeRoute does NOT change connectionMode',
+    engine.getPrefs().connectionMode,
+    'sequence',
+  );
+
+  // Placing a new marker must behave according to the still-active
+  // sequence mode — extending the route, not re-running TSP.
+  placeMarker(engine, [25.0, 48.4]);
+  const autoAfterNext = onlyLines(engine).filter((l) => l.properties.autoGen);
+  const sequenceLegsAfterNext = autoAfterNext.filter((l) => l.properties.autoMode === 'sequence');
+  invariantCheck(
+    'placing a marker after optimise respects the active mode',
+    sequenceLegsAfterNext.length,
+    1,
+  );
+
+  // One undo must restore the previous state exactly — the replace
+  // + commit is a SINGLE history entry, not two. Undoing the post-
+  // optimise marker placement brings us back to the optimised state.
+  engine.undo(); // undo the marker placement
+  engine.undo(); // undo the optimise
+  const restoredAuto = engine.exportGeoJSON().features.filter((f) => f.properties?.autoGen);
+  invariantCheck(
+    'undo after optimise restores prior sequence lines (count)',
+    restoredAuto.length,
+    PTS.length - 1,
+  );
+  invariantCheck(
+    'undo after optimise restores prior sequence lines (all autoMode=sequence)',
+    restoredAuto.every((l) => l.properties.autoMode === 'sequence'),
     true,
   );
-  invariantCheck('undo after optimal restores N-1 sequence lines', restored.length, PTS.length - 1);
+  invariantCheck(
+    'undo after optimise restores prior sequence lines (byte-exact keys)',
+    restoredAuto.map(lineKey).sort(),
+    sequenceLinesBefore,
+  );
 
   engine.dispose();
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: changing connection mode never affects marker features.
+// Test 6: undo coalescing for marker placement.
+//
+// One user click = one history entry. Dropping a marker in 'sequence' mode
+// must be reversible with a SINGLE undo: the marker and its auto-line go
+// away together. The history stack must not grow by two.
 // ---------------------------------------------------------------------------
 {
+  resetStorage();
+  const engine = createDrawEngine(makeMockMap());
+  engine.setConnectionMode('sequence');
+
+  placeMarker(engine, PTS[0]);
+  const depth1 = engine.getState().historyDepth;
+  placeMarker(engine, PTS[1]);
+  const depth2 = engine.getState().historyDepth;
+  invariantCheck('each marker placement pushes exactly one history entry', depth2 - depth1, 1);
+
+  // Before the second placement: one marker, zero auto-lines.
+  // After: two markers, one sequence auto-line.
+  invariantCheck('two markers + one auto-line present', engine.exportGeoJSON().features.length, 3);
+  invariantCheck('one auto-gen line present', onlyLines(engine).length, 1);
+
+  engine.undo();
+  invariantCheck('undo removes the marker', onlyMarkers(engine).length, 1);
+  invariantCheck('undo removes its auto-line in the same step', onlyLines(engine).length, 0);
+
+  engine.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: persistence round-trip.
+//
+// Draw a mixed scene (markers + auto-lines + a hand-drawn line), flush the
+// debounced save, dispose the engine, and create a fresh engine reading
+// from the SAME localStorage. The exported feature collection must be
+// identical — same feature ids, same coordinates, same properties. No
+// "backfill" magic, no silent mode reverts.
+// ---------------------------------------------------------------------------
+{
+  resetStorage();
+  const first = createDrawEngine(makeMockMap());
+  first.setConnectionMode('hub');
+  for (const p of PTS) placeMarker(first, p);
+  first._addFeature({
+    type: 'Feature',
+    geometry: { type: 'LineString', coordinates: [[23.0, 47.0], [23.5, 47.5]] },
+    properties: { kind: 'line', color: '#c66809', weight: 3, opacity: 0.95 },
+  });
+  first._flushPersist();
+
+  const exportedFirst = first.exportGeoJSON();
+  const modeFirst = first.getPrefs().connectionMode;
+  first.dispose();
+
+  const second = createDrawEngine(makeMockMap());
+  const exportedSecond = second.exportGeoJSON();
+  const modeSecond = second.getPrefs().connectionMode;
+
+  // Feature counts and kinds must match exactly.
+  invariantCheck(
+    'persistence: feature count survives reload',
+    exportedSecond.features.length,
+    exportedFirst.features.length,
+  );
+  const kindCount = (fc) => {
+    const out = {};
+    for (const f of fc.features) {
+      const k = f.properties?.kind ?? '?';
+      out[k] = (out[k] ?? 0) + 1;
+    }
+    return out;
+  };
+  invariantCheck(
+    'persistence: kind breakdown matches',
+    kindCount(exportedSecond),
+    kindCount(exportedFirst),
+  );
+
+  // Coordinates must match (ids may differ — the engine regenerates
+  // them on load — but geometry and key properties are preserved).
+  const normaliseForCompare = (fc) =>
+    fc.features
+      .map((f) => ({
+        kind: f.properties?.kind,
+        autoGen: !!f.properties?.autoGen,
+        autoMode: f.properties?.autoMode ?? null,
+        coords: JSON.stringify(f.geometry?.coordinates),
+      }))
+      .sort((a, b) => a.coords.localeCompare(b.coords));
+  invariantCheck(
+    'persistence: geometry + autoGen/autoMode survive reload byte-identical',
+    normaliseForCompare(exportedSecond),
+    normaliseForCompare(exportedFirst),
+  );
+  invariantCheck('persistence: connectionMode survives reload', modeSecond, modeFirst);
+
+  second.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: changing connection mode never affects marker features.
+// ---------------------------------------------------------------------------
+{
+  resetStorage();
   const engine = createDrawEngine(makeMockMap());
   engine.setConnectionMode('sequence');
   for (const p of PTS) placeMarker(engine, p);
@@ -451,7 +643,28 @@ const PTS = [
   engine.dispose();
 }
 
-console.log(`Mode-switch invariance: ${invPass} passed, ${invFail} failed out of ${invPass + invFail}`);
+// ---------------------------------------------------------------------------
+// Test 9: stale 'optimal' persisted in prefs is migrated to 'none' on load.
+// Pre-refactor builds could write connectionMode: 'optimal' to localStorage.
+// The current schema rejects that value; loadPrefs must coerce it cleanly.
+// ---------------------------------------------------------------------------
+{
+  resetStorage();
+  // Simulate pre-refactor persisted prefs.
+  fakeStorage.set(
+    'cart:draw:prefs:v1',
+    JSON.stringify({ tool: 'marker', connectionMode: 'optimal' }),
+  );
+  const engine = createDrawEngine(makeMockMap());
+  invariantCheck(
+    'stale connectionMode:"optimal" is migrated to "none"',
+    engine.getPrefs().connectionMode,
+    'none',
+  );
+  engine.dispose();
+}
+
+console.log(`Mode-switch invariance + architecture: ${invPass} passed, ${invFail} failed out of ${invPass + invFail}`);
 
 const totalFailed = failed + invFail;
 console.log(`\nOverall: ${passed + invPass} passed, ${totalFailed} failed`);

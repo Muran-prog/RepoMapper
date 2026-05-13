@@ -13,6 +13,22 @@
  *      `setData` on the GeoJSON source — one DOM call per state change.
  *   4. Debounces a `saveFeatures` to localStorage.
  *
+ * Auto-connection model — one source of truth
+ * -------------------------------------------
+ * Auto-generated connection LineStrings (sequence / hub / mesh) are
+ * treated as PERMANENT DATA, not derived views. Once a marker is
+ * placed, the lines produced by that gesture are committed to
+ * `state.features` with `properties.autoGen: true` and live alongside
+ * hand-drawn geometry: they persist, they undo, they export. Changing
+ * `connectionMode` is a pure preference patch — it affects only
+ * FUTURE marker placements and never mutates existing features.
+ *
+ * `optimal` is NOT a connection mode. Computing the shortest tour
+ * through existing markers is an explicit action (`optimizeRoute()`)
+ * that the UI exposes as its own button — it replaces every auto-gen
+ * line with the tour in a single undoable step and leaves
+ * `connectionMode` untouched.
+ *
  * Style-rebuild resilience
  * ------------------------
  * The hypso / theme subsystems can rebuild the entire MapLibre style
@@ -55,6 +71,15 @@ import { createFreeDrawRecorder } from './freedraw.js';
 const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
 
+/**
+ * Valid connection modes. `optimal` is intentionally absent — it is
+ * an operation, not a mode (see `optimizeRoute()`). Anything outside
+ * this set is ignored by `setConnectionMode`, which makes stale
+ * persisted prefs from earlier schema versions a silent no-op instead
+ * of a crash.
+ */
+const VALID_CONNECTION_MODES = new Set(['none', 'sequence', 'mesh', 'hub']);
+
 /** Stable monotonically-increasing id generator. */
 let __idCounter = 0;
 function nextId(prefix = 'f') {
@@ -65,7 +90,7 @@ function nextId(prefix = 'f') {
 /**
  * @typedef {object} DrawEngineHandle
  * @property {function(string):void} setTool
- * @property {function(string):void} setConnectionMode
+ * @property {function(string):void} setConnectionMode  Valid modes: none|sequence|mesh|hub.
  * @property {function(string):void} setShape
  * @property {function(Partial<import('./store.js').DrawPrefs>):void} setPrefs
  * @property {function():import('./store.js').DrawPrefs} getPrefs
@@ -74,6 +99,7 @@ function nextId(prefix = 'f') {
  * @property {function():void} redo
  * @property {function():void} clearAll
  * @property {function():void} deleteSelected
+ * @property {function():number} optimizeRoute  Explicit TSP action, see below.
  * @property {function():object} exportGeoJSON
  * @property {function(object):number} importGeoJSON
  * @property {function(string, Function):function():void} on   Subscribe to engine events.
@@ -442,15 +468,20 @@ export function createDrawEngine(map) {
    *   • `sequence`: one line from marker[N-1] → marker[N].
    *   • `hub`:      one line from marker[0]   → marker[N].
    *   • `mesh`:     N lines from every prior marker → marker[N].
-   *   • `optimal`:  handled as a one-shot on mode-switch, not here.
    *   • `none`:     no auto-connection.
+   *
+   * `optimal` is deliberately not handled here — it is exposed as the
+   * standalone `optimizeRoute()` action, not a per-placement mode, so
+   * individual marker drops never re-solve the TSP.
    *
    * After this returns, the created lines are permanent — switching
    * connection mode later leaves them untouched.
    */
   const autoConnectOnMarker = (newMarkerId) => {
     const mode = prefs.connectionMode;
-    if (mode === 'none' || mode === 'optimal') return;
+    // Defensive: non-connecting mode (or unknown string from stale
+    // persisted prefs) — nothing to do.
+    if (mode !== 'sequence' && mode !== 'hub' && mode !== 'mesh') return;
 
     const markers = state.markerOrder
       .map((mid) => state.features.get(mid))
@@ -473,7 +504,7 @@ export function createDrawEngine(map) {
     }
   };
 
-  const addFeature = (feature, { skipHistory = false, skipAutoConnect = false } = {}) => {
+  const addFeature = (feature, { skipHistory = false } = {}) => {
     if (!skipHistory) pushHistory();
     const id = feature.id ?? nextId(feature.properties?.kind ?? 'f');
     feature.id = id;
@@ -484,10 +515,11 @@ export function createDrawEngine(map) {
       state.markerOrder.push(id);
       // Stamp the per-marker number so the symbol layer can render it.
       feature.properties.order = state.markerOrder.length;
-      // Freeze auto-connections inline so the history snapshot already
-      // taken above covers both the marker and its connection lines —
-      // one undo reverses the whole click.
-      if (!skipAutoConnect) autoConnectOnMarker(id);
+      // Freeze auto-connections inline. One user click = one history
+      // entry: the snapshot taken above covers both the marker and
+      // every auto-line it triggers, so Ctrl+Z reverses the whole
+      // gesture in a single step.
+      autoConnectOnMarker(id);
     }
     schedulePersist();
     emit('change');
@@ -761,18 +793,16 @@ export function createDrawEngine(map) {
 
   // Restore persisted features.
   //
-  // Legacy upgrade path: in earlier versions, auto-connections were
-  // ephemeral `kind: 'connection'` features produced on every render
-  // from `connectionMode`. They were never persisted, but some older
-  // internal builds may have tried to save them — normalise those to
-  // permanent `kind: 'line'` auto-gen entries so the upgrade is loss-
-  // less. See the follow-up `backfillAutoConnections` step below for
-  // the case where users had markers + a live mode but no saved lines.
+  // Single, explicit migration pass: every persisted feature is
+  // either copied verbatim into `state.features` or, if it carries
+  // the pre-refactor `kind: 'connection'` discriminator, rewritten
+  // into the current `kind: 'line', autoGen: true` shape so newer
+  // code paths treat it uniformly. No ambient side-effects — we do
+  // NOT touch live prefs, we do NOT synthesise missing geometry.
+  // What was persisted is what we restore.
   const persisted = loadFeatures();
-  let sawLegacyConnection = false;
   for (const f of persisted) {
     if (f.properties?.kind === 'connection') {
-      sawLegacyConnection = true;
       const coords = f.geometry?.coordinates;
       if (!Array.isArray(coords) || coords.length < 2) continue;
       const lid = nextId('line');
@@ -807,57 +837,6 @@ export function createDrawEngine(map) {
     if (m && m.properties) m.properties.order = i + 1;
   });
 
-  /**
-   * Second leg of the legacy upgrade: if the user had a live
-   * connection mode + ≥ 2 markers but NO auto-gen lines in storage
-   * (because the old code never persisted the ephemeral connections),
-   * synthesise them now as permanent auto-gen lines matching the
-   * stored mode. Runs exactly once — a guard on any existing autoGen
-   * feature means reloads after the first upgrade are no-ops.
-   */
-  const backfillAutoConnections = () => {
-    const mode = prefs.connectionMode;
-    if (mode === 'none') return;
-    if (state.markerOrder.length < 2) return;
-    for (const f of state.features.values()) {
-      if (f.properties?.autoGen) return; // already backfilled
-    }
-    const markers = state.markerOrder
-      .map((mid) => state.features.get(mid))
-      .filter((f) => f && f.geometry?.type === 'Point' && f.properties?.kind === 'marker');
-    if (markers.length < 2) return;
-
-    const addLine = (from, to, autoMode) => {
-      const ln = makeAutoGenLine(from, to, autoMode);
-      state.features.set(ln.id, ln);
-    };
-    if (mode === 'sequence') {
-      for (let i = 1; i < markers.length; i++) addLine(markers[i - 1], markers[i], 'sequence');
-    } else if (mode === 'hub') {
-      for (let i = 1; i < markers.length; i++) addLine(markers[0], markers[i], 'hub');
-    } else if (mode === 'mesh') {
-      for (let i = 0; i < markers.length; i++) {
-        for (let j = i + 1; j < markers.length; j++) addLine(markers[i], markers[j], 'mesh');
-      }
-    } else if (mode === 'optimal') {
-      const pts = markers.map((m) => m.geometry.coordinates);
-      const tour = optimalTour(pts);
-      for (let i = 0; i < tour.length - 1; i++) {
-        addLine(markers[tour[i]], markers[tour[i + 1]], 'optimal');
-      }
-      // Optimal is a one-shot; revert mode so a future marker placement
-      // doesn't re-trigger auto-connection under the wrong semantics.
-      prefs.connectionMode = 'none';
-      savePrefs({ connectionMode: 'none' });
-    }
-    schedulePersist();
-  };
-  // Only backfill when we actually detect a legacy situation: either
-  // a legacy `kind: 'connection'` entry was filtered above, or the
-  // user has live markers with a non-none mode but no autogen lines.
-  if (sawLegacyConnection || (prefs.connectionMode !== 'none' && state.markerOrder.length >= 2)) {
-    backfillAutoConnections();
-  }
   rerender();
 
   // -------------------------------------------------------------------
@@ -902,26 +881,32 @@ export function createDrawEngine(map) {
   };
 
   /**
-   * Solve the open TSP over the current markers, REPLACE every prior
-   * auto-generated connection with the tour, and revert the mode to
-   * `'none'`. Called when the user selects "optimal" — it's a one-shot
-   * action, not an ongoing mode. Returns the number of lines added.
+   * Solve the open TSP over the current markers and REPLACE every
+   * prior auto-generated connection with the tour. A single explicit
+   * user action, exposed in the UI as its own button.
    *
-   * The rationale: "optimal" is an OPERATION ("compute the best route
-   * for what I have now"), not a MODE ("connect every new marker
-   * optimally to everything else"). Treating it as a mode would require
-   * re-solving the TSP on every new marker and would move existing
-   * committed tour legs around in the process — the same architectural
-   * problem users hit with the old sequence/hub/mesh modes.
+   * This is NOT a mode: it doesn't touch `prefs.connectionMode`, it
+   * doesn't change what happens on the next marker placement. The
+   * reason is semantic clarity — the user asked "optimise what I
+   * already placed", not "always connect markers optimally". Making
+   * it a mode would require re-solving the TSP on every new marker
+   * and shuffling previously-committed tour legs in the process,
+   * which is exactly the surprise-move behaviour users complained
+   * about with the old sequence/hub/mesh modes.
    *
    * Replacement (not additive) semantics matter: users who had been
-   * drawing in sequence/hub/mesh and click "optimal" want their route
-   * recomputed, not a second overlapping graph dropped on top. We
-   * strip every feature with `properties.autoGen` before committing
+   * drawing in sequence/hub/mesh and click "optimise" want their
+   * route recomputed, not a second overlapping graph dropped on top.
+   * We strip every feature with `properties.autoGen` before committing
    * the new tour; user-drawn lines / polygons / shapes / markers are
    * untouched.
+   *
+   * One history entry per click: `pushHistory()` is called once, the
+   * replacement is atomic, one Ctrl+Z undoes the whole action.
+   *
+   * @returns {number} Number of tour legs committed (0 if < 2 markers).
    */
-  const runOptimalOnce = () => {
+  const optimizeRoute = () => {
     const markers = state.markerOrder
       .map((mid) => state.features.get(mid))
       .filter((f) => f && f.geometry?.type === 'Point' && f.properties?.kind === 'marker');
@@ -960,30 +945,29 @@ export function createDrawEngine(map) {
     return added;
   };
 
+  /**
+   * Set the connection mode used for FUTURE marker placements. Pure:
+   *
+   *   • validates `mode` is one of the four supported values,
+   *   • no-op when it's the current mode,
+   *   • writes prefs (in-memory + localStorage),
+   *   • emits `connectionMode` for the UI.
+   *
+   * Does NOT:
+   *
+   *   • recompute, move or delete any existing geometry,
+   *   • run the TSP solver (see `optimizeRoute`),
+   *   • re-render the map (nothing changed on screen).
+   *
+   * This is the central invariant: "mode change affects only future
+   * placements". Every piece of the auto-connection pipeline leans on
+   * it, from the architecture down to the regression tests.
+   */
   const setConnectionMode = (mode) => {
-    if (mode === 'optimal') {
-      // Treat optimal as a one-shot action: run the solver NOW over
-      // the current markers and revert the mode to `'none'` so it
-      // doesn't try to apply again on the next marker placement.
-      runOptimalOnce();
-      if (prefs.connectionMode !== 'none') {
-        prefs.connectionMode = 'none';
-        savePrefs({ connectionMode: 'none' });
-        emit('connectionMode', 'none');
-      } else {
-        // Re-emit so the UI re-selects the "none" radio even if it
-        // was already there (user clicking optimal shouldn't leave
-        // the "optimal" pill highlighted).
-        emit('connectionMode', 'none');
-      }
-      return;
-    }
+    if (!VALID_CONNECTION_MODES.has(mode)) return;
     if (prefs.connectionMode === mode) return;
     prefs.connectionMode = mode;
     savePrefs({ connectionMode: mode });
-    // No rerender needed — mode change affects only FUTURE marker
-    // placements, never existing features. Emit so the panel's radio
-    // group updates to reflect the new selection.
     emit('connectionMode', mode);
   };
 
@@ -1082,9 +1066,23 @@ export function createDrawEngine(map) {
     delete map.__cartDraw;
   };
 
+  /**
+   * Flush any pending debounced save immediately. Intended for tests
+   * that need a synchronous persistence round-trip; production paths
+   * can rely on the normal debounce + dispose semantics.
+   */
+  const flushPersist = () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    saveFeatures(Array.from(state.features.values()));
+  };
+
   const handle = {
     enable, disable,
     setTool, setConnectionMode, setShape, setPrefs,
+    optimizeRoute,
     getPrefs: () => ({ ...prefs }),
     getState: () => ({
       tool: state.tool,
@@ -1110,6 +1108,7 @@ export function createDrawEngine(map) {
     _pushHistory: pushHistory,
     _rerender: rerender,
     _nextId: nextId,
+    _flushPersist: flushPersist,
   };
 
   map.__cartDraw = handle;

@@ -6,7 +6,11 @@
  *
  *   • Tool palette (select / marker / line / polygon / pencil / shape)
  *   • Shape sub-selector (visible only when the shape tool is active)
- *   • Connection-mode picker (none / sequence / optimal / mesh / hub)
+ *   • Connection-mode picker (none / sequence / mesh / hub)
+ *   • "Optimise route" action button — explicit one-shot TSP on the
+ *     current markers. Intentionally OUT of the radio group above,
+ *     because it's an operation over existing data rather than a
+ *     preference for future placements.
  *   • Geodesic toggle + label toggle
  *   • Style fields — colour pickers, stroke width + opacity sliders
  *   • Live stats (marker count, total path length, feature count)
@@ -39,10 +43,16 @@ const SHAPE_DEFS = [
   { id: 'arrow',      label: 'Стрілка',      icon: I.shapeArrow },
 ];
 
+/**
+ * Connection mode radio group. `optimal` is NOT here — it's an
+ * explicit action (see the "Оптимізувати маршрут" button below),
+ * not a mode. Keeping them separate avoids the old UX confusion
+ * where clicking a radio button silently rewrote committed lines
+ * AND silently reverted the selection to "none".
+ */
 const CONN_DEFS = [
   { id: 'none',     label: 'Без зʼєднань', tip: 'Нові мітки не зʼєднуються автоматично', icon: I.connectionNone },
   { id: 'sequence', label: 'Послідовно',    tip: 'Кожну нову мітку зʼєднувати з попередньою', icon: I.connectionSequence },
-  { id: 'optimal',  label: 'Короткий маршрут', tip: 'Одноразова дія: перебудувати авто-зʼєднання у найкоротший маршрут (режим вимкнеться)', icon: I.connectionOptimal },
   { id: 'mesh',     label: 'Усі з усіма',   tip: 'Кожну нову мітку зʼєднувати з усіма попередніми', icon: I.connectionMesh },
   { id: 'hub',      label: 'Зірка',         tip: 'Кожну нову мітку зʼєднувати з першою (центром)', icon: I.connectionHub },
 ];
@@ -134,6 +144,18 @@ export function renderDrawPanelBody() {
           `)
           .join('')}
       </div>
+      <button
+        class="draw-optimize"
+        type="button"
+        data-ctl="draw-optimize"
+        disabled
+        title="Перебудує всі авто-зʼєднання у найкоротший маршрут через наявні мітки. Режим зʼєднань не змінюється.">
+        <span class="draw-optimize-icon">${I.connectionOptimal}</span>
+        <span class="draw-optimize-text">
+          <strong>Оптимізувати маршрут</strong>
+          <small>Перебудувати авто-зʼєднання у найкоротший маршрут</small>
+        </span>
+      </button>
       <div class="rows">
         <label class="row">
           <span>Геодезичні (з кривиною Землі)</span>
@@ -290,6 +312,26 @@ export function mountDrawPanel({ engine, host }) {
   }
 
   // -------------------------------------------------------------------
+  // Optimise-route action — separate from the mode radio group. Runs
+  // the TSP solver over the current markers and replaces all auto-gen
+  // connections with the optimal tour in a single undoable step. The
+  // connection mode is intentionally left alone so the user can keep
+  // placing markers with the same behaviour afterwards.
+  // -------------------------------------------------------------------
+  const optimizeBtn = $('[data-ctl="draw-optimize"]');
+  optimizeBtn?.addEventListener('click', () => {
+    if (optimizeBtn.disabled) return;
+    engine.optimizeRoute();
+  });
+  const refreshOptimizeAvailability = () => {
+    if (!optimizeBtn) return;
+    // Need at least two markers to produce a tour leg. The markerCount
+    // from getState is the authoritative source; metrics events also
+    // carry it but fire less often (rerender-coupled).
+    optimizeBtn.disabled = engine.getState().markerCount < 2;
+  };
+
+  // -------------------------------------------------------------------
   // Toggles
   // -------------------------------------------------------------------
   const geodesic = $('[data-ctl="draw-geodesic"]');
@@ -440,6 +482,10 @@ export function mountDrawPanel({ engine, host }) {
 
   const refreshCounts = () => {
     if (statFeatures) statFeatures.textContent = String(engine.getState().featureCount);
+    // The optimise button's availability depends on the marker count;
+    // `change` is the single event that fires on every add/remove/undo,
+    // so it's the right hook to refresh the disabled state.
+    refreshOptimizeAvailability();
   };
   refreshCounts();
   const offChange = engine.on('change', refreshCounts);
