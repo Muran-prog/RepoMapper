@@ -48,6 +48,7 @@ const ICONS = {
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
   close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/></svg>`,
   brand: `<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M6 17 L13 23 L26 9" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  home: `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 11 L12 3.5 L21 11 V20 H3 Z" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M9.5 20 V14 H14.5 V20" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   // 7-dot "more" glyph used by the MapLibre-controls collapse anchor.
   // Single-stroke chevron pair so it reads as "reveal a stack".
   controlsChev: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9 L12 14 L17 9"/><path d="M7 15 L12 20 L17 15" opacity="0.5"/></svg>`,
@@ -271,7 +272,7 @@ function renderDock(host) {
   host.setAttribute('aria-label', 'Інструменти карти');
   host.innerHTML = `
     <header class="dock-brand">
-      <button class="dock-logo" type="button" data-ctl="home" title="До центру України" aria-label="Fly to centre of Ukraine">${ICONS.brand}</button>
+      <button class="dock-logo" type="button" data-ctl="home" title="До центру України" aria-label="Fly to centre of Ukraine">${ICONS.home}</button>
     </header>
     <nav class="dock-nav" aria-label="Панелі">
       <button class="dock-btn" type="button" data-panel="layers"   data-tip="Шари"        aria-label="Шари"        aria-expanded="false">${ICONS.layers}</button>

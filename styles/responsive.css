@@ -79,21 +79,26 @@
     padding: 6px;
     border-radius: var(--r-pill);
   }
-  /* Hide the decorative brand mark on mobile to free up horizontal
-     space. The dock-foot (theme toggle) becomes an inline sibling
-     of the nav buttons via flex-direction: row. */
+  /* On mobile the dock is a horizontal pill: brand sits on the left,
+     nav buttons in the middle, theme toggle on the right. Both edges
+     get a stronger hairline separator (mirrored) so the three groups
+     read as distinct sections within the pill. */
   .dock-brand {
-    display: none;
-  }
-  .dock-foot {
-    margin: 0;
-    padding: 0;
-    border-top: 0;
-    border-left: 1px solid var(--hairline);
-    padding-left: 4px;
-    margin-left: 2px;
+    margin: 0 6px 0 0;
+    padding: 0 8px 0 2px;
+    border-right: 1px solid var(--hairline-strong);
     width: auto;
   }
+  .dock-foot {
+    margin: 0 0 0 6px;
+    padding: 0 2px 0 8px;
+    border-top: 0;
+    border-left: 1px solid var(--hairline-strong);
+    width: auto;
+  }
+  /* Brand chip on mobile inherits the desktop base styles (36 px chip
+     + 22 px icon + 4-layer glossy shadow). No size override here — we
+     want the same compact chip on both form-factors. */
   .dock-nav {
     flex-direction: row;
     gap: 2px;
@@ -251,8 +256,12 @@
     padding-top: 6px;
   }
   .dock-logo {
-    width: 26px;
-    height: 26px;
+    width: 32px;
+    height: 32px;
+  }
+  .dock-logo svg {
+    width: 16px;
+    height: 16px;
   }
   .panel {
     max-height: 88dvh;
