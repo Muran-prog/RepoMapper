@@ -61,13 +61,16 @@
 }
 
 /* --- Square toggle (the always-visible anchor) -------------------
- * Same dimensions as the MapLibre native controls so the bottom-right
- * column reads as a single family. Default state shows just the
- * gradient swatch; on hover the swatch animates subtly. */
+ * Pinned to --float-card so its outer dimension matches the visual
+ * outer of a single-button MapLibre control group (button + 4 px
+ * padding + 1 px border on each side). The toggle IS the card here
+ * — it carries the glass background, border and shadow directly
+ * — so its own width must equal the OUTER card token, not the
+ * INNER button token used inside MapLibre groups. */
 .hypso-legend-toggle {
   appearance: none;
-  width: var(--float-size);
-  height: var(--float-size);
+  width: var(--float-card);
+  height: var(--float-card);
   border: 1px solid var(--hairline);
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -81,7 +84,7 @@
   display: grid;
   place-items: center;
   padding: 0;
-  flex: 0 0 var(--float-size);
+  flex: 0 0 var(--float-card);
   transition:
     background var(--t-fast) var(--ease-out),
     border-color var(--t-fast) var(--ease-out),
@@ -194,10 +197,11 @@
 }
 
 /* Bottom-right (default): panel anchored above the toggle, right
- * edges aligned. Slides up + fades in. */
+ * edges aligned. Slides up + fades in. The anchor offset must clear
+ * the toggle's OUTER size (--float-card), not the inner button. */
 .hypso-legend-host[data-position="br"] .hypso-legend-panel {
   right: 0;
-  bottom: calc(var(--float-size) + var(--float-gap));
+  bottom: calc(var(--float-card) + var(--float-gap));
   transform-origin: bottom right;
   transform: translateY(8px) scale(0.96);
 }
@@ -208,7 +212,7 @@
 /* Bottom-left: same as br but left edges aligned. */
 .hypso-legend-host[data-position="bl"] .hypso-legend-panel {
   left: 0;
-  bottom: calc(var(--float-size) + var(--float-gap));
+  bottom: calc(var(--float-card) + var(--float-gap));
   transform-origin: bottom left;
   transform: translateY(8px) scale(0.96);
 }
@@ -220,7 +224,7 @@
  * Slides down + fades in. */
 .hypso-legend-host[data-position="tr"] .hypso-legend-panel {
   right: 0;
-  top: calc(var(--float-size) + var(--float-gap));
+  top: calc(var(--float-card) + var(--float-gap));
   transform-origin: top right;
   transform: translateY(-8px) scale(0.96);
 }
@@ -231,7 +235,7 @@
 /* Top-left: same as tr but left edges aligned. */
 .hypso-legend-host[data-position="tl"] .hypso-legend-panel {
   left: 0;
-  top: calc(var(--float-size) + var(--float-gap));
+  top: calc(var(--float-card) + var(--float-gap));
   transform-origin: top left;
   transform: translateY(-8px) scale(0.96);
 }

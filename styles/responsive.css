@@ -30,8 +30,9 @@
   }
   .panel {
     /* Slightly tighter horizontal inset on tablets, but still leave
-     * room for the MapLibre control column on the right. */
-    max-width: calc(100vw - var(--dock-w) - var(--float-size) - var(--edge-inset) * 4 - var(--panel-gap));
+     * room for the MapLibre control column on the right
+     * (--float-card = the OUTER footprint of a single-button group). */
+    max-width: calc(100vw - var(--dock-w) - var(--float-card) - var(--edge-inset) * 4 - var(--panel-gap));
   }
   /* The vertical scale stays under the dock on tablets, just nudged a
    * bit closer to the dock since the viewport is shorter. */

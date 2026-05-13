@@ -18,7 +18,14 @@
   position: absolute;
   z-index: 3;
   pointer-events: none;
-  left: max(var(--edge-inset), env(safe-area-inset-left));
+  /* Centre the chip horizontally inside the dock + scale column so the
+   * collapsed anchor lines up with the vertical scale bar above it.
+   * Mathematically: column width is --dock-w, chip width is --float-card,
+   * so the half-difference is the inset that re-centres the chip. */
+  left: calc(
+    max(var(--edge-inset), env(safe-area-inset-left))
+    + (var(--dock-w) - var(--float-card)) / 2
+  );
   bottom: max(var(--edge-inset), env(safe-area-inset-bottom));
 }
 
@@ -34,7 +41,11 @@
   border-radius: var(--float-radius);
   box-shadow: var(--shadow-md), var(--ring);
 
-  padding: 0;
+  /* 4 px inner inset matches the MapLibre `.maplibregl-ctrl-group`
+   * card padding, so a collapsed chip (anchor + 4 px + 1 px border
+   * each side = --float-card) reads as the same square unit as a
+   * single MapLibre control. */
+  padding: 4px;
   pointer-events: auto;
   user-select: none;
   overflow: hidden;

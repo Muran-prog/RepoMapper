@@ -101,11 +101,22 @@
   --sheet-radius: 22px;    /* bottom-sheet corner radius on mobile */
 
   /* ---- Floating-element family -----------------------------------
-   * Shared sizing tokens for every map-floating square button so the
+   * Two paired tokens drive every map-floating square in the UI so the
    * legend toggle, MapLibre controls anchor, and HUD chip all read as
-   * part of the same UI family. The MapLibre `.maplibregl-ctrl-group
-   * button` cells are pinned to `--float-size` in maplibre.css. */
+   * part of the same family:
+   *
+   *   --float-size   inner button click area (matches MapLibre's
+   *                  native `.maplibregl-ctrl-group button` cell).
+   *   --float-card   OUTER visible dimension of the floating card,
+   *                  computed as inner + 4 px padding + 1 px border on
+   *                  each side. Matches the outer extent of a single-
+   *                  button MapLibre `.maplibregl-ctrl-group`.
+   *
+   * Anything that "looks like a square floating button" should pin
+   * its outer to --float-card so the family stays visually unified
+   * regardless of which subsystem renders it. */
   --float-size: 40px;
+  --float-card: 50px;      /* = --float-size + 4*2 padding + 1*2 border */
   --float-icon: 18px;
   --float-radius: var(--r-lg);
   --edge-inset: 14px;      /* logical inset from viewport edge */
@@ -153,10 +164,15 @@
                0 56px 110px rgba(0, 0, 0, 0.4);
 }
 
-/* Touch baseline: WCAG/Apple HIG recommend 44pt minimum hitbox. */
+/* Touch baseline: WCAG/Apple HIG recommend 44pt minimum hitbox.
+ * Bumping --float-size to 44 here propagates to every floating button
+ * (MapLibre cells, HUD anchor, legend toggle) without per-rule overrides;
+ * --float-card follows by the same +10 (8 padding + 2 border) recipe. */
 [data-pointer="coarse"],
 :where([data-touch="1"]) {
   --hit: 44px;
   --dock-size: 52px;
   --dock-icon: 22px;
+  --float-size: 44px;
+  --float-card: 54px;
 }

@@ -95,12 +95,10 @@
   outline-offset: 2px;
 }
 
-/* Touch hitbox — 44 px on coarse pointers (Apple HIG). */
-[data-pointer="coarse"] .maplibregl-ctrl-group button,
-[data-touch="1"]      .maplibregl-ctrl-group button {
-  width: 44px !important;
-  height: 44px !important;
-}
+/* Touch hitbox — 44 px on coarse pointers (Apple HIG). Driven by the
+ * --float-size token override in tokens.css so every floating button
+ * (MapLibre cell, HUD anchor, legend toggle) scales together; no
+ * per-rule override needed here. */
 
 /* =====================================================================
  *  Collapse anchor — sits at the top of the top-right stack and toggles

@@ -18,16 +18,10 @@
   }
 }
 
-/* --- Touch / coarse-pointer tweaks for the legend toggle ----------
- * The toggle is a 40 px square in the desktop default; on coarse
- * pointers we bump it to 44 px to match the WCAG / Apple HIG hit-
- * target recommendation, mirroring the MapLibre native controls. */
-[data-pointer="coarse"] .hypso-legend-toggle,
-[data-touch="1"]      .hypso-legend-toggle {
-  width: 44px;
-  height: 44px;
-  flex-basis: 44px;
-}
+/* --- Touch / coarse-pointer sizing -------------------------------
+ * The legend toggle pins to --float-card, which already adapts to
+ * coarse pointers via the token override in tokens.css (50 → 54).
+ * No per-rule override is needed here. */
 
 /* --- Mobile tweaks for hypso UI -----------------------------------
  * On mobile the dock relocates to the bottom-centre as a horizontal
@@ -59,6 +53,49 @@
   .hypso-legend-ticks {
     height: 160px;
   }
+
+  /* When the MapLibre stack is EXPANDED on a phone AND the user opens
+   * the hypso legend, the default 152×240 legend panel rears up from
+   * the bottom-right and rams into the bottom of the MapLibre column,
+   * hiding the geolocate + fullscreen buttons.
+   *
+   * Solution: pull BOTH bottom-most cards (geolocate and fullscreen)
+   * INTO the column immediately left of the zoom+compass card, and
+   * STACK them vertically there:
+   *   – geolocate slides one card-step up + one card-step left so its
+   *     bottom aligns with the zoom+compass card's bottom (the
+   *     zoom-out row).
+   *   – fullscreen slides THREE card-steps up + one card-step left so
+   *     it sits directly above geolocate in the same column, with the
+   *     standard --float-gap between them.
+   * Net effect: the right-most column ends at the zoom+compass card
+   * (two rows freed below it), giving the legend panel the vertical
+   * clearance it needs while keeping every MapLibre button visible.
+   * The transform runs on the existing transform transition
+   * (var(--t-base)) so it animates in lock-step with the legend
+   * opening / closing.
+   *
+   * The :has() chain checks BOTH stacks expanded — the row-wrap only
+   * applies when the legend is actually open, so the MapLibre column
+   * stays in its natural straight column whenever the user just
+   * toggles MapLibre on its own. Defensive :not(.ctrl-anchor) prevents
+   * the rule from accidentally lifting the anchor if the stack ever
+   * shrinks below 4 children. */
+  body:has(.maplibregl-ctrl-stack[data-collapsed="false"]):has(.hypso-legend[data-collapsed="false"])
+    .maplibregl-ctrl-top-right > .maplibregl-ctrl:nth-last-child(2):not(.ctrl-anchor) {
+    transform: translate(
+      calc(-1 * (var(--float-card) + var(--float-gap))),
+      calc(-1 * (var(--float-card) + var(--float-gap)))
+    );
+  }
+  body:has(.maplibregl-ctrl-stack[data-collapsed="false"]):has(.hypso-legend[data-collapsed="false"])
+    .maplibregl-ctrl-top-right > .maplibregl-ctrl:last-child:not(.ctrl-anchor) {
+    transform: translate(
+      calc(-1 * (var(--float-card) + var(--float-gap))),
+      calc(-3 * (var(--float-card) + var(--float-gap)))
+    );
+  }
+
   .hypso-editor,
   .hypso-profile {
     width: 96vw;
@@ -80,7 +117,9 @@
 @media (min-width: 540px) and (max-width: 960px) {
   /* On tablets the dock is still on the left edge; the legend sits at
      bottom-right above the attribution — same composition as desktop
-     but with slightly tighter insets. */
+     but with slightly tighter insets. The bottom offset stays as the
+     attribution-pill clearance (--float-size + gap) shared with the
+     desktop default in legend.css. */
   .hypso-legend-host {
     bottom: calc(var(--float-size) + var(--float-gap) + env(safe-area-inset-bottom));
   }

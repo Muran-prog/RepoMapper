@@ -63,7 +63,7 @@ const ICONS = {
 // rhythm.
 // ---------------------------------------------------------------------------
 
-function installNativeControls(map, { isTouch, caps }) {
+function installNativeControls(map, { caps }) {
   const ml = window.maplibregl;
 
   map.addControl(
@@ -87,9 +87,7 @@ function installNativeControls(map, { isTouch, caps }) {
 
   map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right');
 
-  if (!isTouch) {
-    map.addControl(new ml.FullscreenControl({}), 'top-right');
-  }
+  map.addControl(new ml.FullscreenControl({}), 'top-right');
 
   // Inject the collapse anchor at the top of the top-right column.
   // Order matters — we want the anchor to render first so the cascade
@@ -681,7 +679,7 @@ class DockController {
  * @param {string} ctx.profile
  */
 export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
-  installNativeControls(map, { isTouch: !!caps?.isTouch, caps });
+  installNativeControls(map, { caps });
 
   // Ensure / create the chip host. We append into #canvas so it sits in
   // the same stacking context as the map.

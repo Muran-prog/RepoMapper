@@ -257,9 +257,10 @@
   width: var(--panel-w);
   max-height: min(76dvh, 720px);
   /* Reserve space on the right edge for the MapLibre controls column
-   * (var(--float-size) + edge-inset) so the panel never overlaps the
-   * fullscreen / geolocate buttons regardless of viewport width. */
-  max-width: calc(100vw - var(--dock-w) - var(--float-size) - var(--edge-inset) * 4 - var(--panel-gap));
+   * (a single-button group's OUTER footprint = --float-card) so the
+   * panel never overlaps the fullscreen / geolocate buttons regardless
+   * of viewport width. */
+  max-width: calc(100vw - var(--dock-w) - var(--float-card) - var(--edge-inset) * 4 - var(--panel-gap));
 
   display: flex;
   flex-direction: column;
