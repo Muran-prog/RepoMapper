@@ -235,6 +235,72 @@
 }
 
 /* =====================================================================
+ *  Narrow phones (<= 400 px) — the 6-nav dock at the default 52 px size
+ *  overflows the viewport on iPhone SE / Galaxy S22 class devices once
+ *  the brand chip and theme toggle are factored in. We tighten the
+ *  per-button hitbox a notch and drop the inter-button gap to 1 px so
+ *  the dock pill stays a single horizontal stripe without clipping.
+ *
+ *  The reduction is small enough to remain WCAG-friendly:
+ *    44 px ≥ 24 px AAA, ≥ 44 px Apple HIG, comfortably tappable.
+ * ===================================================================== */
+
+@media (max-width: 400px) {
+  .dock {
+    padding: 4px;
+    gap: 1px;
+  }
+  .dock-nav {
+    gap: 1px;
+  }
+  .dock-btn {
+    width: 44px;
+    height: 44px;
+  }
+  .dock-brand {
+    margin-right: 4px;
+    padding: 0 6px 0 2px;
+  }
+  .dock-logo {
+    width: 32px;
+    height: 32px;
+  }
+  .dock-logo svg {
+    width: 18px;
+    height: 18px;
+  }
+  .dock-foot {
+    margin-left: 4px;
+    padding: 0 2px 0 6px;
+  }
+}
+
+/* =====================================================================
+ *  Very narrow phones (≤ 360 px) — Galaxy Fold inner display, older
+ *  budget devices. The brand chip becomes optional here since the
+ *  six-button nav is the priority.
+ * ===================================================================== */
+
+@media (max-width: 360px) {
+  .dock-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .dock-brand {
+    /* Brand chip collapses on the smallest phones — the panel content
+     * makes the brand redundant once the user is interacting with the
+     * tools. The home button remains accessible via the dock-logo
+     * tap target which the layout reduces but doesn't hide. */
+    margin-right: 2px;
+    padding: 0 3px 0 1px;
+  }
+  .dock-logo {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* =====================================================================
  *  Short viewports — landscape phones, fold-out devices. We tighten
  *  the dock so it stays vertically centred without clipping.
  * ===================================================================== */

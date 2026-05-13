@@ -31,6 +31,9 @@ import { getProfileConfig } from '../device.js';
 import { FEATURES, DEFAULT_THEME } from '../config.js';
 import { mountHypsoUI } from './hypso/index.js';
 import { loadUiPrefs, saveUiPrefs } from './store.js';
+import { createDrawEngine } from '../draw/index.js';
+import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
+import { DRAW_ICONS } from './draw/icons.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -43,6 +46,10 @@ const ICONS = {
   mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20 L9.5 9 L13 14.5 L17 7 L21 20 Z"/><circle cx="17" cy="5.4" r="1.2" fill="currentColor" stroke="none"/></svg>`,
   waves: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7 Q 7.5 4 12 7 T 21 7"/><path d="M3 12 Q 7.5 9 12 12 T 21 12"/><path d="M3 17 Q 7.5 14 12 17 T 21 17"/></svg>`,
   pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22 S 5 14.5 5 9.5 a7 7 0 0 1 14 0 c0 5 -7 12.5 -7 12.5 z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`,
+  // Pencil-on-map glyph that anchors the drawing-engine dock entry. Same
+  // 1.75-stroke vocabulary as the rest of the bar so the new button reads
+  // as a peer rather than an alien addition.
+  draw: DRAW_ICONS.dock,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
   sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="18.9" y2="18.9"/><line x1="5.1" y1="18.9" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="18.9" y2="5.1"/></svg>`,
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
@@ -279,6 +286,7 @@ function renderDock(host) {
       <button class="dock-btn" type="button" data-panel="relief"   data-tip="Рельєф"      aria-label="Рельєф"      aria-expanded="false">${ICONS.mountain}</button>
       <button class="dock-btn" type="button" data-panel="hypso"    data-tip="Гіпсометрія" aria-label="Гіпсометрія" aria-expanded="false">${ICONS.waves}</button>
       <button class="dock-btn" type="button" data-panel="places"   data-tip="Місця"       aria-label="Місця"       aria-expanded="false">${ICONS.pin}</button>
+      <button class="dock-btn" type="button" data-panel="draw"     data-tip="Малювання"   aria-label="Малювання"   aria-expanded="false">${ICONS.draw}</button>
       <button class="dock-btn" type="button" data-panel="settings" data-tip="Налаштування" aria-label="Налаштування" aria-expanded="false">${ICONS.sliders}</button>
     </nav>
     <footer class="dock-foot">
@@ -287,12 +295,19 @@ function renderDock(host) {
   `;
 }
 
-function panelShell(id, title, iconKey, body) {
+function panelShell(id, title, iconKey, body, opts = {}) {
+  // `data-persistent="1"` opts a panel out of the controller's
+  // close-on-outside-pointer rule for clicks that land on the map
+  // canvas. Used by the drawing panel: tapping the map should drop a
+  // marker / start a stroke, NOT dismiss the panel that's hosting the
+  // active tool. The scrim, dock buttons, Esc key and the close
+  // button still dismiss as usual.
+  const persistent = opts.persistent ? ' data-persistent="1"' : '';
   return `
     <section
       class="panel"
       data-panel-id="${id}"
-      data-open="false"
+      data-open="false"${persistent}
       role="dialog"
       aria-modal="false"
       aria-label="${title}"
@@ -453,6 +468,7 @@ function renderPanels(host) {
     ${panelShell('relief',   'Рельєф',       'mountain', renderReliefPanelBody())}
     ${panelShell('hypso',    'Гіпсометрія',  'waves',    renderHypsoPanelBody())}
     ${panelShell('places',   'Місця',        'pin',      renderPlacesPanelBody())}
+    ${panelShell('draw',     'Малювання',    'draw',     renderDrawPanelBody(),     { persistent: true })}
     ${panelShell('settings', 'Налаштування', 'sliders',  renderSettingsPanelBody())}
   `;
 }
@@ -654,14 +670,29 @@ class DockController {
       const target = e.target;
       if (entry.panel.contains(target)) return;
       if (this.dock.contains(target)) return;
+      // Persistent panels (e.g. drawing) opt out of auto-close on
+      // map-area pointerdown so the user can keep interacting with
+      // the canvas without the controls disappearing on every tap.
+      // Scrim taps, dock-button switches, Esc and the close button
+      // still dismiss the panel as expected.
+      if (entry.panel.dataset.persistent === '1') {
+        const mapEl = document.getElementById('map');
+        if (mapEl && mapEl.contains(target)) return;
+      }
       this.close();
     }, true);
     this.scrim?.addEventListener('click', () => this.close());
-    // Map clicks should close the panel on mobile (revealing the map).
+    // Map clicks should close the panel on mobile (revealing the map),
+    // EXCEPT when the active panel opted into persistent mode — those
+    // panels stay open so the user can keep drawing while the bottom-
+    // sheet is parked at the bottom of the screen.
     if (this.mqMobile.matches) {
       const mapEl = document.getElementById('map');
       mapEl?.addEventListener('pointerdown', () => {
-        if (this.activeId) this.close();
+        if (!this.activeId) return;
+        const entry = this.entries.get(this.activeId);
+        if (entry?.panel?.dataset.persistent === '1') return;
+        this.close();
       });
     }
   }
@@ -754,7 +785,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     scrim,
     caps,
   });
-  ['layers', 'relief', 'hypso', 'places', 'settings'].forEach((id) =>
+  ['layers', 'relief', 'hypso', 'places', 'draw', 'settings'].forEach((id) =>
     controller.register(id),
   );
   controller.install();
@@ -865,6 +896,19 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     }),
   );
 
+  // ----- Drawing engine ------------------------------------------------
+  //
+  // The engine renders into the map's GeoJSON layer stack and consumes
+  // pointer events when "armed". We arm it whenever the drawing panel
+  // is open and disarm it as soon as the user closes the panel or
+  // switches to another panel — that way the map's default pan/zoom
+  // behaviour stays uninterrupted unless the user is actively drawing.
+  //
+  // The engine survives style rebuilds (theme / quality switches) via
+  // its own `styledata` listener so persistent drawings re-appear after
+  // a switch without any extra wiring here.
+  installDrawingUI(map, panelsHost, controller);
+
   // ----- Hypso subsystem ----------------------------------------------
   installHypsoUI(map, panelsHost, { caps, profile: effectiveProfile() });
 
@@ -953,5 +997,66 @@ function installHypsoUI(map, panelsHost, { caps, profile } = {}) {
 
   if (typeof window !== 'undefined') {
     window.__cart_hypso = handle;
+  }
+}
+
+/**
+ * Mount the drawing engine + its panel body into the existing dock
+ * scaffold. The engine attaches its source/layers to the map; the
+ * panel populates the `data-panel-id="draw"` body that `renderPanels`
+ * already produced.
+ *
+ * Lifecycle integration
+ * ---------------------
+ * The engine is always live — what determines whether map events do
+ * anything is the active *tool*. `select` (the default) is passive:
+ * it never blocks pan/zoom and only acts when you click an existing
+ * draw feature. Every other tool (marker, line, polygon, pencil,
+ * shape) actively authors geometry.
+ *
+ * Why not gate on the panel's open state? The DockController closes
+ * the panel on the first outside-pointerdown, which on mobile means
+ * the user can NEVER tap the map while the panel is open (the scrim
+ * eats the tap). On desktop the close-on-outside fires before the
+ * `click` event reaches the engine, so a panel-gated engine misses
+ * the very click that should drop a marker. Always-live + passive-
+ * select is the only timing-safe model.
+ *
+ * Idempotent: if the engine is already mounted on the map (e.g. after
+ * a hot-reload), the existing handle is reused.
+ */
+function installDrawingUI(map, panelsHost, controller) {
+  const drawPanel = panelsHost.querySelector('.panel[data-panel-id="draw"]');
+  if (!drawPanel) return;
+  const body = drawPanel.querySelector('.panel-body');
+  if (!body) return;
+
+  // Engine: idempotent factory — calling twice on the same map returns
+  // the existing handle.
+  const engine = createDrawEngine(map);
+
+  // Panel UI — wires the form controls in `body` to the engine. The
+  // returned unmount fn is held for symmetry; we don't call it during
+  // normal operation since the panel persists for the page lifetime.
+  const unmountPanel = mountDrawPanel({ engine, host: body });
+
+  // Single observer drives BOTH (a) the cosmetic drawing-mode flag on
+  // <html> for any CSS hooks that want to react to "panel visible",
+  // and (b) the cancel-draft-on-close affordance — so the user
+  // doesn't return to a stale rubber-band edge after dismissing the
+  // panel mid-line.
+  const onPanelToggle = () => {
+    const open = drawPanel.dataset.open === 'true';
+    document.documentElement.dataset.drawing = open ? '1' : '0';
+    if (!open) engine.cancelDraft?.();
+  };
+  onPanelToggle();
+  const observer = new MutationObserver(onPanelToggle);
+  observer.observe(drawPanel, { attributes: true, attributeFilter: ['data-open'] });
+
+  // Expose for ad-hoc console debugging during development.
+  if (typeof window !== 'undefined') {
+    window.__cart_draw = engine;
+    window.__cart_draw_panel = { unmount: unmountPanel, observer };
   }
 }

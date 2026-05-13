@@ -72,3 +72,8 @@
  *     hypso-specific breakpoints). Its own internal barrel preserves
  *     the sub-cascade order. */
 @import url("./hypso/index.css");
+
+/* 12. Drawing engine — tool palette, shape selector, connection picker
+ *     and on-canvas overlays. Imported last so the panel primitives
+ *     can lean on every layer above without `!important` overrides. */
+@import url("./draw.css");

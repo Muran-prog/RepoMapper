@@ -1,0 +1,155 @@
+/**
+ * Draw engine — localStorage persistence layer.
+ *
+ * The drawing state survives reloads so a sketch the user started this
+ * morning is still there in the afternoon. Two top-level blobs are
+ * persisted:
+ *
+ *   • `cart:draw:features:v1` — the GeoJSON FeatureCollection of every
+ *                                user-authored marker / line / polygon /
+ *                                free-draw stroke / shape.
+ *   • `cart:draw:prefs:v1`    — the user's tool + connection-mode +
+ *                                style choices. Restored when the panel
+ *                                is reopened.
+ *
+ * All reads/writes are defensive. Storage can be disabled (Safari
+ * private mode, 3rd-party cookies blocked) or quota-exceeded; in either
+ * case we silently fall back to in-memory state.
+ *
+ * @typedef {object} DrawPrefs
+ * @property {string} tool                 Active tool slug (select/marker/…)
+ * @property {string} connectionMode       'none'|'sequence'|'optimal'|'mesh'|'hub'
+ * @property {string} shapeType            'circle'|'rectangle'|'regular'|'arrow'|'star'
+ * @property {number} shapeSides           Sides count for regular polygon.
+ * @property {string} color                CSS colour for new features.
+ * @property {string} fill                 CSS fill for polygons.
+ * @property {number} weight               Line weight in px.
+ * @property {number} opacity              0..1 stroke opacity.
+ * @property {boolean} geodesic            Render connections as geodesics.
+ * @property {boolean} labels              Show marker number labels.
+ * @property {boolean} snap                Snap-to-vertex when placing.
+ */
+
+const FEATURES_KEY = 'cart:draw:features:v1';
+const PREFS_KEY = 'cart:draw:prefs:v1';
+
+/** Probe localStorage availability without throwing. */
+function ls() {
+  try {
+    if (typeof window === 'undefined') return null;
+    const s = window.localStorage;
+    s.getItem(FEATURES_KEY);
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+/** @returns {DrawPrefs} */
+export function defaultPrefs() {
+  return {
+    tool: 'select',
+    connectionMode: 'sequence',
+    shapeType: 'circle',
+    shapeSides: 6,
+    color: '#c66809',
+    fill: '#c66809',
+    weight: 3,
+    opacity: 0.95,
+    geodesic: true,
+    labels: true,
+    snap: true,
+  };
+}
+
+/**
+ * Load persisted preferences. Missing fields fall back to the defaults
+ * so the returned object is always fully populated.
+ *
+ * @returns {DrawPrefs}
+ */
+export function loadPrefs() {
+  const fallback = defaultPrefs();
+  const storage = ls();
+  if (!storage) return fallback;
+  try {
+    const raw = storage.getItem(PREFS_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return fallback;
+    return {
+      ...fallback,
+      ...Object.fromEntries(
+        Object.entries(parsed).filter(([k]) => k in fallback),
+      ),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Patch persisted preferences. Best-effort — quota errors are swallowed.
+ *
+ * @param {Partial<DrawPrefs>} patch
+ */
+export function savePrefs(patch) {
+  const storage = ls();
+  if (!storage) return;
+  try {
+    const next = { ...loadPrefs(), ...patch };
+    storage.setItem(PREFS_KEY, JSON.stringify(next));
+  } catch {
+    /* quota / serialise error — best-effort */
+  }
+}
+
+/**
+ * Load the persisted feature collection. Returns an empty array when
+ * none are configured or the blob is malformed.
+ *
+ * @returns {Array<GeoJSON.Feature>}
+ */
+export function loadFeatures() {
+  const storage = ls();
+  if (!storage) return [];
+  try {
+    const raw = storage.getItem(FEATURES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.features)) return [];
+    return parsed.features.filter(isValidFeature);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Persist the feature collection. Best-effort.
+ *
+ * @param {Array<GeoJSON.Feature>} features
+ */
+export function saveFeatures(features) {
+  const storage = ls();
+  if (!storage) return;
+  try {
+    storage.setItem(
+      FEATURES_KEY,
+      JSON.stringify({ version: 1, features }),
+    );
+  } catch {
+    /* quota / serialise error — best-effort */
+  }
+}
+
+/** Defensive validation — discards anything that isn't a sane Feature. */
+function isValidFeature(f) {
+  if (!f || typeof f !== 'object') return false;
+  if (f.type !== 'Feature') return false;
+  if (!f.geometry || typeof f.geometry !== 'object') return false;
+  if (typeof f.geometry.type !== 'string') return false;
+  if (!Array.isArray(f.geometry.coordinates) && f.geometry.coordinates != null) {
+    return false;
+  }
+  return true;
+}
