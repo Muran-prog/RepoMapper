@@ -5,20 +5,44 @@
  *  collapses; `100svh` override lives in layout.css alongside #app.
  * ===================================================================== */
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+/* Remove all default margins / paddings on common elements. */
+html,
+body,
+h1, h2, h3, h4, h5, h6,
+p,
+ul,
+ol,
+figure,
+blockquote {
+  margin: 0;
+  padding: 0;
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
 }
 
 html,
 body {
-  margin: 0;
-  padding: 0;
   height: 100%;
   background: var(--bg-page);
   color: var(--fg);
   font-family: var(--sans);
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 1.45;
+  font-feature-settings: "cv11", "ss01", "ss02", "ss03";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -27,10 +51,20 @@ body {
 }
 
 body {
-  /* `dvh` shrinks when the iOS URL bar appears, expands when it collapses,
-     avoiding the legacy 100vh bottom-cropping issue. */
+  /* `dvh` shrinks when the iOS URL bar appears, expands when it
+     collapses, avoiding the legacy 100vh bottom-cropping issue. */
   height: 100dvh;
   /* iOS double-tap zoom suppression */
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  /* Forced colours: don't inherit the OS bg or you get a flash of
+     light-grey on Windows high-contrast. */
+  background-color: var(--bg-page);
+}
+
+/* Element-level focus-visible normalisation. Modules opt in to their
+   own ring shapes; this is the safety net for raw <button> and <a>. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

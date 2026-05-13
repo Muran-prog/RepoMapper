@@ -1,49 +1,171 @@
 /* =====================================================================
- *  HUD
+ *  HUD — premium telemetry pill at the bottom-left.
+ *
+ *  Layout model:
+ *    [ FPS  ] · [ ZOOM ] · [ TILES ]   ← primary group (always)
+ *    [ LAT  ] · [ LON  ] · [ ELEV  ]   ← cursor group (hover-only)
+ *
+ *  Each stat is a vertical micro-widget — a tiny uppercase label
+ *  stacked above a mono-spaced value. The whole pill is a glass-morphism
+ *  surface matched to the dock + brand chip.
+ *
+ *  The cursor group fades out when the pointer leaves the canvas so
+ *  stale coordinates don't sit in front of the user.
  * ===================================================================== */
 
 .hud-host {
   position: absolute;
-  z-index: 4;
+  z-index: 3;
   pointer-events: none;
-  left: 14px;
-  bottom: calc(50px + env(safe-area-inset-bottom));
+  left: max(14px, env(safe-area-inset-left));
+  bottom: calc(56px + env(safe-area-inset-bottom));
 }
 
 .hud {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 4px 14px;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--hairline);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--fg);
-  box-shadow: var(--shadow);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm), var(--ring);
+
+  padding: 0;
+  pointer-events: auto;
+  user-select: none;
+  overflow: hidden;
+  /* Smoothly animate width changes when the cursor group fades in. */
+  transition: box-shadow var(--t-base) var(--ease-out);
 }
 
-.hud-row {
-  display: contents;
+/* --- Stat groups --------------------------------------------------- */
+.hud-stat-group {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 2px 0;
 }
-.hud-label {
+
+/* The cursor group sits to the right of the primary stats, separated
+   by a hairline column. When idle it fades out and shrinks to zero
+   width — a single property animation that preserves the pill's
+   shape elegantly. */
+[data-hud-group="cursor"] {
+  position: relative;
+  border-left: 1px solid var(--hairline);
+  transition:
+    opacity var(--t-base) var(--ease-out),
+    max-width var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out),
+    padding var(--t-base) var(--ease-out);
+}
+[data-hud-group="cursor"][data-state="idle"] {
+  opacity: 0;
+  max-width: 0;
+  padding: 2px 0;
+  border-left-color: transparent;
+  pointer-events: none;
+}
+[data-hud-group="cursor"][data-state="active"] {
+  opacity: 1;
+  max-width: 480px;
+}
+
+/* --- Stat cell ----------------------------------------------------- */
+.hud-stat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 5px 12px;
+  min-width: 0;
+  position: relative;
+  border-right: 1px solid var(--hairline);
+}
+.hud-stat:last-child {
+  border-right: 0;
+}
+/* A stat cell at the boundary between groups shouldn't draw a divider —
+   the group's own border-left handles it. */
+[data-hud-group="cursor"] > .hud-stat:last-child {
+  border-right: 0;
+}
+
+.hud-stat-label {
+  font-family: var(--sans);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--fg-muted);
-  letter-spacing: 0.04em;
+  margin-bottom: 1px;
+  line-height: 1;
 }
-.hud-value {
-  text-align: right;
+.hud-stat-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+  transition: color var(--t-base) var(--ease-out);
+  white-space: nowrap;
 }
-.hud-value[data-tier="good"] {
-  color: #2da356;
+
+/* --- FPS colour tiers --------------------------------------------- */
+.hud-stat[data-tier="good"] .hud-stat-value { color: #2da356; }
+.hud-stat[data-tier="mid"]  .hud-stat-value { color: #d28f15; }
+.hud-stat[data-tier="low"]  .hud-stat-value { color: #d04839; }
+
+[data-theme="dark"] .hud-stat[data-tier="good"] .hud-stat-value { color: #61d68f; }
+[data-theme="dark"] .hud-stat[data-tier="mid"]  .hud-stat-value { color: #f6c25b; }
+[data-theme="dark"] .hud-stat[data-tier="low"]  .hud-stat-value { color: #ff7a6b; }
+
+/* A subtle status dot in the FPS cell so the user gets a colour
+   signal even before reading the number. */
+.hud-stat[data-hud-stat="fps"] .hud-stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
-.hud-value[data-tier="mid"] {
-  color: #c69214;
+.hud-stat[data-hud-stat="fps"] .hud-stat-label::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  transition: background var(--t-base) var(--ease-out), box-shadow var(--t-base) var(--ease-out);
 }
-.hud-value[data-tier="low"] {
-  color: #c4402f;
+.hud-stat[data-hud-stat="fps"][data-tier="good"] .hud-stat-label::before {
+  background: #2da356;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #2da356 18%, transparent);
+}
+.hud-stat[data-hud-stat="fps"][data-tier="mid"] .hud-stat-label::before {
+  background: #d28f15;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #d28f15 18%, transparent);
+}
+.hud-stat[data-hud-stat="fps"][data-tier="low"] .hud-stat-label::before {
+  background: #d04839;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #d04839 18%, transparent);
+}
+[data-theme="dark"] .hud-stat[data-hud-stat="fps"][data-tier="good"] .hud-stat-label::before { background: #61d68f; }
+[data-theme="dark"] .hud-stat[data-hud-stat="fps"][data-tier="mid"]  .hud-stat-label::before { background: #f6c25b; }
+[data-theme="dark"] .hud-stat[data-hud-stat="fps"][data-tier="low"]  .hud-stat-label::before { background: #ff7a6b; }
+
+/* --- Narrow phone tweaks ------------------------------------------ */
+@media (max-width: 540px) {
+  .hud-stat {
+    padding: 4px 9px;
+  }
+  .hud-stat-label {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+  }
+  .hud-stat-value {
+    font-size: 11px;
+  }
 }

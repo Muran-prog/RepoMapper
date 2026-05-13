@@ -5,58 +5,141 @@
  *  bumps the touch hitbox. All downstream modules read from these
  *  variables so theme switching costs zero JS work past flipping the
  *  [data-theme] attribute on <html>.
+ *
+ *  Modernised v0.3:
+ *    • Glass-morphism surfaces — `--glass-bg` + `--glass-blur` pair
+ *      every floating panel uses, so a theme switch updates the whole
+ *      UI atomically.
+ *    • Radius scale — `--r-sm/md/lg/xl/2xl/pill` lets us reach for the
+ *      right corner without magic numbers.
+ *    • Premium shadow stack — multi-layer (ambient + key) per elevation.
+ *    • Motion curves — one bezier per intent (panel, gesture, hover).
+ *    • Touch hitbox: pointer-coarse and forced-mobile both bump to 44.
  * ===================================================================== */
 
 :root {
   color-scheme: light dark;
 
-  --bg-page: #f4f1ea;
+  /* ---- Surfaces ---------------------------------------------------- */
+  --bg-page: #efece4;
   --bg-side: #ffffff;
-  --bg-side-soft: #f7f5ef;
+  --bg-side-soft: #f6f3eb;
   --bg-elevated: #ffffff;
-  --fg: #2a2520;
-  --fg-soft: #6b645a;
-  --fg-muted: #95897a;
-  --accent: #d97706;
-  --accent-soft: rgba(217, 119, 6, 0.12);
-  --hairline: rgba(0, 0, 0, 0.08);
-  --hairline-strong: rgba(0, 0, 0, 0.16);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08), 0 24px 64px rgba(0, 0, 0, 0.12);
-  --radius: 10px;
-  --radius-lg: 16px;
+  --bg-sunken: #ece8de;
+
+  /* Floating "glass" surfaces — used by dock, panels, HUD, legend.
+     The `color-mix` falls back to plain rgba on engines without it. */
+  --glass-bg: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
+  --glass-bg-strong: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  --glass-blur: 22px;
+  --glass-saturate: 1.4;
+
+  /* ---- Text -------------------------------------------------------- */
+  --fg: #221d18;
+  --fg-soft: #6a6258;
+  --fg-muted: #948a7c;
+
+  /* ---- Brand / accent --------------------------------------------- */
+  --accent: #c66809;
+  --accent-strong: #b35a06;
+  --accent-soft: rgba(198, 104, 9, 0.12);
+  --accent-glow: rgba(198, 104, 9, 0.34);
+  --accent-grad: linear-gradient(135deg, #d97706 0%, #c66809 55%, #a64a05 100%);
+  --brand-grad: linear-gradient(135deg, #005bbb 0%, #2d80d3 50%, #ffd500 100%);
+
+  /* ---- Lines + dividers ------------------------------------------- */
+  --hairline: rgba(0, 0, 0, 0.07);
+  --hairline-strong: rgba(0, 0, 0, 0.14);
+  --ring: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --ring-strong: 0 0 0 1px rgba(0, 0, 0, 0.12);
+
+  /* ---- Elevations -------------------------------------------------- */
+  --shadow-xs: 0 1px 2px rgba(15, 18, 24, 0.06);
+  --shadow-sm: 0 1px 2px rgba(15, 18, 24, 0.05), 0 2px 6px rgba(15, 18, 24, 0.06);
+  --shadow-md: 0 2px 4px rgba(15, 18, 24, 0.05), 0 8px 20px rgba(15, 18, 24, 0.08);
+  --shadow-lg: 0 4px 8px rgba(15, 18, 24, 0.05), 0 18px 40px rgba(15, 18, 24, 0.12),
+               0 32px 64px rgba(15, 18, 24, 0.10);
+  --shadow-xl: 0 6px 12px rgba(15, 18, 24, 0.08), 0 28px 60px rgba(15, 18, 24, 0.16),
+               0 48px 96px rgba(15, 18, 24, 0.14);
+
+  /* Legacy aliases kept for forward-compat with older modules. */
+  --shadow: var(--shadow-md);
+
+  /* ---- Radii ------------------------------------------------------- */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 18px;
+  --r-2xl: 24px;
+  --r-pill: 999px;
+  --radius: var(--r-md);
+  --radius-lg: var(--r-xl);
+
+  /* ---- Typography -------------------------------------------------- */
   --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+  --sans: "Inter var", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, system-ui, sans-serif;
 
-  /* Touch hitbox baseline — overridden on coarse pointers. */
-  --hit: 36px;
+  /* ---- Motion ------------------------------------------------------ */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-soft: cubic-bezier(0.32, 0.72, 0.27, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 140ms;
+  --t-base: 220ms;
+  --t-slow: 320ms;
 
-  /* Sheet peek height (mobile bottom-sheet collapsed). */
-  --sheet-peek: 88px;
-  --sheet-radius: 18px;
-
-  /* Sidebar width on desktop. */
-  --sidebar-w: 320px;
+  /* ---- Component sizing ------------------------------------------- */
+  --hit: 38px;             /* baseline button hitbox */
+  --dock-size: 48px;       /* fixed width/height of dock buttons */
+  --dock-icon: 20px;
+  --dock-pad: 6px;         /* dock interior padding */
+  --dock-w: calc(var(--dock-size) + var(--dock-pad) * 2 + 2px); /* + border */
+  --panel-w: 304px;        /* default popover width */
+  --panel-gap: 14px;       /* gap between dock and panel */
+  --sheet-radius: 22px;    /* bottom-sheet corner radius on mobile */
 }
 
 [data-theme="dark"] {
-  --bg-page: #0e1318;
-  --bg-side: #11161c;
-  --bg-side-soft: #161c23;
-  --bg-elevated: #1a212a;
-  --fg: #e8e5dd;
-  --fg-soft: #a9a59a;
-  --fg-muted: #6c6a64;
-  --accent: #f0a850;
-  --accent-soft: rgba(240, 168, 80, 0.16);
-  --hairline: rgba(255, 255, 255, 0.08);
-  --hairline-strong: rgba(255, 255, 255, 0.18);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4), 0 24px 64px rgba(0, 0, 0, 0.6);
+  --bg-page: #0c1116;
+  --bg-side: #131a22;
+  --bg-side-soft: #182029;
+  --bg-elevated: #1a2330;
+  --bg-sunken: #0a0e13;
+
+  --glass-bg: color-mix(in srgb, #1a2330 72%, transparent);
+  --glass-bg-strong: color-mix(in srgb, #1a2330 88%, transparent);
+
+  --fg: #ebe7df;
+  --fg-soft: #aaa597;
+  --fg-muted: #6f6c64;
+
+  --accent: #ffb368;
+  --accent-strong: #ffa047;
+  --accent-soft: rgba(255, 179, 104, 0.16);
+  --accent-glow: rgba(255, 179, 104, 0.36);
+  --accent-grad: linear-gradient(135deg, #ffb368 0%, #ff9a3d 55%, #d97706 100%);
+  --brand-grad: linear-gradient(135deg, #4093e5 0%, #6dafee 50%, #ffd966 100%);
+
+  --hairline: rgba(255, 255, 255, 0.07);
+  --hairline-strong: rgba(255, 255, 255, 0.16);
+  --ring: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --ring-strong: 0 0 0 1px rgba(255, 255, 255, 0.14);
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 10px 22px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 6px 12px rgba(0, 0, 0, 0.45), 0 22px 48px rgba(0, 0, 0, 0.5),
+               0 36px 72px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.5), 0 32px 64px rgba(0, 0, 0, 0.55),
+               0 56px 110px rgba(0, 0, 0, 0.4);
 }
 
 /* Touch baseline: WCAG/Apple HIG recommend 44pt minimum hitbox. */
 [data-pointer="coarse"],
 :where([data-touch="1"]) {
   --hit: 44px;
+  --dock-size: 52px;
+  --dock-icon: 22px;
 }

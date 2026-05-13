@@ -1,5 +1,10 @@
 /* =====================================================================
- *  Splash + fatal-error overlay
+ *  Splash + fatal-error overlay.
+ *
+ *  Modernised: the splash is now a focused "compass" mark with a
+ *  subtle pulsing ring and a brand wordmark, replacing the old plain
+ *  border-spinner. The page-level radial gradient (defined in
+ *  layout.css for the booting state) handles the background ambience.
  * ===================================================================== */
 
 .splash {
@@ -9,42 +14,88 @@
   place-items: center;
   background: var(--bg-page);
   z-index: 10;
-  transition: opacity 320ms ease, visibility 320ms ease;
+  transition:
+    opacity var(--t-slow) var(--ease-out),
+    visibility var(--t-slow) var(--ease-out);
 }
 #app[data-state="ready"] .splash {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
+
 .splash-inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 20px;
   color: var(--fg-soft);
 }
+
 .splash-loader {
-  width: 28px;
-  height: 28px;
+  --r: 36px;
+  position: relative;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
   border-radius: 50%;
-  border: 3px solid var(--hairline);
-  border-top-color: var(--accent);
-  animation: spin 0.9s linear infinite;
+  background: var(--brand-grad);
+  display: grid;
+  place-items: center;
+  color: white;
+  box-shadow:
+    0 12px 28px rgba(0, 91, 187, 0.32),
+    0 28px 56px rgba(255, 213, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+.splash-loader::after {
+  /* Animated outer ring — pulses out at the page tempo. */
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  animation: splash-pulse 1.6s var(--ease-out) infinite;
+}
+.splash-loader::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.65);
+  border-top-color: transparent;
+  border-right-color: transparent;
+  animation: spin 1.1s linear infinite;
 }
 @keyframes spin {
   to {
     transform: rotate(360deg);
   }
 }
+@keyframes splash-pulse {
+  0%   { opacity: 0.6; transform: scale(0.9); }
+  100% { opacity: 0;   transform: scale(1.35); }
+}
 
+.splash p {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* Fatal error card. */
 .fatal {
   max-width: 540px;
   margin: 60px auto;
-  padding: 24px 28px;
-  background: var(--bg-elevated);
+  padding: 28px 32px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
   text-align: left;
 }
 .fatal h1 {
@@ -55,15 +106,16 @@
 .fatal pre {
   font-family: var(--mono);
   font-size: 12px;
-  background: var(--bg-side-soft);
-  padding: 10px 12px;
-  border-radius: 8px;
+  background: var(--bg-sunken);
+  padding: 12px 14px;
+  border-radius: var(--r-md);
   overflow: auto;
   color: var(--fg);
+  border: 1px solid var(--hairline);
 }
 .fatal code {
   font-family: var(--mono);
   background: var(--bg-side-soft);
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
 }

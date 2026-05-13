@@ -1,0 +1,825 @@
+/* =====================================================================
+ *  Dock + popover panels — the redesigned navigation shell.
+ *
+ *  The old left-rail sidebar has been replaced with a slim floating
+ *  dock (52 px) on the left edge of the canvas. Each dock button toggles
+ *  a small popover panel anchored beside it, so the map remains the
+ *  star of the show. On mobile the dock relocates to the bottom and the
+ *  panels become bottom-sheets — the same DOM, only the CSS swaps form.
+ *
+ *  DOM structure (rendered by controls.js):
+ *
+ *    aside.dock
+ *      header.dock-brand
+ *      nav.dock-nav
+ *        button.dock-btn × N
+ *      footer.dock-foot
+ *        button.dock-btn.theme-toggle
+ *
+ *    section.panel[data-panel-id]   (one per dock-btn, peer of .dock)
+ *      header.panel-head
+ *      div.panel-body  → form primitives
+ *
+ *  All popovers share the same .panel scaffold so adding a new section
+ *  is just a question of registering an icon + a content render fn in
+ *  controls.js.
+ * ===================================================================== */
+
+/* =====================================================================
+ *  Dock / panels wrappers — empty layout boxes that contain the
+ *  absolutely-positioned dock and panels. The wrapper has no intrinsic
+ *  size; its children are positioned relative to #app. We avoid
+ *  `display: contents` because the dock-root wrapper carries the
+ *  visible `.dock` styles + ARIA role.
+ * ===================================================================== */
+
+.panels-root {
+  /* Bare container for absolutely-positioned .panel elements; renders
+     no box of its own (children are all `position: absolute`). */
+  display: block;
+}
+
+/* =====================================================================
+ *  Floating dock.
+ * ===================================================================== */
+
+.dock {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: max(14px, env(safe-area-inset-left));
+  transform: translateY(-50%);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+
+  padding: var(--dock-pad);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg), var(--ring);
+}
+
+.dock-brand,
+.dock-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dock-foot {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+  width: 100%;
+}
+.dock-brand {
+  margin-bottom: 2px;
+}
+
+.dock-logo {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: white;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--brand-grad);
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 2px 8px rgba(0, 91, 187, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  flex: 0 0 auto;
+  transition:
+    transform var(--t-base) var(--ease-spring),
+    box-shadow var(--t-base) var(--ease-out);
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.dock-logo:hover {
+  transform: scale(1.06);
+  box-shadow:
+    0 4px 14px rgba(0, 91, 187, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.dock-logo:active {
+  transform: scale(0.94);
+}
+.dock-logo:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.dock-logo svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dock-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.dock-btn {
+  appearance: none;
+  position: relative;
+  width: var(--dock-size);
+  height: var(--dock-size);
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--fg-soft);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  flex: 0 0 auto;
+}
+.dock-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.dock-btn svg {
+  width: var(--dock-icon);
+  height: var(--dock-icon);
+  pointer-events: none;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .dock-btn:hover {
+    color: var(--fg);
+    background: var(--bg-side-soft);
+  }
+  .dock-btn:hover svg {
+    transform: scale(1.08);
+  }
+}
+.dock-btn:active {
+  transform: scale(0.94);
+}
+.dock-btn[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* Side indicator — a small accent bar that grows out of the active
+   dock button toward the open panel. Adds a clear directional cue
+   without busy chrome. On mobile (dock at bottom) the indicator moves
+   to the top of the button. */
+.dock-btn::before {
+  content: "";
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0;
+  transition:
+    opacity var(--t-base) var(--ease-out),
+    transform var(--t-base) var(--ease-spring);
+  pointer-events: none;
+  z-index: -1;
+}
+.dock-btn[data-active="true"]::before {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* Tooltip — only on hover-capable pointers, never on touch. Renders
+ * as a compact pill to the right of the dock button. The active
+ * indicator owns ::before, so the tooltip stays on ::after only. */
+.dock-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  padding: 5px 10px;
+  background: var(--fg);
+  color: var(--bg-elevated);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border-radius: var(--r-md);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  box-shadow: var(--shadow-sm);
+  z-index: 10;
+}
+@media (hover: hover) {
+  .dock-btn[data-tip]:hover::after {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+/* Hide tooltip when the panel is open. */
+.dock-btn[data-active="true"]::after {
+  opacity: 0 !important;
+}
+
+/* =====================================================================
+ *  Popover panels.
+ * ===================================================================== */
+
+.panel {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: calc(max(14px, env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
+  transform-origin: left center;
+
+  width: var(--panel-w);
+  max-height: min(76dvh, 720px);
+  max-width: calc(100vw - var(--dock-w) - 40px);
+
+  display: flex;
+  flex-direction: column;
+
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg), var(--ring);
+
+  overflow: hidden;
+
+  /* Closed state — invisible + un-interactable. */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-6px) scale(0.97);
+  transition:
+    opacity var(--t-base) var(--ease-out),
+    transform var(--t-base) var(--ease-out),
+    visibility var(--t-base);
+}
+
+.panel[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0) scale(1);
+}
+
+/* Custom verticalalignment per panel (set by JS based on the
+   triggering dock button's position relative to the dock centre). */
+.panel[data-anchor="top"]    { top: max(80px, env(safe-area-inset-top)); transform-origin: left top; }
+.panel[data-anchor="bottom"] { top: auto; bottom: max(80px, env(safe-area-inset-bottom)); transform-origin: left bottom; }
+.panel[data-anchor="top"][data-open="true"]    { transform: translateY(0) scale(1); }
+.panel[data-anchor="top"]:not([data-open="true"])    { transform: translateY(-6px) scale(0.97); }
+.panel[data-anchor="bottom"][data-open="true"] { transform: translateY(0) scale(1); }
+.panel[data-anchor="bottom"]:not([data-open="true"]) { transform: translateY(6px) scale(0.97); }
+
+/* --- Panel inner shell -------------------------------------------- */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+.panel-title svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+.panel-close {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.panel-close:hover {
+  background: var(--bg-side-soft);
+  color: var(--fg);
+}
+.panel-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.panel-body::-webkit-scrollbar {
+  width: 6px;
+}
+.panel-body::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: var(--r-pill);
+}
+
+/* =====================================================================
+ *  Panel content primitives.
+ *
+ *  These primitives are intentionally generic so any future panel can
+ *  reuse them without inventing new classes.
+ * ===================================================================== */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.field-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* --- Segmented control -------------------------------------------- */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg-side-soft);
+  padding: 3px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--hairline);
+  position: relative;
+}
+.seg.seg-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 10px;
+  min-height: calc(var(--hit) - 8px);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-soft);
+  cursor: pointer;
+  border-radius: calc(var(--r-md) - 3px);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  z-index: 1;
+}
+@media (hover: hover) {
+  .seg button:hover {
+    color: var(--fg);
+  }
+}
+.seg button:active {
+  transform: scale(0.97);
+}
+.seg button.on {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm), var(--ring);
+  font-weight: 600;
+}
+
+/* --- Toggle rows -------------------------------------------------- */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  min-height: calc(var(--hit) - 4px);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+@media (hover: hover) {
+  .row:hover {
+    background: var(--bg-side-soft);
+  }
+}
+.row:active {
+  background: var(--hairline);
+}
+
+/* --- Switch (replacement for the old checkbox-row look) ----------- */
+.row > input[type="checkbox"] {
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  flex: 0 0 32px;
+  border-radius: var(--r-pill);
+  background: var(--hairline-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background var(--t-base) var(--ease-out);
+  margin: 0;
+}
+.row > input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 1px 4px rgba(0, 0, 0, 0.12);
+  transition: transform var(--t-base) var(--ease-out-soft), background var(--t-base) var(--ease-out);
+}
+.row > input[type="checkbox"]:checked {
+  background: var(--accent);
+}
+.row > input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+}
+.row > input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.row > span {
+  flex: 1;
+}
+
+/* --- Slider ------------------------------------------------------- */
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 4px 0;
+}
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.slider-label span {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.slider-row input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--hairline-strong) var(--fill, 50%), var(--hairline-strong) 100%);
+  border: 0;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  padding: 0;
+  transition: filter var(--t-fast) var(--ease-out);
+}
+.slider-row input[type="range"]:hover {
+  filter: brightness(1.05);
+}
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+  transition: transform var(--t-fast) var(--ease-spring);
+}
+.slider-row input[type="range"]::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  cursor: grabbing;
+}
+.slider-row input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-sm);
+  cursor: grab;
+}
+
+/* --- Preset grid -------------------------------------------------- */
+.presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.presets button {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side-soft);
+  color: var(--fg);
+  padding: 8px 12px;
+  min-height: calc(var(--hit) + 6px);
+  border-radius: var(--r-md);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.presets button > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+.presets button strong {
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.presets button small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--fg-muted);
+  letter-spacing: 0.02em;
+}
+@media (hover: hover) {
+  .presets button:hover {
+    background: var(--bg-elevated);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--hairline));
+    color: var(--accent);
+  }
+  .presets button:hover small {
+    color: color-mix(in srgb, var(--accent) 50%, var(--fg-muted));
+  }
+}
+.presets button:active {
+  transform: scale(0.97);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.presets button .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: 0 0 6px;
+  opacity: 0.7;
+}
+
+/* --- Block button (full-width action) ----------------------------- */
+.btn-block {
+  appearance: none;
+  width: 100%;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side-soft);
+  color: var(--fg);
+  padding: 0 14px;
+  min-height: calc(var(--hit) - 2px);
+  border-radius: var(--r-md);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .btn-block:hover {
+    background: var(--bg-elevated);
+    border-color: color-mix(in srgb, var(--accent) 36%, var(--hairline));
+    color: var(--accent);
+  }
+}
+.btn-block:active {
+  transform: scale(0.98);
+}
+
+/* --- Tip list ----------------------------------------------------- */
+.tips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--fg-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.tips li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.tips kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--bg-side-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+  flex: 0 0 auto;
+}
+.tips[data-pointer="fine"]   { display: none; }
+.tips[data-pointer="coarse"] { display: none; }
+[data-pointer="fine"]  .tips[data-pointer="fine"]   { display: flex; }
+[data-pointer="coarse"] .tips[data-pointer="coarse"] { display: flex; }
+
+/* --- Group divider / section title -------------------------------- */
+.panel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.panel-group + .panel-group {
+  margin-top: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.panel-group-title {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+/* --- Foot meta (panel footer text) -------------------------------- */
+.panel-meta {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* =====================================================================
+ *  Brand chip — small floating header in the top-left corner.
+ *
+ *  Carries the title and a tiny status indicator (FPS-coloured) so the
+ *  user gets an at-a-glance health pulse.
+ * ===================================================================== */
+
+.chip-host {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 8px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm), var(--ring);
+  pointer-events: auto;
+  cursor: default;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+.chip-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--brand-grad);
+  display: grid;
+  place-items: center;
+  color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  flex: 0 0 22px;
+}
+.chip-logo svg {
+  width: 12px;
+  height: 12px;
+}
+.chip-sub {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* =====================================================================
+ *  Note: the legacy `.sidebar` class was removed alongside the old
+ *  rail-style layout. The DOM keeps `id="sidebar"` for JS continuity
+ *  but no longer carries the class — controls.js now applies `.dock`
+ *  to its child wrapper.
+ * ===================================================================== */

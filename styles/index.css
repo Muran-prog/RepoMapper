@@ -1,22 +1,30 @@
 /* =====================================================================
  *  Cart — UI styles barrel.
  *
- *  Three-tier responsive layout:
- *    • desktop  (≥ 960px)         sidebar on the left, fixed 320px
- *    • tablet   (540–960px)       sidebar overlays the map as a floating panel
- *    • mobile   (< 540px or narrow)  sidebar becomes a bottom-sheet with a
- *                                   handle, peek and expanded states
+ *  Redesigned shell (v0.3):
+ *    • Map fills the entire viewport.
+ *    • A slim glass-morphism dock (52 px) floats on the left edge.
+ *    • Each dock button toggles a small popover panel anchored beside
+ *      it — smoothly animated, scoped, dismissible.
+ *    • A floating brand chip sits in the top-left corner.
+ *    • The HUD lives as a compact pill at the bottom-left.
  *
- *  All theming is driven by [data-theme] on <html>. Device data attributes
- *  set by src/main.js ([data-touch], [data-hover], [data-narrow], …) let CSS
- *  branch without JS noise.
+ *  Responsive form factors:
+ *    • desktop  (≥ 960 px)  vertical dock on the left, popover panels
+ *    • tablet   (≥ 540 px)  same dock, slightly inset, narrower panels
+ *    • mobile   (< 540 px)  dock relocates to the bottom; panels become
+ *                            bottom-sheets with drag handles
+ *
+ *  All theming is driven by [data-theme] on <html>. Device data
+ *  attributes set by src/main.js ([data-touch], [data-hover],
+ *  [data-narrow], …) let CSS branch without JS noise.
  *
  *  Notable techniques:
  *    – 100dvh / svh viewport units (handles iOS URL-bar collapse)
  *    – env(safe-area-inset-*) for notch / home-indicator
  *    – touch-action: none on map, pan-y on sheet
  *    – hover-only affordances guarded by @media (hover: hover)
- *    – reduced-motion fallbacks for splash + sheet transitions
+ *    – prefers-reduced-motion fallbacks throughout
  *
  *  Import order is cascade-sensitive — see the comment block at the end
  *  of this file before reshuffling.
@@ -28,10 +36,14 @@
 /* 2. Base reset + html/body defaults. */
 @import url("./base.css");
 
-/* 3. App grid + canvas + map element. */
+/* 3. Fullscreen canvas + map element. */
 @import url("./layout.css");
 
-/* 4. Sidebar desktop variant + in-sidebar primitives. */
+/* 4. Floating dock + popover panels + brand chip + form primitives. */
+@import url("./dock.css");
+
+/* 4b. Legacy sidebar.css — kept as an empty pass-through so older
+ *     bundles that may still reference it don't 404. */
 @import url("./sidebar.css");
 
 /* 5. Scrim (backdrop for mobile sheet). */

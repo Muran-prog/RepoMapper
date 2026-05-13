@@ -69,20 +69,22 @@
       <main id="canvas">
         <div id="map" class="map" aria-label="Інтерактивна векторна карта України"></div>
         <div id="hud" class="hud-host" aria-live="polite"></div>
+        <div id="chip-host" class="chip-host"></div>
       </main>
 
       <!--
-        On mobile this becomes a bottom-sheet that slides up. On desktop it
-        is a left rail. The same DOM, the layout switches via CSS.
+        The floating dock + popover panel system (renders into this element
+        from src/ui/controls.js). The ID is kept as `sidebar` for backward
+        compatibility with main.js's DOM lookup.
       -->
-      <aside id="sidebar" class="sidebar" data-state="expanded"></aside>
+      <aside id="sidebar" aria-label="Інструменти"></aside>
 
       <!-- Backdrop for the mobile bottom-sheet expanded state. -->
       <div id="scrim" class="scrim" data-visible="0" aria-hidden="true"></div>
 
       <div class="splash" aria-hidden="true">
         <div class="splash-inner">
-          <div class="splash-loader"></div>
+          <div class="splash-loader" role="presentation"></div>
           <p>Завантаження векторних тайлів…</p>
         </div>
       </div>

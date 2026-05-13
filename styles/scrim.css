@@ -1,15 +1,22 @@
 /* =====================================================================
- *  Scrim — backdrop behind the mobile sheet when expanded.
+ *  Scrim — backdrop behind the mobile sheet when a panel is open.
+ *
+ *  Subtle gradient (heavier near the bottom-sheet) rather than a flat
+ *  black wash, so the map stays visually present even when the panel
+ *  is engaged.
  * ===================================================================== */
 
 .scrim {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.32);
+  background:
+    linear-gradient(to top, rgba(0, 0, 0, 0.48) 0%, rgba(0, 0, 0, 0.28) 40%, rgba(0, 0, 0, 0.08) 100%);
   opacity: 0;
   visibility: hidden;
   z-index: 4;
-  transition: opacity 220ms ease, visibility 220ms ease;
+  transition:
+    opacity var(--t-base) var(--ease-out),
+    visibility var(--t-base) var(--ease-out);
   pointer-events: none;
 }
 .scrim[data-visible="1"] {

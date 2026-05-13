@@ -78,24 +78,32 @@ export function mountHypsoPicker(opts) {
   const prefs = loadPrefs();
 
   host.innerHTML = `
-    <section class="side-section hypso-picker" data-ctl="hypso">
-      <h3 class="side-h">Hypsometric ramp</h3>
+    <div class="panel-group hypso-picker" data-ctl="hypso">
+      <h4 class="panel-group-title">Active ramp</h4>
       <ul class="hypso-list" data-ctl="hypso-list" role="radiogroup" aria-label="Active hypsometric ramp"></ul>
-      ${
-        showBathymetry
-          ? `<label class="row hypso-row"><input type="checkbox" data-ctl="hypso-bathymetry"> <span>Bathymetry (Black + Azov)</span></label>`
-          : ''
-      }
-      <label class="row hypso-row"><input type="checkbox" data-ctl="hypso-contrast"> <span>High contrast</span></label>
+    </div>
+    <div class="panel-group">
+      <h4 class="panel-group-title">Tint options</h4>
+      <div class="rows">
+        ${
+          showBathymetry
+            ? `<label class="row hypso-row"><span>Bathymetry (Black + Azov)</span><input type="checkbox" data-ctl="hypso-bathymetry"></label>`
+            : ''
+        }
+        <label class="row hypso-row"><span>High contrast</span><input type="checkbox" data-ctl="hypso-contrast"></label>
+      </div>
       ${
         showStrength
           ? `<div class="slider-row">
-              <label class="slider-label" for="hypso-strength">Strength <span data-ctl="hypso-strength-readout">1.0×</span></label>
+              <label class="slider-label" for="hypso-strength">
+                <span>Strength</span>
+                <span data-ctl="hypso-strength-readout">1.0×</span>
+              </label>
               <input id="hypso-strength" type="range" min="0" max="1.5" step="0.05" value="1" data-ctl="hypso-strength">
             </div>`
           : ''
       }
-    </section>
+    </div>
   `;
 
   const refs = {
@@ -111,6 +119,7 @@ export function mountHypsoPicker(opts) {
   if (refs.strength) {
     refs.strength.value = String(prefs.strength);
     refs.strengthRO.textContent = formatStrength(prefs.strength);
+    updateSliderFill(refs.strength);
   }
 
   const renderList = () => {
@@ -182,6 +191,7 @@ export function mountHypsoPicker(opts) {
       refs.strengthRO.textContent = formatStrength(v);
       applyHypsoStrength(map, v);
       savePrefs({ strength: v });
+      updateSliderFill(refs.strength);
     });
   }
 
@@ -230,6 +240,16 @@ function renderRampRow(rampId, activeId) {
 
 function formatStrength(v) {
   return `${Number(v).toFixed(2)}×`;
+}
+
+/** Update the slider's CSS --fill custom property so the track shows
+ *  filled progress up to the thumb. Mirrors the helper in controls.js. */
+function updateSliderFill(slider) {
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const v = Number(slider.value);
+  const pct = ((v - min) / (max - min)) * 100;
+  slider.style.setProperty('--fill', `${pct}%`);
 }
 
 function escHtml(s) {

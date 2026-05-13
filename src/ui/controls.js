@@ -1,13 +1,28 @@
 /**
- * UI controls: navigation, scale, attribution, geolocate, theme switcher,
- * quality picker, base-layer toggles, RELIEF toggles + exaggeration slider,
- * city + Carpathian-peak fly-to presets, and a mobile bottom-sheet.
+ * UI controls — dock + popover panels.
  *
- * On desktop the sidebar is a permanent left rail. On phones and small
- * tablets it collapses into a bottom-sheet with a drag handle that toggles
- * between a peek state (header + handle visible) and an expanded state
- * (everything visible). Layout is driven by CSS; this module only owns
- * the toggle state, the click handlers, and the style-rebuild plumbing.
+ * The redesigned shell promotes the map to a fullscreen canvas. All UI
+ * surfaces float on top as small glass-morphism components:
+ *
+ *   • Brand chip (top-left)         — logo + product name
+ *   • Floating dock (left edge)     — five icon buttons + theme toggle
+ *   • Popover panels (next to dock) — one per dock button; small,
+ *                                     animated, focus-trapped
+ *   • HUD pill (bottom-left)        — FPS / Zoom / Tiles / coords
+ *
+ * Each dock icon toggles its panel via a tiny controller that handles
+ * keyboard (Esc, Tab), outside-pointer dismissal, and scrim sync on
+ * mobile bottom-sheet form. The same DOM is used at every breakpoint;
+ * CSS swaps between popover and bottom-sheet visuals.
+ *
+ * Panel inventory:
+ *   layers   — base layers (labels, POIs, 3D buildings)
+ *   relief   — relief stack + exaggeration slider
+ *   hypso    — hypsometric subsystem (ramp picker + stats + profile)
+ *   places   — fly-to presets (cities + Carpathian peaks)
+ *   settings — quality picker + tips + meta
+ *
+ * Theme toggle lives as a sun/moon button at the bottom of the dock.
  */
 
 import { applyStyle } from '../map/createMap.js';
@@ -17,8 +32,25 @@ import { FEATURES, DEFAULT_THEME } from '../config.js';
 import { mountHypsoUI } from './hypso/index.js';
 
 // ---------------------------------------------------------------------------
-// MapLibre-native controls (top-right column, scale + attribution on the
-// bottom). On touch devices we slightly increase visual prominence via CSS.
+// Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
+// caps. Inlined as template strings so we keep the no-bundler footprint
+// minimal and don't need a sprite sheet.
+// ---------------------------------------------------------------------------
+
+const ICONS = {
+  layers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 L21 8 L12 13 L3 8 Z"/><path d="M3 17 L12 22 L21 17"/><path d="M3 12.5 L12 17.5 L21 12.5"/></svg>`,
+  mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20 L9.5 9 L13 14.5 L17 7 L21 20 Z"/><circle cx="17" cy="5.4" r="1.2" fill="currentColor" stroke="none"/></svg>`,
+  waves: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7 Q 7.5 4 12 7 T 21 7"/><path d="M3 12 Q 7.5 9 12 12 T 21 12"/><path d="M3 17 Q 7.5 14 12 17 T 21 17"/></svg>`,
+  pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22 S 5 14.5 5 9.5 a7 7 0 0 1 14 0 c0 5 -7 12.5 -7 12.5 z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`,
+  sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
+  sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="18.9" y2="18.9"/><line x1="5.1" y1="18.9" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="18.9" y2="5.1"/></svg>`,
+  moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
+  close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/></svg>`,
+  brand: `<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M6 17 L13 23 L26 9" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+// ---------------------------------------------------------------------------
+// MapLibre-native controls (top-right column, scale + attribution).
 // ---------------------------------------------------------------------------
 
 function installNativeControls(map, { isTouch }) {
@@ -43,15 +75,8 @@ function installNativeControls(map, { isTouch }) {
     'top-right',
   );
 
-  map.addControl(
-    new ml.ScaleControl({ maxWidth: 140, unit: 'metric' }),
-    'bottom-left',
-  );
-
-  map.addControl(
-    new ml.AttributionControl({ compact: true }),
-    'bottom-right',
-  );
+  map.addControl(new ml.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
+  map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right');
 
   if (!isTouch) {
     map.addControl(new ml.FullscreenControl({}), 'top-right');
@@ -59,168 +84,337 @@ function installNativeControls(map, { isTouch }) {
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar contents.
+// Render helpers — one function per panel + one for the dock + chip.
 //
-// The structure is the same across desktop / mobile — CSS decides whether
-// it's a left rail or a bottom-sheet.
+// Each panel render produces innerHTML for a `<section class="panel">`
+// that the dock controller will toggle via the `data-open` attribute.
 // ---------------------------------------------------------------------------
 
-function renderSidebar(root) {
-  root.innerHTML = `
-    <button class="sheet-handle" type="button" aria-label="Toggle controls panel" data-ctl="sheet-handle">
-      <span class="sheet-handle-bar"></span>
-    </button>
-
-    <div class="side-scroll">
-      <header class="side-header">
-        <div class="side-title">
-          <span class="dot"></span>
-          <span>Cart · Україна</span>
-        </div>
-        <p class="side-sub">Vector cartography · OpenMapTiles · MapLibre GL</p>
-      </header>
-
-      <section class="side-section">
-        <h3 class="side-h">Theme</h3>
-        <div class="seg" role="tablist" data-ctl="theme">
-          <button data-value="light" role="tab" type="button">Light</button>
-          <button data-value="dark"  role="tab" type="button">Dark</button>
-        </div>
-      </section>
-
-      <section class="side-section">
-        <h3 class="side-h">Quality</h3>
-        <div class="seg seg-3" role="tablist" data-ctl="quality">
-          <button data-value="auto" role="tab" type="button">Auto</button>
-          <button data-value="high" role="tab" type="button">High</button>
-          <button data-value="low"  role="tab" type="button">Eco</button>
-        </div>
-      </section>
-
-      <section class="side-section">
-        <h3 class="side-h">Layers</h3>
-        <div class="rows">
-          <label class="row"><input type="checkbox" data-ctl="labels"   checked> <span>Labels</span></label>
-          <label class="row"><input type="checkbox" data-ctl="pois"     checked> <span>Points of interest</span></label>
-          <label class="row"><input type="checkbox" data-ctl="b3d"      checked> <span>3D buildings</span></label>
-        </div>
-      </section>
-
-      <section class="side-section">
-        <h3 class="side-h">Relief</h3>
-        <div class="rows">
-          <label class="row"><input type="checkbox" data-ctl="hillshade"        checked> <span>Hillshade</span></label>
-          <label class="row"><input type="checkbox" data-ctl="terrain3D"        checked> <span>3D terrain</span></label>
-          <label class="row"><input type="checkbox" data-ctl="contours"         checked> <span>Contours</span></label>
-          <label class="row"><input type="checkbox" data-ctl="hypsometricTint"> <span>Hypsometric tint</span></label>
-          <label class="row"><input type="checkbox" data-ctl="bathymetry"> <span>Bathymetry (Black + Azov)</span></label>
-          <label class="row"><input type="checkbox" data-ctl="textureShading"> <span>Texture shading</span></label>
-          <label class="row"><input type="checkbox" data-ctl="ridgeOverlay"> <span>Ridge overlay</span></label>
-          <label class="row"><input type="checkbox" data-ctl="carpathian"> <span>Carpathian detail</span></label>
-        </div>
-        <div class="slider-row">
-          <label class="slider-label" for="exaggeration">Exaggeration <span data-ctl="exaggeration-readout">1.0×</span></label>
-          <input
-            id="exaggeration"
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.1"
-            value="1"
-            data-ctl="exaggeration"
-          />
-        </div>
-        <!-- Hypsometric subsystem mount point. mountHypsoUI() renders
-             the picker, strength slider, bathymetry + high-contrast
-             toggles, and (where the profile permits) the editor /
-             legend / profile-mode launcher into the slots below. -->
-        <div data-ctl="hypso-picker"></div>
-        <div data-ctl="hypso-profile-launcher" hidden>
-          <button class="hypso-launch" data-ctl="open-profile" type="button">Draw elevation profile</button>
-        </div>
-        <div data-ctl="hypso-stats" class="hypso-stats" hidden>
-          <span><span class="hypso-stat-label">min</span><span data-ctl="hypso-stat-min">— м</span></span>
-          <span><span class="hypso-stat-label">mean</span><span data-ctl="hypso-stat-mean">— м</span></span>
-          <span><span class="hypso-stat-label">max</span><span data-ctl="hypso-stat-max">— м</span></span>
-          <span><span class="hypso-stat-label">region</span><span data-ctl="hypso-stat-region">—</span></span>
-        </div>
-      </section>
-
-      <section class="side-section">
-        <h3 class="side-h">Quick fly-to</h3>
-        <div class="presets" data-ctl="presets">
-          <button data-preset="ukraine"     type="button">Україна</button>
-          <button data-preset="kyiv"        type="button">Київ</button>
-          <button data-preset="lviv"        type="button">Львів</button>
-          <button data-preset="odesa"       type="button">Одеса</button>
-          <button data-preset="kharkiv"     type="button">Харків</button>
-          <button data-preset="carpathians" type="button">Карпати</button>
-        </div>
-        <p class="side-h carpathian-h">Carpathian peaks</p>
-        <div class="presets" data-ctl="presets">
-          <button data-preset="hoverla"   type="button">Говерла 2061</button>
-          <button data-preset="pip_ivan"  type="button">Піп Іван 2028</button>
-          <button data-preset="petros"    type="button">Петрос 2020</button>
-          <button data-preset="svydovets" type="button">Свидовець</button>
-          <button data-preset="chornohora" type="button">Чорногора</button>
-        </div>
-      </section>
-
-      <section class="side-section side-meta">
-        <h3 class="side-h">Tips</h3>
-        <ul class="tips" data-pointer="fine">
-          <li><kbd>Scroll</kbd> — zoom</li>
-          <li><kbd>Shift</kbd> + drag — rotate / tilt</li>
-          <li><kbd>Ctrl</kbd> + click — fly to point</li>
-          <li><kbd>Shift</kbd> + dbl-click — zoom out</li>
-        </ul>
-        <ul class="tips" data-pointer="coarse">
-          <li>Pinch — zoom</li>
-          <li>Two-finger drag — tilt</li>
-          <li>Two-finger rotate — rotate</li>
-          <li>Double-tap — zoom in</li>
-        </ul>
-      </section>
+function renderChip(host) {
+  host.innerHTML = `
+    <div class="chip" role="presentation">
+      <span class="chip-logo">${ICONS.brand}</span>
+      <span><strong>Cart</strong></span>
+      <span class="chip-sub">· Україна</span>
     </div>
   `;
 }
 
-// ---------------------------------------------------------------------------
-// Sheet (mobile) toggle.
-// ---------------------------------------------------------------------------
+function renderDock(host) {
+  host.classList.add('dock');
+  host.setAttribute('role', 'toolbar');
+  host.setAttribute('aria-label', 'Інструменти карти');
+  host.innerHTML = `
+    <header class="dock-brand">
+      <button class="dock-logo" type="button" data-ctl="home" title="До центру України" aria-label="Fly to centre of Ukraine">${ICONS.brand}</button>
+    </header>
+    <nav class="dock-nav" aria-label="Панелі">
+      <button class="dock-btn" type="button" data-panel="layers"   data-tip="Шари"        aria-label="Шари"        aria-expanded="false">${ICONS.layers}</button>
+      <button class="dock-btn" type="button" data-panel="relief"   data-tip="Рельєф"      aria-label="Рельєф"      aria-expanded="false">${ICONS.mountain}</button>
+      <button class="dock-btn" type="button" data-panel="hypso"    data-tip="Гіпсометрія" aria-label="Гіпсометрія" aria-expanded="false">${ICONS.waves}</button>
+      <button class="dock-btn" type="button" data-panel="places"   data-tip="Місця"       aria-label="Місця"       aria-expanded="false">${ICONS.pin}</button>
+      <button class="dock-btn" type="button" data-panel="settings" data-tip="Налаштування" aria-label="Налаштування" aria-expanded="false">${ICONS.sliders}</button>
+    </nav>
+    <footer class="dock-foot">
+      <button class="dock-btn theme-toggle" type="button" data-ctl="theme-toggle" data-tip="Тема" aria-label="Перемкнути тему">${ICONS.moon}</button>
+    </footer>
+  `;
+}
 
-function installSheetToggle(sidebar, scrim, caps) {
-  const handle = sidebar.querySelector('[data-ctl=sheet-handle]');
+function panelShell(id, title, iconKey, body) {
+  return `
+    <section
+      class="panel"
+      data-panel-id="${id}"
+      data-open="false"
+      role="dialog"
+      aria-modal="false"
+      aria-label="${title}"
+      aria-hidden="true"
+    >
+      <header class="panel-head">
+        <div class="panel-title">${ICONS[iconKey]}<span>${title}</span></div>
+        <button class="panel-close" type="button" aria-label="Закрити панель" data-ctl="close-panel">${ICONS.close}</button>
+      </header>
+      <div class="panel-body">${body}</div>
+    </section>
+  `;
+}
 
-  const setState = (state) => {
-    sidebar.dataset.state = state;
-    if (scrim) scrim.dataset.visible = state === 'expanded' ? '1' : '0';
-  };
+function renderLayersPanelBody() {
+  return `
+    <div class="panel-group">
+      <h4 class="panel-group-title">Display</h4>
+      <div class="rows">
+        <label class="row"><span>Labels</span><input type="checkbox" data-ctl="labels" checked></label>
+        <label class="row"><span>Points of interest</span><input type="checkbox" data-ctl="pois" checked></label>
+        <label class="row"><span>3D buildings</span><input type="checkbox" data-ctl="b3d" checked></label>
+      </div>
+    </div>
+    <p class="panel-meta">Toggle the visual layers rendered on top of the base map. Changes
+    apply instantly without re-fetching tiles.</p>
+  `;
+}
 
-  setState(caps?.narrow ? 'peek' : 'expanded');
+function renderReliefPanelBody() {
+  return `
+    <div class="panel-group">
+      <h4 class="panel-group-title">Layers</h4>
+      <div class="rows">
+        <label class="row"><span>Hillshade</span><input type="checkbox" data-ctl="hillshade" checked></label>
+        <label class="row"><span>3D terrain</span><input type="checkbox" data-ctl="terrain3D" checked></label>
+        <label class="row"><span>Contours</span><input type="checkbox" data-ctl="contours" checked></label>
+        <label class="row"><span>Hypsometric tint</span><input type="checkbox" data-ctl="hypsometricTint"></label>
+        <label class="row"><span>Bathymetry</span><input type="checkbox" data-ctl="bathymetry"></label>
+        <label class="row"><span>Texture shading</span><input type="checkbox" data-ctl="textureShading"></label>
+        <label class="row"><span>Ridge overlay</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
+        <label class="row"><span>Carpathian detail</span><input type="checkbox" data-ctl="carpathian"></label>
+      </div>
+    </div>
+    <div class="panel-group">
+      <h4 class="panel-group-title">Vertical exaggeration</h4>
+      <div class="slider-row">
+        <label class="slider-label" for="exaggeration">
+          <span>0.5× – 2×</span>
+          <span data-ctl="exaggeration-readout">1.0×</span>
+        </label>
+        <input
+          id="exaggeration"
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.1"
+          value="1"
+          data-ctl="exaggeration"
+          aria-label="Vertical exaggeration"
+        />
+      </div>
+    </div>
+  `;
+}
 
-  const toggle = () =>
-    setState(sidebar.dataset.state === 'expanded' ? 'peek' : 'expanded');
+function renderHypsoPanelBody() {
+  return `
+    <!-- Hypsometric subsystem mount point. mountHypsoUI() renders
+         the ramp picker, strength slider, bathymetry + high-contrast
+         toggles into this slot. -->
+    <div data-ctl="hypso-picker"></div>
 
-  handle?.addEventListener('click', toggle);
-  scrim?.addEventListener('click', () => setState('peek'));
+    <div class="panel-group" data-ctl="hypso-profile-launcher" hidden>
+      <button class="btn-block" type="button" data-ctl="open-profile">
+        <span>Намалювати профіль висот</span>
+      </button>
+    </div>
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && sidebar.dataset.state === 'expanded' && caps?.narrow) {
-      setState('peek');
-    }
-  });
+    <div class="panel-group hypso-stats" data-ctl="hypso-stats" hidden>
+      <span><span class="hypso-stat-label">min</span><span data-ctl="hypso-stat-min">— м</span></span>
+      <span><span class="hypso-stat-label">mean</span><span data-ctl="hypso-stat-mean">— м</span></span>
+      <span><span class="hypso-stat-label">max</span><span data-ctl="hypso-stat-max">— м</span></span>
+      <span><span class="hypso-stat-label">region</span><span data-ctl="hypso-stat-region">—</span></span>
+    </div>
+  `;
+}
 
-  return { setState };
+function renderPlacesPanelBody() {
+  const city = (id, label, sub) => `
+    <button data-preset="${id}" type="button">
+      <span class="dot"></span>
+      <span>
+        <strong>${label}</strong>
+        ${sub ? `<small>${sub}</small>` : ''}
+      </span>
+    </button>
+  `;
+  return `
+    <div class="panel-group">
+      <h4 class="panel-group-title">Україна</h4>
+      <div class="presets" data-ctl="presets">
+        ${city('ukraine',     'Україна',  'overview')}
+        ${city('kyiv',        'Київ',     'столиця')}
+        ${city('lviv',        'Львів',    '')}
+        ${city('odesa',       'Одеса',    '')}
+        ${city('kharkiv',     'Харків',   '')}
+        ${city('carpathians', 'Карпати',  'регіон')}
+      </div>
+    </div>
+    <div class="panel-group">
+      <h4 class="panel-group-title">Carpathian peaks</h4>
+      <div class="presets" data-ctl="presets">
+        ${city('hoverla',    'Говерла',   '2061 м')}
+        ${city('pip_ivan',   'Піп Іван',  '2028 м')}
+        ${city('petros',     'Петрос',    '2020 м')}
+        ${city('svydovets',  'Свидовець', 'хребет')}
+        ${city('chornohora', 'Чорногора', 'хребет')}
+      </div>
+    </div>
+  `;
+}
+
+function renderSettingsPanelBody() {
+  return `
+    <div class="panel-group">
+      <h4 class="panel-group-title">Quality</h4>
+      <div class="seg seg-3" role="tablist" data-ctl="quality">
+        <button data-value="auto" role="tab" type="button">Auto</button>
+        <button data-value="high" role="tab" type="button">High</button>
+        <button data-value="low"  role="tab" type="button">Eco</button>
+      </div>
+      <p class="panel-meta">Auto reads device memory, CPU and connection to balance fidelity with frame rate. Switch to Eco on slower devices, High for the full visual treatment.</p>
+    </div>
+    <div class="panel-group">
+      <h4 class="panel-group-title">Shortcuts</h4>
+      <ul class="tips" data-pointer="fine">
+        <li><kbd>Scroll</kbd> Zoom in / out</li>
+        <li><kbd>Drag</kbd> Pan the map</li>
+        <li><kbd>Shift</kbd>+<kbd>Drag</kbd> Rotate &amp; tilt</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Click</kbd> Fly to point</li>
+        <li><kbd>Esc</kbd> Close active panel</li>
+      </ul>
+      <ul class="tips" data-pointer="coarse">
+        <li><kbd>Pinch</kbd> Zoom</li>
+        <li><kbd>2 fingers</kbd> Tilt &amp; rotate</li>
+        <li><kbd>Double-tap</kbd> Zoom in</li>
+        <li><kbd>Tap outside</kbd> Close panel</li>
+      </ul>
+    </div>
+    <p class="panel-meta">Cart — vector cartography on MapLibre GL JS. Tile data © OpenMapTiles + OpenStreetMap contributors.</p>
+  `;
+}
+
+function renderPanels(host) {
+  host.innerHTML = `
+    ${panelShell('layers',   'Шари',         'layers',   renderLayersPanelBody())}
+    ${panelShell('relief',   'Рельєф',       'mountain', renderReliefPanelBody())}
+    ${panelShell('hypso',    'Гіпсометрія',  'waves',    renderHypsoPanelBody())}
+    ${panelShell('places',   'Місця',        'pin',      renderPlacesPanelBody())}
+    ${panelShell('settings', 'Налаштування', 'sliders',  renderSettingsPanelBody())}
+  `;
 }
 
 // ---------------------------------------------------------------------------
-// Wire-up.
+// Dock controller — toggles panels, handles outside-click + keyboard.
+// ---------------------------------------------------------------------------
+
+class DockController {
+  /**
+   * @param {object} opts
+   * @param {HTMLElement} opts.dock       Element holding the icon buttons.
+   * @param {HTMLElement} opts.panelsHost Element that wraps every <section.panel>.
+   * @param {HTMLElement|null} opts.scrim Backdrop element for mobile sheet.
+   * @param {object} opts.caps            Device capabilities.
+   */
+  constructor({ dock, panelsHost, scrim, caps }) {
+    this.dock = dock;
+    this.panelsHost = panelsHost;
+    this.scrim = scrim;
+    this.caps = caps;
+    this.entries = new Map();
+    this.activeId = null;
+    this.mqMobile = window.matchMedia('(max-width: 540px)');
+  }
+
+  register(id) {
+    const button = this.dock.querySelector(`.dock-btn[data-panel="${id}"]`);
+    const panel = this.panelsHost.querySelector(`.panel[data-panel-id="${id}"]`);
+    if (!button || !panel) return null;
+    this.entries.set(id, { button, panel });
+
+    button.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggle(id);
+    });
+    panel.querySelector('[data-ctl="close-panel"]')?.addEventListener('click', () => {
+      this.close();
+    });
+    return { button, panel };
+  }
+
+  open(id) {
+    if (this.activeId === id) return;
+    if (this.activeId) this.close({ silent: true });
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    entry.panel.dataset.open = 'true';
+    entry.panel.setAttribute('aria-hidden', 'false');
+    entry.button.dataset.active = 'true';
+    entry.button.setAttribute('aria-expanded', 'true');
+    this.activeId = id;
+    if (this.scrim && this.mqMobile.matches) {
+      this.scrim.dataset.visible = '1';
+    }
+    // Defer focus so the CSS transition has a paint to settle in.
+    requestAnimationFrame(() => {
+      const focusable = entry.panel.querySelector(
+        'input:not([type=hidden]):not([disabled]), select, [tabindex]:not([tabindex="-1"]), .panel-close',
+      );
+      try {
+        focusable?.focus({ preventScroll: true });
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  close({ silent = false } = {}) {
+    if (!this.activeId) return;
+    const entry = this.entries.get(this.activeId);
+    if (entry) {
+      entry.panel.dataset.open = 'false';
+      entry.panel.setAttribute('aria-hidden', 'true');
+      entry.button.dataset.active = 'false';
+      entry.button.setAttribute('aria-expanded', 'false');
+      if (!silent) {
+        try {
+          entry.button.focus({ preventScroll: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (this.scrim) this.scrim.dataset.visible = '0';
+    this.activeId = null;
+  }
+
+  toggle(id) {
+    if (this.activeId === id) this.close();
+    else this.open(id);
+  }
+
+  /** Wire global handlers — Esc, outside-pointer, scrim, route changes. */
+  install() {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.activeId) {
+        e.preventDefault();
+        this.close();
+      }
+    });
+    document.addEventListener('pointerdown', (e) => {
+      if (!this.activeId) return;
+      const entry = this.entries.get(this.activeId);
+      if (!entry) return;
+      const target = e.target;
+      if (entry.panel.contains(target)) return;
+      if (this.dock.contains(target)) return;
+      this.close();
+    }, true);
+    this.scrim?.addEventListener('click', () => this.close());
+    // Map clicks should close the panel on mobile (revealing the map).
+    if (this.mqMobile.matches) {
+      const mapEl = document.getElementById('map');
+      mapEl?.addEventListener('pointerdown', () => {
+        if (this.activeId) this.close();
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mount.
 // ---------------------------------------------------------------------------
 
 /**
  * @param {maplibregl.Map} map
- * @param {HTMLElement}    sidebar
+ * @param {HTMLElement}    sidebar       Host for the dock + panels.
  * @param {HTMLElement|null} scrim
  * @param {object} ctx
  * @param {DeviceCaps} ctx.caps
@@ -228,13 +422,39 @@ function installSheetToggle(sidebar, scrim, caps) {
  */
 export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   installNativeControls(map, { isTouch: !!caps?.isTouch });
-  renderSidebar(sidebar);
-  installSheetToggle(sidebar, scrim, caps);
+
+  // Ensure / create the chip host. We append into #canvas so it sits in
+  // the same stacking context as the map.
+  const mapEl = document.getElementById('map');
+  const canvas = mapEl?.parentElement || document.getElementById('app');
+  let chipHost = document.getElementById('chip-host');
+  if (!chipHost) {
+    chipHost = document.createElement('div');
+    chipHost.id = 'chip-host';
+    chipHost.className = 'chip-host';
+    canvas?.appendChild(chipHost);
+  }
+  renderChip(chipHost);
+
+  // Build the dock host (the sidebar element) + the panels container.
+  // The panels live as a sibling node so their absolute positioning is
+  // unaffected by the dock's flex layout.
+  sidebar.className = '';
+  sidebar.innerHTML = '';
+  const dockHost = document.createElement('div');
+  dockHost.className = 'dock-root';
+  const panelsHost = document.createElement('div');
+  panelsHost.className = 'panels-root';
+  sidebar.appendChild(dockHost);
+  sidebar.appendChild(panelsHost);
+
+  renderDock(dockHost);
+  renderPanels(panelsHost);
 
   // ----- State the user can toggle -------------------------------------
   const state = {
     theme: DEFAULT_THEME,
-    qualityChoice: 'auto', // 'auto' | 'high' | 'low'
+    qualityChoice: 'auto',
     detectedProfile: profile ?? 'medium',
     layerFeatures: {
       labels: FEATURES.labels,
@@ -250,7 +470,6 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       carpathian: FEATURES.carpathian,
     },
   };
-
   const effectiveProfile = () =>
     state.qualityChoice === 'auto' ? state.detectedProfile : state.qualityChoice;
 
@@ -264,24 +483,52 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     });
   };
 
-  // ----- Theme segmented control ---------------------------------------
-  const themeBtns = sidebar.querySelectorAll('[data-ctl=theme] button');
+  // ----- Dock controller -----------------------------------------------
+  const controller = new DockController({
+    dock: dockHost,
+    panelsHost,
+    scrim,
+    caps,
+  });
+  ['layers', 'relief', 'hypso', 'places', 'settings'].forEach((id) =>
+    controller.register(id),
+  );
+  controller.install();
+
+  // ----- Theme toggle (sun ↔ moon at the bottom of the dock) ----------
+  const themeBtn = dockHost.querySelector('[data-ctl="theme-toggle"]');
   const syncTheme = () => {
-    themeBtns.forEach((b) => b.classList.toggle('on', b.dataset.value === state.theme));
     document.documentElement.dataset.theme = state.theme;
+    if (themeBtn) {
+      themeBtn.innerHTML = state.theme === 'dark' ? ICONS.sun : ICONS.moon;
+      themeBtn.setAttribute(
+        'data-tip',
+        state.theme === 'dark' ? 'Світла тема' : 'Темна тема',
+      );
+      themeBtn.setAttribute(
+        'aria-label',
+        state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
+      );
+    }
   };
   syncTheme();
-  themeBtns.forEach((b) =>
-    b.addEventListener('click', async () => {
-      if (state.theme === b.dataset.value) return;
-      state.theme = b.dataset.value;
-      syncTheme();
-      await rebuildStyle();
-    }),
-  );
+  themeBtn?.addEventListener('click', async () => {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    syncTheme();
+    await rebuildStyle();
+  });
 
-  // ----- Quality segmented control -------------------------------------
-  const qualBtns = sidebar.querySelectorAll('[data-ctl=quality] button');
+  // ----- Home button (fly to Ukraine centroid) ------------------------
+  const homeBtn = dockHost.querySelector('[data-ctl="home"]');
+  homeBtn?.addEventListener('click', () => {
+    flyToPreset(map, 'ukraine', {
+      reduceMotion: !!caps?.prefersReducedMotion,
+    });
+    if (caps?.narrow) controller.close();
+  });
+
+  // ----- Quality picker (in the Settings panel) -----------------------
+  const qualBtns = panelsHost.querySelectorAll('[data-ctl=quality] button');
   const syncQuality = () => {
     qualBtns.forEach((b) =>
       b.classList.toggle('on', b.dataset.value === state.qualityChoice),
@@ -298,13 +545,8 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   );
 
   // ----- Layer toggles -------------------------------------------------
-  /**
-   * Bind a checkbox to a key in state.layerFeatures. The data-ctl value
-   * is the checkbox attribute; key is the FEATURES dict key. Defaults to
-   * data-ctl name when key isn't passed.
-   */
   const wireToggle = (selector, key = selector) => {
-    const el = sidebar.querySelector(`[data-ctl=${selector}]`);
+    const el = panelsHost.querySelector(`[data-ctl=${selector}]`);
     if (!el) return;
     el.checked = !!state.layerFeatures[key];
     el.addEventListener('change', async () => {
@@ -312,7 +554,6 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       await rebuildStyle();
     });
   };
-
   wireToggle('labels');
   wireToggle('pois');
   wireToggle('b3d', 'buildings3D');
@@ -325,98 +566,95 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
 
-  // ----- Exaggeration slider -------------------------------------------
-  // Live-updates the user-side multiplier without rebuilding the style;
-  // setUserExaggeration() pushes the new value to interactions.js which
-  // re-applies setTerrain() immediately.
-  const slider = sidebar.querySelector('[data-ctl=exaggeration]');
-  const readout = sidebar.querySelector('[data-ctl=exaggeration-readout]');
+  // ----- Exaggeration slider ------------------------------------------
+  const slider = panelsHost.querySelector('[data-ctl=exaggeration]');
+  const readout = panelsHost.querySelector('[data-ctl=exaggeration-readout]');
   if (slider) {
+    const updateFill = () => {
+      const min = Number(slider.min);
+      const max = Number(slider.max);
+      const v = Number(slider.value);
+      const pct = ((v - min) / (max - min)) * 100;
+      slider.style.setProperty('--fill', `${pct}%`);
+    };
     const update = () => {
       const v = Number(slider.value);
       if (readout) readout.textContent = `${v.toFixed(1)}×`;
       setUserExaggeration(map, v);
+      updateFill();
     };
     slider.addEventListener('input', update);
     update();
   }
 
-  // ----- Preset buttons ------------------------------------------------
-  const presetButtons = sidebar.querySelectorAll('[data-ctl=presets] [data-preset]');
+  // ----- Preset buttons (Places panel) --------------------------------
+  const presetButtons = panelsHost.querySelectorAll('[data-ctl=presets] [data-preset]');
   presetButtons.forEach((b) =>
     b.addEventListener('click', () => {
       flyToPreset(map, b.dataset.preset, {
         reduceMotion: !!caps?.prefersReducedMotion,
       });
-      if (caps?.narrow) sidebar.dataset.state = 'peek';
+      // On narrow screens, close the panel so the map is visible.
+      if (caps?.narrow || controller.mqMobile.matches) {
+        controller.close();
+      }
     }),
   );
 
-  // ----- Hypso UI bundle -----------------------------------------------
-  // The picker / strength slider / bathymetry + high-contrast toggles
-  // live in a self-contained module that mutates the live map via
-  // setPaintProperty (no style rebuild). Editor / legend / profile
-  // launchers honour the device profile so 'low' just gets the picker.
-  installHypsoUI(map, sidebar, { caps, profile: effectiveProfile() });
+  // ----- Hypso subsystem ----------------------------------------------
+  installHypsoUI(map, panelsHost, { caps, profile: effectiveProfile() });
 
-  // ----- Reflect detected profile on the UI ----------------------------
+  // Listen for cart:hypso events on the tint toggle so when external
+  // code flips bathymetry, our Relief checkbox follows.
+  window.addEventListener('cart:hypso', (e) => {
+    if (!e?.detail) return;
+    if (typeof e.detail.bathymetry === 'boolean') {
+      const el = panelsHost.querySelector('[data-ctl=bathymetry]');
+      if (el && el.checked !== e.detail.bathymetry) el.checked = e.detail.bathymetry;
+    }
+  });
+
+  // Reflect detected profile on the UI.
   sidebar.dataset.detectedProfile = state.detectedProfile;
-  document.documentElement.dataset.theme = state.theme;
 
   return state;
 }
 
 /**
- * Mount the hypso UI bundle into the existing sidebar hosts. Manages
- * its own teardown when the style is rebuilt (theme/quality swap) by
- * unmounting and remounting via the cart:styleApplied event listener.
+ * Mount the hypso UI bundle into the panels-root. Manages its own
+ * teardown when the style is rebuilt (theme/quality swap).
  */
-function installHypsoUI(map, sidebar, { caps, profile } = {}) {
-  const pickerHost = sidebar.querySelector('[data-ctl=hypso-picker]');
+function installHypsoUI(map, panelsHost, { caps, profile } = {}) {
+  const pickerHost = panelsHost.querySelector('[data-ctl=hypso-picker]');
   if (!pickerHost) return;
-  const profileLauncher = sidebar.querySelector('[data-ctl=hypso-profile-launcher]');
-  const profileLauncherBtn = sidebar.querySelector('[data-ctl=open-profile]');
-  const statsHost = sidebar.querySelector('[data-ctl=hypso-stats]');
+  const profileLauncher = panelsHost.querySelector('[data-ctl=hypso-profile-launcher]');
+  const profileLauncherBtn = panelsHost.querySelector('[data-ctl=open-profile]');
+  const statsHost = panelsHost.querySelector('[data-ctl=hypso-stats]');
   const statRefs = {
-    min: sidebar.querySelector('[data-ctl=hypso-stat-min]'),
-    mean: sidebar.querySelector('[data-ctl=hypso-stat-mean]'),
-    max: sidebar.querySelector('[data-ctl=hypso-stat-max]'),
-    region: sidebar.querySelector('[data-ctl=hypso-stat-region]'),
+    min: panelsHost.querySelector('[data-ctl=hypso-stat-min]'),
+    mean: panelsHost.querySelector('[data-ctl=hypso-stat-mean]'),
+    max: panelsHost.querySelector('[data-ctl=hypso-stat-max]'),
+    region: panelsHost.querySelector('[data-ctl=hypso-stat-region]'),
   };
 
-  // Create / re-use a free-floating legend host on the canvas. Inserted
-  // as a sibling of `#map` so MapLibre's gesture detection isn't
-  // disturbed; CSS positions it as an absolute overlay.
+  // Free-floating overlay hosts for legend, editor, and profile drawer.
   const mapEl = map.getContainer();
-  let legendHost = document.getElementById('hypso-legend-host');
-  if (!legendHost) {
-    legendHost = document.createElement('div');
-    legendHost.id = 'hypso-legend-host';
-    mapEl.parentElement?.appendChild(legendHost);
-  }
-  // Editor + profile hosts are appended next to the legend host so they
-  // float over the map.
-  let editorHost = document.getElementById('hypso-editor-host');
-  if (!editorHost) {
-    editorHost = document.createElement('div');
-    editorHost.id = 'hypso-editor-host';
-    mapEl.parentElement?.appendChild(editorHost);
-  }
-  let profileHost = document.getElementById('hypso-profile-host');
-  if (!profileHost) {
-    profileHost = document.createElement('div');
-    profileHost.id = 'hypso-profile-host';
-    mapEl.parentElement?.appendChild(profileHost);
-  }
+  const ensureFloat = (id) => {
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      mapEl.parentElement?.appendChild(el);
+    }
+    return el;
+  };
+  const legendHost = ensureFloat('hypso-legend-host');
+  const editorHost = ensureFloat('hypso-editor-host');
+  const profileHost = ensureFloat('hypso-profile-host');
 
-  // Resolve per-profile capabilities. mountHypsoUI consumes the same
-  // `profile`-shaped block that getProfileConfig returns.
   const profileConfig = getProfileConfig(profile, caps);
 
   if (statsHost) statsHost.hidden = !profileConfig.enableHypsoStats;
-  // Honour prefers-reduced-motion: hide the profile launcher entirely
-  // so click-to-draw flow isn't even discoverable for users who opted
-  // out of motion. The hypso UI module no-ops the open call too.
   const profileEnabled = profileConfig.enableHypsoProfile && !caps?.prefersReducedMotion;
   if (profileLauncher) profileLauncher.hidden = !profileEnabled;
 
@@ -449,7 +687,6 @@ function installHypsoUI(map, sidebar, { caps, profile } = {}) {
     profileLauncherBtn.addEventListener('click', () => handle.openProfile());
   }
 
-  // Expose handle for ad-hoc debugging.
   if (typeof window !== 'undefined') {
     window.__cart_hypso = handle;
   }

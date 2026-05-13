@@ -43,23 +43,22 @@
 /* --- Mobile tweaks for hypso UI ----------------------------------- */
 @media (max-width: 540px) {
   .hypso-legend-host {
-    /* The bottom-sheet covers the bottom area at peek state, so anchor
-       the legend higher on phones. Add a small extra margin so the
-       collapsed pill doesn't sit flush against the screen edge — it
-       reads as a tappable widget rather than a sliver of UI. */
-    bottom: calc(var(--sheet-peek) + 56px + env(safe-area-inset-bottom));
+    /* The dock is a horizontal pill centred at the bottom of the
+       viewport (height ≈ var(--dock-size) + 12 px). Anchor the legend
+       above it with breathing room. */
+    bottom: calc(var(--dock-size) + 80px + env(safe-area-inset-bottom));
     right: max(10px, env(safe-area-inset-right));
   }
-  /* Cap the panel height so it never eats more than ~ half the
-     viewport on small phones in landscape. */
+  /* Cap panel height so it never eats more than ~half the viewport on
+     small phones in landscape. */
   .hypso-legend-panel {
-    max-height: min(200px, 42vh);
+    max-height: min(220px, 44vh);
+    padding: 12px 12px 10px;
   }
-  /* When sidebar is in peek state (mobile default), the legend
-     overlays the bottom-sheet's tab. Keep it just inside the safe
-     area so the gradient column doesn't get clipped. */
-  .hypso-legend {
-    padding: 5px 6px;
+  .hypso-legend-track,
+  .hypso-legend-bar,
+  .hypso-legend-ticks {
+    height: 180px;
   }
   .hypso-editor,
   .hypso-profile {
@@ -72,13 +71,16 @@
   .hypso-editor-stops {
     height: 220px;
   }
+  .hypso-stats {
+    grid-template-columns: 1fr 1fr;
+    font-size: 12px;
+  }
 }
 
 /* --- Tablet legend tweak ------------------------------------------ */
 @media (min-width: 540px) and (max-width: 960px) {
-  /* On tablets the sidebar overlays the canvas as a floating panel.
-     The legend needs to sit above the bottom-left scale bar without
-     getting hidden under the sidebar's left rail. */
+  /* On tablets the dock is still on the left edge; the legend sits at
+     bottom-right above the attribution. */
   .hypso-legend-host {
     bottom: calc(60px + env(safe-area-inset-bottom));
   }

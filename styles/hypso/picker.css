@@ -1,8 +1,7 @@
 /* =====================================================================
- *  Hypso picker — radio-grouped ramp list in the sidebar.
+ *  Hypso picker — radio-grouped ramp list inside the hypso panel.
  * ===================================================================== */
 
-/* --- Picker -------------------------------------------------------- */
 .hypso-picker {
   gap: 6px;
 }
@@ -15,22 +14,30 @@
   gap: 4px;
 }
 .hypso-item {
-  border-radius: 10px;
+  border-radius: var(--r-md);
   border: 1px solid transparent;
   background: transparent;
-  transition: background 120ms, border-color 120ms;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
 }
 .hypso-item[data-active="1"] {
   background: var(--bg-side-soft);
-  border-color: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 6%, transparent);
+}
+@media (hover: hover) {
+  .hypso-item:hover {
+    background: var(--bg-side-soft);
+  }
 }
 .hypso-label {
   display: grid;
-  grid-template-columns: auto 28px 1fr auto;
+  grid-template-columns: 16px 28px 1fr auto;
   align-items: center;
   gap: 10px;
-  min-height: var(--hit);
-  padding: 4px 10px;
+  min-height: calc(var(--hit) + 4px);
+  padding: 6px 10px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -44,6 +51,9 @@
   cursor: pointer;
   background: var(--bg-side);
   flex: 0 0 16px;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
 }
 .hypso-label input[type="radio"]:checked {
   border-color: var(--accent);
@@ -59,10 +69,12 @@
 .hypso-preview {
   display: block;
   width: 28px;
-  height: 32px;
-  border-radius: 4px;
+  height: 36px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--hairline);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.08);
 }
 .hypso-text {
   display: flex;
@@ -71,6 +83,7 @@
 }
 .hypso-name {
   font-weight: 600;
+  font-size: 12.5px;
   color: var(--fg);
   display: flex;
   align-items: center;
@@ -78,41 +91,43 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.005em;
 }
 .hypso-summary {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: 10.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .hypso-badge {
-  font-size: 9px;
-  font-weight: 600;
+  font-size: 8.5px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 24%, transparent);
-  color: var(--fg);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  letter-spacing: 0.08em;
+  padding: 1.5px 6px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .hypso-edit {
   appearance: none;
   border: 1px solid var(--hairline);
-  background: var(--bg-side);
-  color: var(--fg-soft);
+  background: transparent;
+  color: var(--fg-muted);
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   font: inherit;
-  transition: background 120ms, color 120ms;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
 }
 .hypso-edit:hover {
   background: var(--bg-side-soft);
-  color: var(--fg);
-}
-.hypso-row {
-  padding-left: 10px;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--hairline));
 }

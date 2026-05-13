@@ -2,207 +2,233 @@
  *  Responsive overrides — tablet, mobile, ultrawide.
  *
  *  Cascade-sensitive: keep this file AFTER the per-component modules so
- *  the breakpoint rules can override desktop defaults. The original
- *  styles.css had these blocks in the same order: tablet → mobile →
- *  ultrawide; preserve that here.
+ *  the breakpoint rules can override desktop defaults. Order is:
+ *    tablet → mobile → ultrawide → environment-specific.
+ *
+ *  Form-factor swap summary (paired with dock.css):
+ *
+ *    Viewport           Dock                Panels          Chip
+ *    ───────────────────────────────────────────────────────────────
+ *    ≥ 960 px           vertical, left      popover         pill
+ *    540–960 px         vertical, left      popover (slim)  pill
+ *    < 540 px           horizontal, bottom  bottom-sheet    compact
+ *
  * ===================================================================== */
 
 /* =====================================================================
- *  TABLET breakpoint — sidebar becomes a floating overlay panel anchored
- *  to the left, but stays open by default.
+ *  TABLET — keep the vertical dock but shrink the panel width so the
+ *  map gets more room.
  * ===================================================================== */
 
 @media (max-width: 960px) and (min-width: 540px) {
-  #app {
-    grid-template-columns: 1fr;
-    grid-template-areas: "canvas";
+  :root {
+    --panel-w: 288px;
   }
-  .sidebar {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    bottom: 12px;
-    width: min(320px, 86vw);
-    border-right: 0;
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    transform: translateX(0);
-    transition: transform 260ms cubic-bezier(0.32, 0.72, 0.27, 1);
+  .dock {
+    left: max(12px, env(safe-area-inset-left));
   }
-  .sidebar[data-state="peek"] {
-    transform: translateX(calc(-100% - 14px));
-  }
-  /* On tablet, show a small floating "show panel" button on the canvas
-     side so the user can pull the panel back when it's hidden. */
-  .sheet-handle {
-    display: flex;
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    width: var(--hit);
-    height: var(--hit);
-    border: 1px solid var(--hairline);
-    background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 50%;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    box-shadow: var(--shadow);
-    z-index: 6;
-    pointer-events: auto;
-  }
-  .sidebar[data-state="expanded"] .sheet-handle {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    left: auto;
-    width: 32px;
-    height: 32px;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  .sheet-handle-bar {
-    width: 16px;
-    height: 2px;
-    background: var(--fg);
-    border-radius: 2px;
-    position: relative;
-  }
-  .sidebar[data-state="expanded"] .sheet-handle-bar {
-    background: var(--fg-muted);
-  }
-  .sidebar[data-state="expanded"] .sheet-handle-bar::before {
-    content: "";
-    position: absolute;
-    width: 14px;
-    height: 2px;
-    background: var(--fg-muted);
-    border-radius: 2px;
-    transform: rotate(45deg);
-    top: -1px;
-    left: 0;
-  }
-  .sidebar[data-state="expanded"] .sheet-handle-bar {
-    transform: rotate(-45deg);
+  .panel {
+    /* Slightly tighter horizontal inset on tablets. */
+    max-width: calc(100vw - var(--dock-w) - 32px);
   }
 }
 
 /* =====================================================================
- *  MOBILE breakpoint — sidebar becomes a bottom-sheet.
+ *  MOBILE — dock relocates to the bottom edge, panels slide up from the
+ *  bottom as bottom-sheets with a drag handle.
  * ===================================================================== */
 
 @media (max-width: 540px) {
-  #app {
-    grid-template-columns: 1fr;
-    grid-template-areas: "canvas";
+  :root {
+    --panel-w: 100%;
   }
 
-  .sidebar {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    /* Max height when expanded; peek state is set via transform. */
-    max-height: calc(100% - 64px);
-    height: auto;
-    border-right: 0;
-    border-top: 1px solid var(--hairline);
-    border-radius: var(--sheet-radius) var(--sheet-radius) 0 0;
-    box-shadow: var(--shadow-lg);
-
-    /* Animation: peek = mostly off-screen; expanded = at rest. */
-    transition: transform 320ms cubic-bezier(0.32, 0.72, 0.27, 1);
-    will-change: transform;
-    /* In the peek state, leave just the handle + the title-row visible. */
-    transform: translateY(calc(100% - var(--sheet-peek) - env(safe-area-inset-bottom)));
-
-    /* Touch-action on the sheet: vertical scroll, but pinch-zoom blocked. */
-    touch-action: pan-y;
+  .dock {
+    /* Horizontal pill at the bottom of the screen. */
+    top: auto;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    gap: 2px;
+    padding: 6px;
+    border-radius: var(--r-pill);
+  }
+  /* Hide the decorative brand mark on mobile to free up horizontal
+     space. The dock-foot (theme toggle) becomes an inline sibling
+     of the nav buttons via flex-direction: row. */
+  .dock-brand {
+    display: none;
+  }
+  .dock-foot {
+    margin: 0;
+    padding: 0;
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
+    padding-left: 4px;
+    margin-left: 2px;
+    width: auto;
+  }
+  .dock-nav {
+    flex-direction: row;
+    gap: 2px;
+  }
+  /* Tighten the per-button hitbox slightly so 6 buttons fit on
+     narrow phones (≥ 360 px viewport). */
+  .dock-btn {
+    width: calc(var(--dock-size) - 4px);
+    height: calc(var(--dock-size) - 4px);
+  }
+  /* Hide hover tooltips on mobile (touch devices never trigger hover). */
+  .dock-btn::after {
+    display: none !important;
+  }
+  /* The active-panel indicator pip moves ABOVE the button on the
+     mobile dock so it points up toward the bottom-sheet that opens. */
+  .dock-btn::before {
+    left: 50%;
+    top: -8px;
+    width: 18px;
+    height: 3px;
+    transform: translateX(-50%) scaleX(0);
+  }
+  .dock-btn[data-active="true"]::before {
+    transform: translateX(-50%) scaleX(1);
   }
 
-  .sidebar[data-state="expanded"] {
+  /* Panels become bottom-sheets — full width, slide up from the bottom.
+     They sit ABOVE the floating dock pill so the user can switch panels
+     without dismissing first. */
+  .panel {
+    top: auto;
+    /* Park just above the floating dock pill at the bottom. */
+    bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - var(--dock-size) - 80px - env(safe-area-inset-bottom));
+    transform-origin: bottom center;
+    transform: translateY(calc(100% + var(--dock-size) + 40px));
+    border-radius: var(--sheet-radius);
+    border: 1px solid var(--hairline);
+    transition:
+      transform 360ms var(--ease-out-soft),
+      visibility 360ms;
+  }
+  .panel[data-open="true"] {
+    transform: translateY(0);
+  }
+  .panel[data-anchor="top"],
+  .panel[data-anchor="bottom"] {
+    transform-origin: bottom center;
+  }
+  .panel[data-anchor="top"]:not([data-open="true"]),
+  .panel[data-anchor="bottom"]:not([data-open="true"]) {
+    transform: translateY(calc(100% + var(--dock-size) + 40px));
+  }
+  .panel[data-anchor="top"][data-open="true"],
+  .panel[data-anchor="bottom"][data-open="true"] {
     transform: translateY(0);
   }
 
-  .sheet-handle {
-    display: flex;
-    width: 100%;
-    height: 32px;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    /* Big invisible hitbox extending above the visible bar */
-    padding-top: 4px;
-    flex: 0 0 32px;
-  }
-  .sheet-handle-bar {
+  /* Add a soft drag handle indicator on the panel head. */
+  .panel-head::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
     width: 36px;
     height: 4px;
     border-radius: 2px;
     background: var(--hairline-strong);
-    transition: background 160ms;
   }
-  .sheet-handle:active .sheet-handle-bar {
-    background: var(--fg-muted);
-  }
-
-  .side-scroll {
-    padding: 0 18px calc(20px + env(safe-area-inset-bottom));
-    gap: 18px;
-    /* In peek state the scroll container is still rendered; we just
-       overflow it visually thanks to the transform. */
-    overscroll-behavior: contain;
+  .panel-head {
+    position: relative;
+    padding-top: 20px;
   }
 
-  /* Compact peek: title is the only thing on display. */
-  .side-header {
-    padding-top: 4px;
+  /* Standard padding — the dock is now OUTSIDE the panel so we don't
+     need extra bottom padding for it. */
+  .panel-body {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
   }
 
-  /* HUD lives at top-left on mobile so the bottom sheet doesn't collide. */
+  /* Brand chip becomes a compact dot on phones to save real estate. */
+  .chip {
+    padding: 6px 10px 6px 6px;
+  }
+  .chip-sub {
+    display: none;
+  }
+
+  /* HUD sits just below the brand chip on mobile so it doesn't fight
+     the MapLibre controls (top-right) or the dock (bottom-centre). */
   .hud-host {
-    left: 12px;
+    left: max(14px, env(safe-area-inset-left));
+    right: auto;
     bottom: auto;
-    top: max(12px, env(safe-area-inset-top));
+    top: calc(56px + env(safe-area-inset-top));
   }
 
-  /* Make sure the native MapLibre controls don't get hidden behind the
-     peek of the sheet — scoot them upward. */
+  /* Native MapLibre controls move up and stay clear of the dock. */
   .maplibregl-ctrl-bottom-right,
   .maplibregl-ctrl-bottom-left {
-    margin-bottom: calc(var(--sheet-peek) + 14px + env(safe-area-inset-bottom));
+    margin-bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
   }
 
-  /* On mobile keep the layer rows extra spacious. */
+  /* Slightly larger touch targets inside panels. */
   .row {
     gap: 14px;
-  }
-
-  /* When sheet is collapsed, hide the scrim/dim so the map stays bright. */
-  .scrim {
-    background: rgba(0, 0, 0, 0.4);
   }
 }
 
 /* =====================================================================
- *  ULTRAWIDE — give the sidebar a little more breathing room and lower
- *  the HUD/control z-density.
+ *  Short viewports — landscape phones, fold-out devices. We tighten
+ *  the dock so it stays vertically centred without clipping.
+ * ===================================================================== */
+
+@media (max-height: 620px) and (orientation: landscape) {
+  :root {
+    --dock-size: 40px;
+    --dock-icon: 18px;
+    --dock-pad: 4px;
+  }
+  .dock {
+    gap: 4px;
+  }
+  .dock-brand {
+    margin-bottom: 0;
+  }
+  .dock-foot {
+    margin-top: 2px;
+    padding-top: 6px;
+  }
+  .dock-logo {
+    width: 26px;
+    height: 26px;
+  }
+  .panel {
+    max-height: 88dvh;
+  }
+}
+
+/* =====================================================================
+ *  ULTRAWIDE — slightly larger panel, more breathing room around the dock.
  * ===================================================================== */
 
 @media (min-width: 1800px) {
   :root {
-    --sidebar-w: 360px;
+    --panel-w: 332px;
+    --dock-size: 56px;
+    --dock-icon: 22px;
+    --dock-w: 64px;
   }
-  .side-scroll {
-    padding: 22px 24px calc(24px + env(safe-area-inset-bottom));
-    gap: 22px;
+  .dock {
+    left: max(24px, env(safe-area-inset-left));
+  }
+  .panel {
+    left: calc(max(24px, env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
   }
 }

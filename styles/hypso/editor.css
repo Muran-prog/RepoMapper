@@ -19,14 +19,21 @@
   transform: translate(-50%, -50%);
   width: min(640px, 92vw);
   max-height: 86vh;
-  background: var(--bg-elevated);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--hairline);
-  border-radius: 14px;
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg), var(--ring);
   z-index: 7;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: hypso-modal-in var(--t-base) var(--ease-out);
+}
+@keyframes hypso-modal-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 .hypso-editor-head,
 .hypso-profile-head {
@@ -34,15 +41,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--hairline);
-  background: var(--bg-side);
+  background: transparent;
 }
 .hypso-editor-head h3,
 .hypso-profile-head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .hypso-profile-hint {
   flex: 1;
@@ -56,10 +64,13 @@
   background: transparent;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   color: var(--fg-muted);
   cursor: pointer;
   font-size: 16px;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
 }
 .hypso-editor-head button:hover,
 .hypso-profile-head button:hover {
@@ -210,29 +221,45 @@
   border: 1px solid var(--hairline);
   background: var(--bg-side);
   color: var(--fg);
-  padding: 0 10px;
-  height: 30px;
-  border-radius: 6px;
+  padding: 0 12px;
+  height: 32px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   font: inherit;
+  font-size: 12px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
 }
 .hypso-editor-actions button:hover,
 .hypso-import:hover {
   background: var(--bg-side-soft);
+  border-color: var(--hairline-strong);
+}
+.hypso-editor-actions button:active,
+.hypso-import:active {
+  transform: scale(0.97);
 }
 .hypso-editor-actions .hypso-primary {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06), 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .hypso-editor-actions .hypso-primary:hover {
-  background: color-mix(in srgb, var(--accent) 80%, black 20%);
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 .hypso-editor-actions .hypso-danger {
   background: transparent;
   color: #c4402f;
   border-color: color-mix(in srgb, #c4402f 30%, transparent);
+}
+.hypso-editor-actions .hypso-danger:hover {
+  background: color-mix(in srgb, #c4402f 8%, transparent);
+  border-color: color-mix(in srgb, #c4402f 50%, transparent);
 }
