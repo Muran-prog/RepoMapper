@@ -34,7 +34,7 @@
     /* Stack order from the screen bottom upward on mobile:
      *   dock pill  →  attribution  →  legend square
      * `dock + 24` clears the dock pill; another `40 + 8` makes room
-     * for the compact attribution pill that MapLibre anchors at the
+     * for the inline attribution strip that MapLibre anchors at the
      * bottom-right just above the dock. */
     bottom: calc(var(--dock-size) + 24px + 48px + env(safe-area-inset-bottom));
     right: max(var(--edge-inset), env(safe-area-inset-right));

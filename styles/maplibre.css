@@ -388,13 +388,6 @@
 .maplibregl-ctrl-attrib a:hover {
   text-decoration: underline;
 }
-.maplibregl-ctrl-attrib-button {
-  background-color: transparent !important;
-  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' y1='16' x2='12' y2='12'/%3E%3Ccircle cx='12' cy='8' r='0.5' fill='%23888'/%3E%3C/svg%3E") !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  background-size: 16px !important;
-}
 
 /* --- Scale --------------------------------------------------------
  * The native MapLibre ScaleControl is intentionally NOT installed —

@@ -85,7 +85,7 @@ function installNativeControls(map, { caps }) {
     'top-right',
   );
 
-  map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right');
+  map.addControl(new ml.AttributionControl({ compact: false }), 'bottom-right');
 
   map.addControl(new ml.FullscreenControl({}), 'top-right');
 
