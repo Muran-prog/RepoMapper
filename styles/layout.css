@@ -1,0 +1,56 @@
+/* =====================================================================
+ *  App grid — desktop default, mobile overrides further down.
+ * ===================================================================== */
+
+#app {
+  position: relative;
+  display: grid;
+  /* `minmax(0, 1fr)` is critical here, both for rows and the canvas
+     column. CSS Grid tracks default to a `min-content` minimum, which
+     means a grid item with tall content (e.g. the sidebar's stack of
+     theme / quality / layers / relief / fly-to / tips sections) can
+     PUSH its track past the container's `height: 100dvh` — turning the
+     sidebar into a 1200-px-tall column that scrolls *the page* instead
+     of its own internal scroller. With `minmax(0, 1fr)` the row is
+     hard-capped at its 1fr share of `100dvh`, the sidebar is forced to
+     fit, and `.side-scroll`'s `overflow: auto` finally kicks in.
+     Same trick on the canvas column for symmetric safety. */
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  /* `<main>` comes before `<aside>` in DOM order (correct for a11y), so we
+     pin them explicitly to grid areas rather than letting auto-placement
+     send the sidebar into a phantom second row. */
+  grid-template-areas: "side canvas";
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+@supports (height: 100svh) {
+  body,
+  #app {
+    height: 100svh; /* small viewport — never grows */
+  }
+}
+
+#canvas {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-page);
+  grid-area: canvas;
+}
+
+.map {
+  position: absolute;
+  inset: 0;
+  /* MapLibre sets touch-action itself but reaffirm to defeat platform
+     gestures (pull-to-refresh, scroll-up) over the canvas area. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+.map:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

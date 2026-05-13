@@ -1,0 +1,36 @@
+/* =====================================================================
+ *  Base — universal box-sizing reset, html/body defaults.
+ *
+ *  Uses `dvh` so the layout doesn't get cropped when the iOS URL bar
+ *  collapses; `100svh` override lives in layout.css alongside #app.
+ * ===================================================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-page);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Prevent rubber-band overscroll bleeding into the body on iOS */
+  overscroll-behavior: none;
+}
+
+body {
+  /* `dvh` shrinks when the iOS URL bar appears, expands when it collapses,
+     avoiding the legacy 100vh bottom-cropping issue. */
+  height: 100dvh;
+  /* iOS double-tap zoom suppression */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}

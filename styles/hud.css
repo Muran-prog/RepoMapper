@@ -1,0 +1,49 @@
+/* =====================================================================
+ *  HUD
+ * ===================================================================== */
+
+.hud-host {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  left: 14px;
+  bottom: calc(50px + env(safe-area-inset-bottom));
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 14px;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  box-shadow: var(--shadow);
+}
+
+.hud-row {
+  display: contents;
+}
+.hud-label {
+  color: var(--fg-muted);
+  letter-spacing: 0.04em;
+}
+.hud-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.hud-value[data-tier="good"] {
+  color: #2da356;
+}
+.hud-value[data-tier="mid"] {
+  color: #c69214;
+}
+.hud-value[data-tier="low"] {
+  color: #c4402f;
+}

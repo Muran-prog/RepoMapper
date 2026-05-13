@@ -1,0 +1,38 @@
+/* =====================================================================
+ *  Accessibility — reduce-motion + forced-colors environment overrides.
+ * ===================================================================== */
+
+/* =====================================================================
+ *  Reduce-motion compliance — collapse all heavy transitions.
+ * ===================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .splash-loader {
+    /* Loader still spins, but at a slow tempo */
+    animation-duration: 1.6s !important;
+  }
+}
+
+/* =====================================================================
+ *  Forced-colours / Windows high-contrast — keep the map visible.
+ * ===================================================================== */
+
+@media (forced-colors: active) {
+  :root {
+    --hairline: CanvasText;
+    --hairline-strong: CanvasText;
+    --shadow: none;
+    --shadow-lg: none;
+  }
+  .maplibregl-ctrl-group {
+    border: 1px solid CanvasText !important;
+  }
+}

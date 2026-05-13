@@ -1,0 +1,48 @@
+/* =====================================================================
+ *  Hypso stats readout + launch button (sidebar inline).
+ * ===================================================================== */
+
+/* --- Stats readout ------------------------------------------------- */
+.hypso-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-side-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+}
+.hypso-stats > span {
+  display: flex;
+  flex-direction: column;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.hypso-stat-label {
+  color: var(--fg-muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-family: var(--sans);
+}
+
+.hypso-launch {
+  appearance: none;
+  width: 100%;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side-soft);
+  color: var(--fg);
+  padding: 0 14px;
+  min-height: var(--hit);
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.hypso-launch:hover {
+  background: var(--bg-elevated);
+  border-color: var(--hairline-strong);
+}

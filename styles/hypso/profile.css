@@ -1,0 +1,110 @@
+/* =====================================================================
+ *  Hypso profile drawer — elevation profile chart (canvas overlay).
+ *
+ *  Shares the modal shell with editor.css (.hypso-editor / .hypso-profile
+ *  selectors are co-defined there); this file owns chart-specific bits.
+ * ===================================================================== */
+
+/* --- Elevation profile drawer ------------------------------------- */
+.hypso-profile-chart {
+  position: relative;
+  padding: 12px 14px;
+  min-height: 160px;
+  flex: 1;
+}
+.hypso-profile-chart[data-state="empty"]::before,
+.hypso-profile-chart[data-state="noelev"] {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.hypso-profile-chart[data-state="empty"]::before {
+  content: "Click the map to add vertices…";
+  display: block;
+}
+.hypso-profile-svg {
+  width: 100%;
+  height: 180px;
+  display: block;
+}
+.hypso-profile-frame {
+  fill: var(--bg-side-soft);
+  stroke: var(--hairline);
+  stroke-width: 0.5;
+}
+.hypso-profile-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.hypso-profile-cursor {
+  stroke: var(--fg);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 2;
+}
+.hypso-profile-dot {
+  fill: var(--accent);
+  stroke: var(--bg-elevated);
+  stroke-width: 1;
+}
+.hypso-profile-y-tick,
+.hypso-profile-x-tick {
+  font-family: var(--mono);
+  font-size: 9px;
+  fill: var(--fg-muted);
+}
+.hypso-profile-tooltip {
+  position: absolute;
+  bottom: 4px;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  pointer-events: none;
+  transition: opacity 120ms;
+  font-variant-numeric: tabular-nums;
+}
+.hypso-profile-tooltip[data-state="hidden"] {
+  opacity: 0;
+}
+.hypso-profile-stats {
+  display: flex;
+  gap: 12px;
+  padding: 4px 14px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--hairline);
+}
+.hypso-profile-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px 12px;
+  align-items: center;
+  border-top: 1px solid var(--hairline);
+}
+.hypso-profile-actions button {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side);
+  color: var(--fg);
+  padding: 0 10px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.hypso-profile-actions button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.hypso-profile-msg {
+  padding: 12px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}

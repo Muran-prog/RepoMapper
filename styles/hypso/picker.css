@@ -1,0 +1,118 @@
+/* =====================================================================
+ *  Hypso picker — radio-grouped ramp list in the sidebar.
+ * ===================================================================== */
+
+/* --- Picker -------------------------------------------------------- */
+.hypso-picker {
+  gap: 6px;
+}
+.hypso-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hypso-item {
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background 120ms, border-color 120ms;
+}
+.hypso-item[data-active="1"] {
+  background: var(--bg-side-soft);
+  border-color: var(--accent-soft);
+}
+.hypso-label {
+  display: grid;
+  grid-template-columns: auto 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--hit);
+  padding: 4px 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.hypso-label input[type="radio"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--hairline-strong);
+  position: relative;
+  cursor: pointer;
+  background: var(--bg-side);
+  flex: 0 0 16px;
+}
+.hypso-label input[type="radio"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.hypso-label input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 3.5px;
+  background: var(--bg-side);
+  border-radius: 50%;
+}
+.hypso-preview {
+  display: block;
+  width: 28px;
+  height: 32px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+.hypso-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hypso-name {
+  font-weight: 600;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hypso-summary {
+  color: var(--fg-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hypso-badge {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.hypso-edit {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side);
+  color: var(--fg-soft);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  transition: background 120ms, color 120ms;
+}
+.hypso-edit:hover {
+  background: var(--bg-side-soft);
+  color: var(--fg);
+}
+.hypso-row {
+  padding-left: 10px;
+}

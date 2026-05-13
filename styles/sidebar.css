@@ -1,0 +1,300 @@
+/* =====================================================================
+ *  Sidebar — desktop variant.
+ *
+ *  Owns the desktop rail (320px, pinned to grid area "side") plus all
+ *  the in-sidebar primitives: segmented control, toggle rows, sliders,
+ *  preset buttons and the tips list. Tablet / mobile breakpoint
+ *  overrides live in responsive.css.
+ * ===================================================================== */
+
+.sidebar {
+  position: relative;
+  background: var(--bg-side);
+  border-right: 1px solid var(--hairline);
+  z-index: 5;
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  /* Belt-and-braces with #app's `minmax(0, 1fr)` rows. Without this, an
+     ancestor that loses the `minmax` (mobile media query, custom theme)
+     would let .sidebar grow past the viewport and break .side-scroll. */
+  min-height: 0;
+  /* Hide the mobile handle on desktop. */
+  padding-top: 0;
+}
+
+.sheet-handle {
+  display: none;
+}
+
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* Prevent the scrollbar gutter from rendering on Firefox where it
+     overlaps the content; rely on default thin scrollbars. */
+  scrollbar-gutter: stable;
+}
+
+.side-header {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.side-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.side-title .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex: 0 0 auto;
+}
+.side-sub {
+  margin: 6px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.side-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-h {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+/* Segmented control */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--bg-side-soft);
+  padding: 3px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+}
+.seg.seg-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.seg button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0 10px;
+  height: var(--hit);
+  font: inherit;
+  color: var(--fg-soft);
+  cursor: pointer;
+  border-radius: calc(var(--radius) - 3px);
+  transition: background 120ms, color 120ms;
+  /* Prevent iOS button highlights */
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .seg button:hover {
+    color: var(--fg);
+  }
+}
+.seg button:active {
+  background: var(--hairline);
+}
+.seg button.on {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+
+/* Toggle rows */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+  min-height: var(--hit);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .row:hover {
+    background: var(--bg-side-soft);
+  }
+}
+.row:active {
+  background: var(--hairline);
+}
+.row input[type="checkbox"] {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border-radius: 5px;
+  border: 1.5px solid var(--hairline-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+  background: var(--bg-side);
+}
+.row input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5 L7 12 L13 4'/%3E%3C/svg%3E")
+    no-repeat center / 14px 14px;
+}
+
+/* Exaggeration slider (Relief section) */
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 4px 0;
+}
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--fg-soft);
+  cursor: pointer;
+}
+.slider-label span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.slider-row input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-side-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+}
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-side);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.slider-row input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-side);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+/* Sub-header for the Carpathian peaks group — slightly less prominent. */
+.carpathian-h {
+  margin-top: 8px;
+}
+
+/* Preset buttons */
+.presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.presets button {
+  appearance: none;
+  border: 1px solid var(--hairline);
+  background: var(--bg-side-soft);
+  color: var(--fg);
+  padding: 0 10px;
+  min-height: var(--hit);
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .presets button:hover {
+    background: var(--bg-elevated);
+    border-color: var(--hairline-strong);
+    color: var(--accent);
+  }
+}
+.presets button:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Tips — show one variant per pointer type. */
+.tips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg-soft);
+  font-size: 12px;
+}
+.tips kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  background: var(--bg-side-soft);
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  color: var(--fg);
+}
+.tips[data-pointer="fine"] {
+  display: none;
+}
+.tips[data-pointer="coarse"] {
+  display: none;
+}
+[data-pointer="fine"]  .tips[data-pointer="fine"]  { display: flex; }
+[data-pointer="coarse"] .tips[data-pointer="coarse"] { display: flex; }
+
+.side-meta {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}

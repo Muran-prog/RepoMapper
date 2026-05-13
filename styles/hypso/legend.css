@@ -1,0 +1,192 @@
+/* =====================================================================
+ *  Hypso legend — canvas overlay with gradient bar + ticks + cursor.
+ *
+ *  Two-piece widget: toggle (always visible) + collapsible panel. Anchor
+ *  position is configurable via [data-position] on .hypso-legend-host.
+ * ===================================================================== */
+
+/* --- Legend (canvas overlay) -------------------------------------- */
+.hypso-legend-host {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  /* Mirror the HUD's safe-area awareness. */
+  bottom: calc(140px + env(safe-area-inset-bottom));
+  right: max(12px, env(safe-area-inset-right));
+}
+.hypso-legend-host[data-position="bl"] {
+  bottom: calc(140px + env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  right: auto;
+}
+.hypso-legend-host[data-position="tr"] {
+  top: max(80px, env(safe-area-inset-top));
+  bottom: auto;
+  right: max(12px, env(safe-area-inset-right));
+}
+.hypso-legend-host[data-position="tl"] {
+  top: max(80px, env(safe-area-inset-top));
+  bottom: auto;
+  left: max(12px, env(safe-area-inset-left));
+  right: auto;
+}
+/* The legend is a two-piece widget:
+ *   – a toggle button ("header") that's ALWAYS visible, doubles as a
+ *     collapsed-state pill in the canvas corner
+ *   – a panel containing the gradient bar, ticks, and the
+ *     "you-are-here" cursor that slides in/out on toggle
+ *
+ * Layout direction is position-aware: bottom-anchored corners (br, bl)
+ * put the toggle at the BOTTOM so the pill sits exactly where it
+ * lived before collapse; top-anchored corners (tr, tl) put it at the
+ * top so the panel grows downward from the toggle. The chevron icon
+ * rotates accordingly. */
+.hypso-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 6px 8px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  /* Animate width changes when the toggle's intrinsic size differs
+     between expanded ("Висота") and collapsed (just the chevron). */
+  transition: padding 240ms ease;
+}
+.hypso-legend-host[data-position="br"] .hypso-legend,
+.hypso-legend-host[data-position="bl"] .hypso-legend {
+  flex-direction: column-reverse;
+}
+
+/* --- Toggle (header bar) ------------------------------------------ */
+.hypso-legend-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 120ms ease;
+}
+.hypso-legend-toggle:hover {
+  background: var(--bg-side-soft);
+}
+.hypso-legend-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.hypso-legend-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+}
+.hypso-legend-chev {
+  width: 12px;
+  height: 12px;
+  color: var(--fg-soft);
+  transition: transform 240ms cubic-bezier(0.32, 0.72, 0.27, 1);
+  flex: 0 0 12px;
+}
+/* Universal "dropdown" convention: chevron points DOWN when the panel
+ * is closed, UP when it's open. Independent of anchor corner so the
+ * affordance is consistent for users who configured a non-default
+ * position. The SVG path is authored as a DOWN chevron; we rotate
+ * 180° when expanded. */
+.hypso-legend:not([data-collapsed="true"]) .hypso-legend-chev {
+  transform: rotate(180deg);
+}
+
+/* --- Panel -------------------------------------------------------- */
+.hypso-legend-panel {
+  display: grid;
+  grid-template-columns: 14px 56px;
+  gap: 4px;
+  overflow: hidden;
+  /* max-height is animated; the real height is bounded by the
+     gradient bar's intrinsic 180px + a bit of slack so the cursor
+     readout has room when it sits near the top or bottom. */
+  max-height: 200px;
+  opacity: 1;
+  /* `transform-origin` only matters for the scale fallback under
+     prefers-reduced-motion overrides — see the media query at the
+     bottom of this stylesheet. */
+  transform-origin: center bottom;
+  transition: max-height 280ms cubic-bezier(0.32, 0.72, 0.27, 1),
+              opacity 220ms ease,
+              margin 240ms cubic-bezier(0.32, 0.72, 0.27, 1);
+}
+.hypso-legend[data-collapsed="true"] .hypso-legend-panel {
+  max-height: 0;
+  opacity: 0;
+  /* Collapse the gap that flex-direction adds between toggle + panel. */
+  margin: -6px 0;
+  pointer-events: none;
+}
+.hypso-legend-bar {
+  width: 14px;
+  height: 180px;
+  border-radius: 4px;
+  border: 1px solid var(--hairline);
+  position: relative;
+}
+.hypso-legend-ticks {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: 180px;
+}
+.hypso-legend-ticks li {
+  position: absolute;
+  left: 0;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.hypso-legend-cursor {
+  position: absolute;
+  left: -2px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: top 120ms ease, opacity 120ms ease;
+}
+.hypso-legend-cursor[data-state="hidden"] {
+  opacity: 0;
+}
+.hypso-legend-arrow {
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--fg);
+}
+.hypso-legend-readout {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}

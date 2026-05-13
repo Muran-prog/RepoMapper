@@ -1,0 +1,26 @@
+/* =====================================================================
+ *  Hypsometric subsystem UI — barrel.
+ *
+ *  Five surface areas:
+ *    – picker          (sidebar): radio-grouped ramp list + strength slider
+ *    – legend          (canvas overlay): vertical gradient bar + ticks
+ *    – editor          (canvas overlay): drag-stops live editor
+ *    – profile drawer  (canvas overlay): elevation profile chart
+ *    – stats           (sidebar inline): min/mean/max readout
+ *
+ *  All five share design tokens (--bg-side, --fg, --accent, …) and
+ *  honour [data-theme=dark] via CSS variables on :root. No JS sets
+ *  inline colours except for the gradient bar's `background` (the
+ *  ramp itself).
+ *
+ *  Cascade order matters — responsive.css must come last so its
+ *  breakpoint / prefers-reduced-motion / coarse-pointer overrides
+ *  shadow the base rules.
+ * ===================================================================== */
+
+@import url("./picker.css");
+@import url("./stats.css");
+@import url("./legend.css");
+@import url("./editor.css");
+@import url("./profile.css");
+@import url("./responsive.css");

@@ -1,0 +1,19 @@
+/* =====================================================================
+ *  Scrim — backdrop behind the mobile sheet when expanded.
+ * ===================================================================== */
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  visibility: hidden;
+  z-index: 4;
+  transition: opacity 220ms ease, visibility 220ms ease;
+  pointer-events: none;
+}
+.scrim[data-visible="1"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}

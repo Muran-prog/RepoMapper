@@ -1,0 +1,62 @@
+/* =====================================================================
+ *  Design tokens — CSS custom properties.
+ *
+ *  Two theme bases (light / dark) plus a coarse-pointer override that
+ *  bumps the touch hitbox. All downstream modules read from these
+ *  variables so theme switching costs zero JS work past flipping the
+ *  [data-theme] attribute on <html>.
+ * ===================================================================== */
+
+:root {
+  color-scheme: light dark;
+
+  --bg-page: #f4f1ea;
+  --bg-side: #ffffff;
+  --bg-side-soft: #f7f5ef;
+  --bg-elevated: #ffffff;
+  --fg: #2a2520;
+  --fg-soft: #6b645a;
+  --fg-muted: #95897a;
+  --accent: #d97706;
+  --accent-soft: rgba(217, 119, 6, 0.12);
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-strong: rgba(0, 0, 0, 0.16);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08), 0 24px 64px rgba(0, 0, 0, 0.12);
+  --radius: 10px;
+  --radius-lg: 16px;
+  --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+
+  /* Touch hitbox baseline — overridden on coarse pointers. */
+  --hit: 36px;
+
+  /* Sheet peek height (mobile bottom-sheet collapsed). */
+  --sheet-peek: 88px;
+  --sheet-radius: 18px;
+
+  /* Sidebar width on desktop. */
+  --sidebar-w: 320px;
+}
+
+[data-theme="dark"] {
+  --bg-page: #0e1318;
+  --bg-side: #11161c;
+  --bg-side-soft: #161c23;
+  --bg-elevated: #1a212a;
+  --fg: #e8e5dd;
+  --fg-soft: #a9a59a;
+  --fg-muted: #6c6a64;
+  --accent: #f0a850;
+  --accent-soft: rgba(240, 168, 80, 0.16);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.18);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.4), 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+/* Touch baseline: WCAG/Apple HIG recommend 44pt minimum hitbox. */
+[data-pointer="coarse"],
+:where([data-touch="1"]) {
+  --hit: 44px;
+}

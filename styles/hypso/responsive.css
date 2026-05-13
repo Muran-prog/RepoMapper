@@ -1,0 +1,85 @@
+/* =====================================================================
+ *  Hypso responsive + environment tweaks.
+ *
+ *  Cascade-sensitive: keep this AFTER the picker/legend/editor/profile
+ *  modules so the breakpoint and prefers-* overrides land on top.
+ * ===================================================================== */
+
+/* --- Reduce-motion overrides for hypso UI ------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .hypso-item,
+  .hypso-legend-cursor,
+  .hypso-profile-tooltip,
+  .hypso-legend,
+  .hypso-legend-panel,
+  .hypso-legend-chev,
+  .hypso-legend-toggle {
+    transition: none !important;
+  }
+}
+
+/* --- Touch / coarse-pointer tweaks for the legend toggle ---------- */
+/* On coarse pointers the chevron-only toggle in the collapsed state
+ * needs a comfortable hit target (44 px is the WCAG / Apple HIG
+ * recommendation). We bump the toggle's min-height to --hit and pad
+ * a bit more so finger taps land cleanly. */
+[data-pointer="coarse"] .hypso-legend-toggle,
+[data-touch="1"]      .hypso-legend-toggle {
+  min-height: var(--hit);
+  min-width: 44px;
+  padding: 4px 10px;
+}
+[data-pointer="coarse"] .hypso-legend-title,
+[data-touch="1"]      .hypso-legend-title {
+  font-size: 11px;
+}
+[data-pointer="coarse"] .hypso-legend-chev,
+[data-touch="1"]      .hypso-legend-chev {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+}
+
+/* --- Mobile tweaks for hypso UI ----------------------------------- */
+@media (max-width: 540px) {
+  .hypso-legend-host {
+    /* The bottom-sheet covers the bottom area at peek state, so anchor
+       the legend higher on phones. Add a small extra margin so the
+       collapsed pill doesn't sit flush against the screen edge — it
+       reads as a tappable widget rather than a sliver of UI. */
+    bottom: calc(var(--sheet-peek) + 56px + env(safe-area-inset-bottom));
+    right: max(10px, env(safe-area-inset-right));
+  }
+  /* Cap the panel height so it never eats more than ~ half the
+     viewport on small phones in landscape. */
+  .hypso-legend-panel {
+    max-height: min(200px, 42vh);
+  }
+  /* When sidebar is in peek state (mobile default), the legend
+     overlays the bottom-sheet's tab. Keep it just inside the safe
+     area so the gradient column doesn't get clipped. */
+  .hypso-legend {
+    padding: 5px 6px;
+  }
+  .hypso-editor,
+  .hypso-profile {
+    width: 96vw;
+    max-height: 70vh;
+  }
+  .hypso-editor-body {
+    grid-template-columns: 1fr;
+  }
+  .hypso-editor-stops {
+    height: 220px;
+  }
+}
+
+/* --- Tablet legend tweak ------------------------------------------ */
+@media (min-width: 540px) and (max-width: 960px) {
+  /* On tablets the sidebar overlays the canvas as a floating panel.
+     The legend needs to sit above the bottom-left scale bar without
+     getting hidden under the sidebar's left rail. */
+  .hypso-legend-host {
+    bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+}

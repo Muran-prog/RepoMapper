@@ -1,0 +1,62 @@
+/* =====================================================================
+ *  Cart — UI styles barrel.
+ *
+ *  Three-tier responsive layout:
+ *    • desktop  (≥ 960px)         sidebar on the left, fixed 320px
+ *    • tablet   (540–960px)       sidebar overlays the map as a floating panel
+ *    • mobile   (< 540px or narrow)  sidebar becomes a bottom-sheet with a
+ *                                   handle, peek and expanded states
+ *
+ *  All theming is driven by [data-theme] on <html>. Device data attributes
+ *  set by src/main.js ([data-touch], [data-hover], [data-narrow], …) let CSS
+ *  branch without JS noise.
+ *
+ *  Notable techniques:
+ *    – 100dvh / svh viewport units (handles iOS URL-bar collapse)
+ *    – env(safe-area-inset-*) for notch / home-indicator
+ *    – touch-action: none on map, pan-y on sheet
+ *    – hover-only affordances guarded by @media (hover: hover)
+ *    – reduced-motion fallbacks for splash + sheet transitions
+ *
+ *  Import order is cascade-sensitive — see the comment block at the end
+ *  of this file before reshuffling.
+ * ===================================================================== */
+
+/* 1. Design tokens (CSS custom properties, theme bases). */
+@import url("./tokens.css");
+
+/* 2. Base reset + html/body defaults. */
+@import url("./base.css");
+
+/* 3. App grid + canvas + map element. */
+@import url("./layout.css");
+
+/* 4. Sidebar desktop variant + in-sidebar primitives. */
+@import url("./sidebar.css");
+
+/* 5. Scrim (backdrop for mobile sheet). */
+@import url("./scrim.css");
+
+/* 6. HUD overlay. */
+@import url("./hud.css");
+
+/* 7. Splash + fatal-error overlay. */
+@import url("./splash.css");
+
+/* 8. MapLibre control restyling. */
+@import url("./maplibre.css");
+
+/* 9. Tablet / mobile / ultrawide breakpoint overrides. Must come AFTER
+ *    the per-component modules so the breakpoint rules win the cascade
+ *    at narrower viewports. */
+@import url("./responsive.css");
+
+/* 10. Accessibility — prefers-reduced-motion + forced-colors. Last
+ *     among the top-level modules so its `!important` overrides reach
+ *     the entire above stack. */
+@import url("./a11y.css");
+
+/* 11. Hypsometric subsystem (picker, stats, legend, editor, profile,
+ *     hypso-specific breakpoints). Its own internal barrel preserves
+ *     the sub-cascade order. */
+@import url("./hypso/index.css");

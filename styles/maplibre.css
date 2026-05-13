@@ -1,0 +1,85 @@
+/* =====================================================================
+ *  MapLibre control restyling — touch-friendly hitboxes, theme-aware
+ *  glass background, safe-area aware positioning.
+ * ===================================================================== */
+
+.maplibregl-ctrl-top-right {
+  /* Avoid overlapping the iOS notch / device cutouts. */
+  margin-top: max(10px, env(safe-area-inset-top));
+  margin-right: max(10px, env(safe-area-inset-right));
+}
+.maplibregl-ctrl-bottom-right {
+  margin-bottom: max(10px, env(safe-area-inset-bottom));
+  margin-right: max(10px, env(safe-area-inset-right));
+}
+.maplibregl-ctrl-bottom-left {
+  margin-bottom: max(10px, env(safe-area-inset-bottom));
+  margin-left: max(10px, env(safe-area-inset-left));
+}
+
+.maplibregl-ctrl-group {
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline) !important;
+  box-shadow: var(--shadow) !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+  color: var(--fg) !important;
+  width: var(--hit) !important;
+  height: var(--hit) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--hairline) !important;
+}
+@media (hover: hover) {
+  .maplibregl-ctrl-group button:hover {
+    background: var(--bg-side-soft) !important;
+  }
+}
+.maplibregl-ctrl-group button:active {
+  background: var(--hairline) !important;
+}
+
+[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(0.86);
+}
+
+.maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent) !important;
+  border: 1px solid var(--hairline) !important;
+  border-radius: 8px !important;
+  padding: 2px 8px !important;
+  color: var(--fg-soft) !important;
+  font-size: 11px !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--accent) !important;
+}
+
+.maplibregl-ctrl-scale {
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent) !important;
+  border: 1px solid var(--hairline) !important;
+  border-top: 0 !important;
+  border-radius: 0 0 6px 6px !important;
+  color: var(--fg) !important;
+  font-family: var(--mono);
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+}
+
+/* Popup styling — for future use. */
+.maplibregl-popup-content {
+  background: var(--bg-elevated) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--hairline) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--bg-elevated) !important;
+}
