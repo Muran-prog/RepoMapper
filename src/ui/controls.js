@@ -30,6 +30,7 @@ import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
 import { getProfileConfig } from '../device.js';
 import { FEATURES, DEFAULT_THEME } from '../config.js';
 import { mountHypsoUI } from './hypso/index.js';
+import { loadUiPrefs, saveUiPrefs } from './store.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -47,13 +48,22 @@ const ICONS = {
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
   close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/></svg>`,
   brand: `<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M6 17 L13 23 L26 9" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  // 7-dot "more" glyph used by the MapLibre-controls collapse anchor.
+  // Single-stroke chevron pair so it reads as "reveal a stack".
+  controlsChev: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9 L12 14 L17 9"/><path d="M7 15 L12 20 L17 15" opacity="0.5"/></svg>`,
 };
 
 // ---------------------------------------------------------------------------
-// MapLibre-native controls (top-right column, scale + attribution).
+// MapLibre-native controls (top-right column) + collapse anchor.
+//
+// The MapLibre ScaleControl is intentionally OMITTED here: the redesigned
+// shell installs a custom vertical scale beside the dock (see
+// `installVerticalScale`), which avoids colliding with the HUD pill at
+// bottom-left while keeping the whole composition on a single visual
+// rhythm.
 // ---------------------------------------------------------------------------
 
-function installNativeControls(map, { isTouch }) {
+function installNativeControls(map, { isTouch, caps }) {
   const ml = window.maplibregl;
 
   map.addControl(
@@ -75,12 +85,169 @@ function installNativeControls(map, { isTouch }) {
     'top-right',
   );
 
-  map.addControl(new ml.ScaleControl({ maxWidth: 140, unit: 'metric' }), 'bottom-left');
   map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right');
 
   if (!isTouch) {
     map.addControl(new ml.FullscreenControl({}), 'top-right');
   }
+
+  // Inject the collapse anchor at the top of the top-right column.
+  // Order matters — we want the anchor to render first so the cascade
+  // of native controls reveals beneath it.
+  installControlsToggle(map, { caps });
+}
+
+/**
+ * Inject a glass-style anchor button at the top of the top-right MapLibre
+ * column. Toggling it collapses the native controls down to just the
+ * anchor; expanding plays a cascade reveal animation driven entirely by
+ * CSS transition delays (no JS frame loop).
+ *
+ * Persistence: state survives reload via `src/ui/store.js`. The default
+ * is collapsed on touch / narrow viewports so the chrome doesn't crowd
+ * the canvas on phones.
+ */
+function installControlsToggle(map, { caps } = {}) {
+  const container = map.getContainer();
+  const topRight = container.querySelector('.maplibregl-ctrl-top-right');
+  if (!topRight) return;
+
+  // Mark the column so CSS can target its children for the cascade.
+  topRight.classList.add('maplibregl-ctrl-stack');
+
+  const defaultCollapsed = !!(caps?.isTouch || caps?.narrow);
+  const prefs = loadUiPrefs({ controlsCollapsed: defaultCollapsed });
+  let collapsed = prefs.controlsCollapsed;
+
+  // The anchor itself is a MapLibre-styled "ctrl-group" so it inherits
+  // the same glass/blur/border treatment as the native cells next to it.
+  const anchor = document.createElement('div');
+  anchor.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-anchor';
+  anchor.innerHTML = `
+    <button type="button"
+            class="ctrl-anchor-btn"
+            data-ctl="controls-toggle"
+            aria-controls="maplibregl-ctrl-top-right"
+            aria-expanded="${collapsed ? 'false' : 'true'}"
+            aria-label="${collapsed ? 'Розгорнути контролі' : 'Згорнути контролі'}"
+            title="${collapsed ? 'Розгорнути' : 'Згорнути'}">
+      ${ICONS.controlsChev}
+    </button>
+  `;
+  topRight.prepend(anchor);
+
+  const setCollapsed = (next, { persist = true } = {}) => {
+    collapsed = !!next;
+    topRight.dataset.collapsed = collapsed ? 'true' : 'false';
+    const btn = anchor.querySelector('button');
+    if (btn) {
+      btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      btn.setAttribute(
+        'aria-label',
+        collapsed ? 'Розгорнути контролі' : 'Згорнути контролі',
+      );
+      btn.setAttribute('title', collapsed ? 'Розгорнути' : 'Згорнути');
+    }
+    if (persist) saveUiPrefs({ controlsCollapsed: collapsed });
+  };
+  setCollapsed(collapsed, { persist: false });
+
+  anchor.querySelector('button').addEventListener('click', () => {
+    setCollapsed(!collapsed);
+  });
+}
+
+/**
+ * Custom vertical scale — a thin glass card with a small bar, mono-spaced
+ * label and live MapLibre updates. Anchored under the dock so the
+ * left-edge stays a single visual stripe (dock → scale) instead of two
+ * unrelated islands like the MapLibre default.
+ *
+ * The bar uses MapLibre's "nice number" rounding so the label reads as a
+ * clean 1/2/3/5/10×10ⁿ distance even as the user zooms.
+ */
+function installVerticalScale(map, scaleHost) {
+  if (!scaleHost) return () => {};
+  scaleHost.classList.add('cart-scale-host');
+  scaleHost.innerHTML = `
+    <div class="cart-scale" role="img" aria-label="Масштаб карти">
+      <span class="cart-scale-label" data-ctl="scale-label">—</span>
+      <div class="cart-scale-bar" aria-hidden="true">
+        <span class="cart-scale-fill" data-ctl="scale-fill"></span>
+        <span class="cart-scale-tick" data-pos="0"></span>
+        <span class="cart-scale-tick" data-pos="100"></span>
+      </div>
+    </div>
+  `;
+  const label = scaleHost.querySelector('[data-ctl="scale-label"]');
+  const fill = scaleHost.querySelector('[data-ctl="scale-fill"]');
+
+  // Bar height in CSS pixels. Anything below ~36 px would feel meagre;
+  // anything above ~80 px starts fighting the dock for vertical space.
+  const BAR_PX = 56;
+
+  /** Round a metres value to the nearest "map-friendly" number. Mirrors
+   *  MapLibre's internal scale implementation. */
+  const getRoundNum = (n) => {
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    const pow10 = Math.pow(10, String(Math.floor(n)).length - 1);
+    let d = n / pow10;
+    if (d >= 10) d = 10;
+    else if (d >= 5) d = 5;
+    else if (d >= 3) d = 3;
+    else if (d >= 2) d = 2;
+    else if (d >= 1) d = 1;
+    else d = 0.5;
+    return pow10 * d;
+  };
+
+  const formatDistance = (m) => {
+    if (m >= 1000) {
+      const km = m / 1000;
+      const display = km >= 10 ? Math.round(km) : km.toFixed(1).replace(/\.0$/, '');
+      return `${display} км`;
+    }
+    return `${Math.round(m)} м`;
+  };
+
+  const update = () => {
+    const canvas = map.getCanvas();
+    const h = canvas?.clientHeight ?? 0;
+    if (h <= 0) return;
+    const cx = (canvas?.clientWidth ?? 0) / 2;
+    let metresPerBar;
+    try {
+      const top = map.unproject([cx, Math.max(0, h - BAR_PX)]);
+      const bottom = map.unproject([cx, h]);
+      metresPerBar = bottom.distanceTo(top);
+    } catch {
+      metresPerBar = 0;
+    }
+    if (!Number.isFinite(metresPerBar) || metresPerBar <= 0) {
+      label.textContent = '—';
+      if (fill) fill.style.height = '0px';
+      return;
+    }
+    const round = getRoundNum(metresPerBar);
+    const ratio = Math.min(1, round / metresPerBar);
+    label.textContent = formatDistance(round);
+    if (fill) fill.style.height = `${(BAR_PX * ratio).toFixed(1)}px`;
+  };
+
+  map.on('move', update);
+  map.on('zoom', update);
+  map.on('resize', update);
+  if (map.loaded?.()) update();
+  else map.once('load', update);
+  // Always run once now — if the map is already idle by the time we
+  // hook up, the listener above wouldn't fire until the next move.
+  requestAnimationFrame(update);
+
+  return () => {
+    map.off('move', update);
+    map.off('zoom', update);
+    map.off('resize', update);
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +493,100 @@ class DockController {
     panel.querySelector('[data-ctl="close-panel"]')?.addEventListener('click', () => {
       this.close();
     });
+    this.installDragHandle(panel);
     return { button, panel };
+  }
+
+  /**
+   * Wire the mobile bottom-sheet drag-to-close gesture.
+   *
+   * On touch viewports the panel reads as a bottom-sheet: the user can
+   * pull it down by its head / drag handle to dismiss. We use Pointer
+   * Events (with `setPointerCapture`) so the gesture survives the
+   * pointer leaving the head element, and we close on either:
+   *   – downward distance > 25 % of the panel height, OR
+   *   – downward velocity > 0.5 px/ms (an inertial flick).
+   *
+   * If neither threshold is met we spring the panel back to the open
+   * position. While dragging we disable transitions (manual translate)
+   * and re-enable them on release so the spring-back animates.
+   */
+  installDragHandle(panel) {
+    const head = panel.querySelector('.panel-head');
+    if (!head) return;
+
+    let pointerId = null;
+    let startY = 0;
+    let startTime = 0;
+    let dragY = 0;
+    let lastY = 0;
+    let lastT = 0;
+    let dragging = false;
+
+    const reset = () => {
+      panel.style.transition = '';
+      panel.style.transform = '';
+      panel.removeAttribute('data-dragging');
+      dragging = false;
+      pointerId = null;
+      dragY = 0;
+    };
+
+    const onDown = (e) => {
+      // Only engage on mobile bottom-sheet form, and only the drag
+      // handle area (avoid hijacking the close-button hitbox).
+      if (!this.mqMobile.matches) return;
+      if (e.target.closest('[data-ctl="close-panel"]')) return;
+      if (panel.dataset.open !== 'true') return;
+      pointerId = e.pointerId;
+      startY = e.clientY;
+      lastY = e.clientY;
+      startTime = e.timeStamp;
+      lastT = e.timeStamp;
+      dragY = 0;
+      dragging = true;
+      panel.dataset.dragging = '1';
+      panel.style.transition = 'none';
+      try {
+        head.setPointerCapture(pointerId);
+      } catch {
+        /* setPointerCapture can throw on stale ids — fall through */
+      }
+    };
+
+    const onMove = (e) => {
+      if (!dragging || e.pointerId !== pointerId) return;
+      // Allow only downward motion. Apply a soft rubber-band when the
+      // user drags upward so the gesture still feels responsive.
+      const raw = e.clientY - startY;
+      dragY = raw > 0 ? raw : raw / 4;
+      panel.style.transform = `translateY(${dragY}px)`;
+      lastY = e.clientY;
+      lastT = e.timeStamp;
+    };
+
+    const onUp = (e) => {
+      if (!dragging || (e.pointerId != null && e.pointerId !== pointerId)) return;
+      try {
+        head.releasePointerCapture(pointerId);
+      } catch {
+        /* ignore */
+      }
+      const distance = dragY;
+      const dt = Math.max(1, e.timeStamp - lastT);
+      // velocity in px/ms over the last sample window
+      const velocity = dt > 0 ? (e.clientY - lastY) / dt : 0;
+      const threshold = panel.offsetHeight * 0.25;
+      reset();
+      if (distance > threshold || velocity > 0.5) {
+        this.close();
+      }
+    };
+
+    head.addEventListener('pointerdown', onDown);
+    head.addEventListener('pointermove', onMove);
+    head.addEventListener('pointerup', onUp);
+    head.addEventListener('pointercancel', onUp);
   }
 
   open(id) {
@@ -421,7 +681,7 @@ class DockController {
  * @param {string} ctx.profile
  */
 export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
-  installNativeControls(map, { isTouch: !!caps?.isTouch });
+  installNativeControls(map, { isTouch: !!caps?.isTouch, caps });
 
   // Ensure / create the chip host. We append into #canvas so it sits in
   // the same stacking context as the map.
@@ -436,20 +696,25 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   }
   renderChip(chipHost);
 
-  // Build the dock host (the sidebar element) + the panels container.
-  // The panels live as a sibling node so their absolute positioning is
-  // unaffected by the dock's flex layout.
+  // Build the dock host (the sidebar element) + the panels container +
+  // the vertical scale host. The dock-root + scale share a left-edge
+  // column visually; the panels live as a sibling node so their
+  // absolute positioning is unaffected by the dock's flex layout.
   sidebar.className = '';
   sidebar.innerHTML = '';
   const dockHost = document.createElement('div');
   dockHost.className = 'dock-root';
   const panelsHost = document.createElement('div');
   panelsHost.className = 'panels-root';
+  const scaleHost = document.createElement('div');
+  scaleHost.className = 'cart-scale-host';
   sidebar.appendChild(dockHost);
   sidebar.appendChild(panelsHost);
+  sidebar.appendChild(scaleHost);
 
   renderDock(dockHost);
   renderPanels(panelsHost);
+  installVerticalScale(map, scaleHost);
 
   // ----- State the user can toggle -------------------------------------
   const state = {

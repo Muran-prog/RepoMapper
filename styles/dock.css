@@ -47,7 +47,7 @@
   position: absolute;
   z-index: 5;
   top: 50%;
-  left: max(14px, env(safe-area-inset-left));
+  left: max(var(--edge-inset), env(safe-area-inset-left));
   transform: translateY(-50%);
 
   display: flex;
@@ -251,12 +251,15 @@
   position: absolute;
   z-index: 5;
   top: 50%;
-  left: calc(max(14px, env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
+  left: calc(max(var(--edge-inset), env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
   transform-origin: left center;
 
   width: var(--panel-w);
   max-height: min(76dvh, 720px);
-  max-width: calc(100vw - var(--dock-w) - 40px);
+  /* Reserve space on the right edge for the MapLibre controls column
+   * (var(--float-size) + edge-inset) so the panel never overlaps the
+   * fullscreen / geolocate buttons regardless of viewport width. */
+  max-width: calc(100vw - var(--dock-w) - var(--float-size) - var(--edge-inset) * 4 - var(--panel-gap));
 
   display: flex;
   flex-direction: column;
@@ -270,14 +273,18 @@
 
   overflow: hidden;
 
-  /* Closed state — invisible + un-interactable. */
+  /* Closed state — invisible + un-interactable. The translation is
+   * along the dock's hinge axis (X on desktop) so the panel reads as
+   * "growing OUT of" the dock button. The unified --ease-out-soft is
+   * shared with the HUD / legend / controls collapse animations so
+   * every floating element animates to the same rhythm. */
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translateY(-50%) translateX(-6px) scale(0.97);
+  transform: translateY(-50%) translateX(-12px) scale(0.96);
   transition:
-    opacity var(--t-base) var(--ease-out),
-    transform var(--t-base) var(--ease-out),
+    opacity var(--t-base) var(--ease-out-soft),
+    transform var(--t-base) var(--ease-out-soft),
     visibility var(--t-base);
 }
 
@@ -305,6 +312,18 @@
   gap: 10px;
   padding: 14px 16px 10px;
   border-bottom: 1px solid var(--hairline);
+  /* On touch viewports the head doubles as the bottom-sheet drag
+   * handle. Neutralise the browser's default scroll behaviour so
+   * pointer events for the close gesture aren't preempted. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* While the user is mid-drag we suppress any incidental transitions
+ * so the panel exactly tracks the finger. */
+.panel[data-dragging="1"] {
+  transition: none !important;
+  will-change: transform;
 }
 .panel-title {
   display: flex;
@@ -769,8 +788,8 @@
 
 .chip-host {
   position: absolute;
-  top: max(14px, env(safe-area-inset-top));
-  left: max(14px, env(safe-area-inset-left));
+  top: max(var(--edge-inset), env(safe-area-inset-top));
+  left: max(var(--edge-inset), env(safe-area-inset-left));
   z-index: 3;
   display: flex;
   gap: 8px;

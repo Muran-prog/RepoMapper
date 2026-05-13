@@ -12,53 +12,52 @@
   .hypso-profile-tooltip,
   .hypso-legend,
   .hypso-legend-panel,
-  .hypso-legend-chev,
+  .hypso-legend-glyph,
   .hypso-legend-toggle {
     transition: none !important;
   }
 }
 
-/* --- Touch / coarse-pointer tweaks for the legend toggle ---------- */
-/* On coarse pointers the chevron-only toggle in the collapsed state
- * needs a comfortable hit target (44 px is the WCAG / Apple HIG
- * recommendation). We bump the toggle's min-height to --hit and pad
- * a bit more so finger taps land cleanly. */
+/* --- Touch / coarse-pointer tweaks for the legend toggle ----------
+ * The toggle is a 40 px square in the desktop default; on coarse
+ * pointers we bump it to 44 px to match the WCAG / Apple HIG hit-
+ * target recommendation, mirroring the MapLibre native controls. */
 [data-pointer="coarse"] .hypso-legend-toggle,
 [data-touch="1"]      .hypso-legend-toggle {
-  min-height: var(--hit);
-  min-width: 44px;
-  padding: 4px 10px;
-}
-[data-pointer="coarse"] .hypso-legend-title,
-[data-touch="1"]      .hypso-legend-title {
-  font-size: 11px;
-}
-[data-pointer="coarse"] .hypso-legend-chev,
-[data-touch="1"]      .hypso-legend-chev {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
 }
 
-/* --- Mobile tweaks for hypso UI ----------------------------------- */
+/* --- Mobile tweaks for hypso UI -----------------------------------
+ * On mobile the dock relocates to the bottom-centre as a horizontal
+ * pill. We slide the legend's anchor square up to the bottom-right
+ * just above the dock pill so it remains in the same visual
+ * neighbourhood as the attribution + the map controls (collapsed by
+ * default at the top-right). */
 @media (max-width: 540px) {
   .hypso-legend-host {
-    /* The dock is a horizontal pill centred at the bottom of the
-       viewport (height ≈ var(--dock-size) + 12 px). Anchor the legend
-       above it with breathing room. */
-    bottom: calc(var(--dock-size) + 80px + env(safe-area-inset-bottom));
-    right: max(10px, env(safe-area-inset-right));
+    /* Stack order from the screen bottom upward on mobile:
+     *   dock pill  →  attribution  →  legend square
+     * `dock + 24` clears the dock pill; another `40 + 8` makes room
+     * for the compact attribution pill that MapLibre anchors at the
+     * bottom-right just above the dock. */
+    bottom: calc(var(--dock-size) + 24px + 48px + env(safe-area-inset-bottom));
+    right: max(var(--edge-inset), env(safe-area-inset-right));
   }
-  /* Cap panel height so it never eats more than ~half the viewport on
-     small phones in landscape. */
+  /* Tighten the panel — the popup grows up from the legend square so
+     it must clear the chip + HUD that share the top-left column. */
   .hypso-legend-panel {
-    max-height: min(220px, 44vh);
-    padding: 12px 12px 10px;
+    width: 152px;
+    max-height: min(240px, calc(100dvh - var(--dock-size) - 160px));
   }
-  .hypso-legend-track,
+  .hypso-legend-track {
+    height: 160px;
+    padding: 10px 12px 12px;
+  }
   .hypso-legend-bar,
   .hypso-legend-ticks {
-    height: 180px;
+    height: 160px;
   }
   .hypso-editor,
   .hypso-profile {
@@ -80,8 +79,9 @@
 /* --- Tablet legend tweak ------------------------------------------ */
 @media (min-width: 540px) and (max-width: 960px) {
   /* On tablets the dock is still on the left edge; the legend sits at
-     bottom-right above the attribution. */
+     bottom-right above the attribution — same composition as desktop
+     but with slightly tighter insets. */
   .hypso-legend-host {
-    bottom: calc(60px + env(safe-area-inset-bottom));
+    bottom: calc(var(--float-size) + var(--float-gap) + env(safe-area-inset-bottom));
   }
 }

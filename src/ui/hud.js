@@ -1,6 +1,6 @@
 /**
- * Heads-up display — a small, premium glass pill that surfaces map
- * telemetry without being noisy:
+ * Heads-up display — a small, premium glass chip that surfaces map
+ * telemetry without crowding the canvas:
  *
  *   • FPS                — live frame rate (colour-tiered green/amber/red)
  *   • ZOOM               — current camera zoom, 2 decimals
@@ -10,26 +10,42 @@
  *
  * Visual model
  * ------------
- * One horizontal glass pill at the bottom-left, broken into compact
- * "stat" cells separated by hairline dividers. Each stat is a label-
- * over-value pair so the eye can scan the numbers in a single sweep:
+ * The HUD is built around a 40 px square anchor button (same family
+ * as the MapLibre native controls and the hypso legend toggle). The
+ * anchor doubles as an FPS health-pulse — its dot indicator is
+ * coloured by the current FPS tier so the user gets an at-a-glance
+ * signal even with the panel collapsed. Clicking the anchor expands
+ * the full telemetry panel that slides out alongside it:
  *
- *    ┌──────────────────────────────────────────────┐
- *    │ FPS   Z      TILES   LAT      LON     ELEV   │
- *    │  60   5.42    24    48.379  31.166   1842 м │
- *    └──────────────────────────────────────────────┘
+ *    Collapsed:   [●]
+ *    Expanded:    [●][ FPS  · ZOOM · TILES · LAT · LON · ELEV ]
  *
- * On touch devices the LAT/LON/ELEV stats are absent (they require a
- * hovering pointer); the pill simply renders with three cells.
+ * On narrow viewports the expanded panel switches to a vertical
+ * stack so it doesn't fight the dock for horizontal space.
+ *
+ * Persistence
+ * -----------
+ * Open/closed state survives reload via `src/ui/store.js`. The
+ * default is collapsed on touch / narrow viewports (the chrome would
+ * otherwise eat too much of an already-tight canvas).
  *
  * Elevation source: `map.queryTerrainElevation(lngLat)`. When terrain
  * is disabled or unloaded the API returns null/NaN — the HUD shows an
  * em-dash instead of an error.
  */
 
+import { loadUiPrefs, saveUiPrefs } from './store.js';
+
 const FMT_COORD = new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const FMT_ZOOM = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const FMT_ELEV = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 });
+
+const CHEV_SVG = `
+  <svg class="hud-chev" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M6 4 L10 8 L6 12" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+`;
 
 /** Build the HTML for a single stat cell. */
 function statHTML(key, label, initialValue = '—') {
@@ -43,6 +59,14 @@ function statHTML(key, label, initialValue = '—') {
 
 export function mountHUD(map, perf, root, { caps } = {}) {
   const showCursor = !!caps?.hasHover && !!caps?.hasFinePointer;
+
+  // First-run UX: collapsed by default on narrow viewports + touch
+  // pointers so the HUD doesn't crowd the dock on phones. Once the
+  // user toggles it, that choice is persisted and wins over the
+  // default on every subsequent reload.
+  const defaultCollapsed = !!(caps?.narrow || caps?.isCoarse);
+  const prefs = loadUiPrefs({ hudCollapsed: defaultCollapsed });
+  const initiallyCollapsed = prefs.hudCollapsed;
 
   // The cursor-driven stats (LAT/LON/ELEV) live in a separately
   // styleable group so we can fade them in / out as a unit when the
@@ -58,18 +82,36 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     : '';
 
   root.innerHTML = `
-    <div class="hud" data-mode="${showCursor ? 'full' : 'compact'}" role="status" aria-live="off">
-      <div class="hud-stat-group hud-stat-group-primary">
-        ${statHTML('fps', 'FPS', '—')}
-        ${statHTML('zoom', 'ZOOM', '—')}
-        ${statHTML('tiles', 'TILES', '0')}
+    <div class="hud"
+         data-mode="${showCursor ? 'full' : 'compact'}"
+         data-collapsed="${initiallyCollapsed ? 'true' : 'false'}"
+         role="status"
+         aria-live="off">
+      <button class="hud-toggle"
+              type="button"
+              data-ctl="hud-toggle"
+              aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
+              aria-controls="hud-panel"
+              aria-label="${initiallyCollapsed ? 'Розгорнути HUD' : 'Згорнути HUD'}"
+              title="FPS">
+        <span class="hud-toggle-dot" data-hud="fps-dot" aria-hidden="true"></span>
+        ${CHEV_SVG}
+      </button>
+      <div class="hud-panel" id="hud-panel" aria-hidden="${initiallyCollapsed ? 'true' : 'false'}">
+        <div class="hud-stat-group hud-stat-group-primary">
+          ${statHTML('fps', 'FPS', '—')}
+          ${statHTML('zoom', 'ZOOM', '—')}
+          ${statHTML('tiles', 'TILES', '0')}
+        </div>
+        ${cursorCells}
       </div>
-      ${cursorCells}
     </div>
   `;
 
+  const hud = root.querySelector('.hud');
   const refs = {
     fps: root.querySelector('[data-hud=fps]'),
+    fpsDot: root.querySelector('[data-hud="fps-dot"]'),
     zoom: root.querySelector('[data-hud=zoom]'),
     lat: root.querySelector('[data-hud=lat]'),
     lon: root.querySelector('[data-hud=lon]'),
@@ -77,14 +119,39 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     tiles: root.querySelector('[data-hud=tiles]'),
     cursorGroup: root.querySelector('[data-hud-group="cursor"]'),
     fpsCell: root.querySelector('[data-hud-stat="fps"]'),
+    toggle: root.querySelector('[data-ctl="hud-toggle"]'),
+    panel: root.querySelector('.hud-panel'),
   };
+
+  // ------------------------------------------------------------------
+  // Collapse / expand. Stamps the same FPS tier onto the anchor button
+  // so the dot stays meaningful even when the panel is hidden.
+  // ------------------------------------------------------------------
+  const setCollapsed = (collapsed, { persist = true } = {}) => {
+    hud.dataset.collapsed = collapsed ? 'true' : 'false';
+    if (refs.toggle) {
+      refs.toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      refs.toggle.setAttribute(
+        'aria-label',
+        collapsed ? 'Розгорнути HUD' : 'Згорнути HUD',
+      );
+    }
+    if (refs.panel) refs.panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    if (collapsed && refs.cursorGroup) refs.cursorGroup.dataset.state = 'idle';
+    if (persist) saveUiPrefs({ hudCollapsed: collapsed });
+  };
+  refs.toggle?.addEventListener('click', () => {
+    setCollapsed(hud.dataset.collapsed !== 'true');
+  });
 
   const stop = perf.subscribe((r) => {
     if (refs.fps) refs.fps.textContent = String(r.fps);
-    if (refs.fpsCell) {
-      const tier = r.fps >= 50 ? 'good' : r.fps >= 30 ? 'mid' : 'low';
-      refs.fpsCell.dataset.tier = tier;
-    }
+    const tier = r.fps >= 50 ? 'good' : r.fps >= 30 ? 'mid' : 'low';
+    if (refs.fpsCell) refs.fpsCell.dataset.tier = tier;
+    // Mirror the FPS tier onto the HUD root so the anchor dot picks
+    // it up without an extra subscription. Cheap data-attribute set,
+    // no layout cost.
+    if (hud) hud.dataset.tier = tier;
     if (refs.zoom) refs.zoom.textContent = FMT_ZOOM.format(r.zoom);
     if (refs.tiles) refs.tiles.textContent = String(r.tilesLoading);
   });
@@ -111,6 +178,9 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     };
 
     onMouseMove = (e) => {
+      // Skip the cursor-group activation while collapsed; the cells
+      // aren't visible and we'd just be writing into a hidden DOM.
+      if (hud?.dataset.collapsed === 'true') return;
       if (refs.cursorGroup) refs.cursorGroup.dataset.state = 'active';
       if (refs.lat) refs.lat.textContent = `${FMT_COORD.format(e.lngLat.lat)}°`;
       if (refs.lon) refs.lon.textContent = `${FMT_COORD.format(e.lngLat.lng)}°`;

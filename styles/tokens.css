@@ -99,6 +99,23 @@
   --panel-w: 304px;        /* default popover width */
   --panel-gap: 14px;       /* gap between dock and panel */
   --sheet-radius: 22px;    /* bottom-sheet corner radius on mobile */
+
+  /* ---- Floating-element family -----------------------------------
+   * Shared sizing tokens for every map-floating square button so the
+   * legend toggle, MapLibre controls anchor, and HUD chip all read as
+   * part of the same UI family. The MapLibre `.maplibregl-ctrl-group
+   * button` cells are pinned to `--float-size` in maplibre.css. */
+  --float-size: 40px;
+  --float-icon: 18px;
+  --float-radius: var(--r-lg);
+  --edge-inset: 14px;      /* logical inset from viewport edge */
+  --float-gap: 10px;       /* gap between stacked float groups */
+
+  /* Shared cascade-stagger step used by MapLibre control reveal
+   * animations and any other "expand from anchor" surface. 50 ms
+   * is the sweet spot — fast enough to feel reactive, slow enough
+   * to read as a sequence rather than a single jerk. */
+  --stagger-step: 50ms;
 }
 
 [data-theme="dark"] {

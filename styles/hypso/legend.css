@@ -19,112 +19,125 @@
  *  Top-anchored positions use the default DOM order.
  * ===================================================================== */
 
+/* Anchor the legend just above the bottom-right attribution pill, on
+ * the same edge as the MapLibre controls so the right side reads as a
+ * single column. The exact bottom inset clears the attribution while
+ * leaving room for the panel to expand without occluding the
+ * fullscreen control above it (max-height clamps the panel). */
 .hypso-legend-host {
   position: absolute;
   z-index: 3;
   pointer-events: none;
-  bottom: calc(56px + env(safe-area-inset-bottom));
-  right: max(14px, env(safe-area-inset-right));
+  bottom: calc(var(--float-size) + var(--float-gap) + env(safe-area-inset-bottom));
+  right: max(var(--edge-inset), env(safe-area-inset-right));
 }
 .hypso-legend-host[data-position="bl"] {
-  bottom: calc(56px + env(safe-area-inset-bottom));
-  left: max(14px, env(safe-area-inset-left));
+  bottom: calc(var(--float-size) + var(--float-gap) + env(safe-area-inset-bottom));
+  left: max(var(--edge-inset), env(safe-area-inset-left));
   right: auto;
 }
 .hypso-legend-host[data-position="tr"] {
   top: max(80px, env(safe-area-inset-top));
   bottom: auto;
-  right: max(14px, env(safe-area-inset-right));
+  right: max(var(--edge-inset), env(safe-area-inset-right));
 }
 .hypso-legend-host[data-position="tl"] {
   top: max(80px, env(safe-area-inset-top));
   bottom: auto;
-  left: max(14px, env(safe-area-inset-left));
+  left: max(var(--edge-inset), env(safe-area-inset-left));
   right: auto;
 }
 
-/* --- Card --------------------------------------------------------- */
+/* --- Wrapper -------------------------------------------------------
+ * The legend host carries the toggle in normal flow (so the toggle
+ * stays anchored to the chosen corner regardless of expand state)
+ * and an absolutely-positioned panel that floats OUT of the toggle's
+ * edge when expanded. The panel sits next to (not inside) the toggle
+ * so collapsing reclaims its layout space immediately. */
 .hypso-legend {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 116px;
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-md), var(--ring);
-  pointer-events: auto;
-  overflow: hidden;
-}
-/* Bottom-anchored: pill at bottom of card. */
-.hypso-legend-host[data-position="br"] .hypso-legend,
-.hypso-legend-host[data-position="bl"] .hypso-legend {
-  flex-direction: column-reverse;
+  position: relative;
+  display: inline-flex;
+  pointer-events: none;
 }
 
-/* --- Toggle (header pill) ----------------------------------------- */
+/* --- Square toggle (the always-visible anchor) -------------------
+ * Same dimensions as the MapLibre native controls so the bottom-right
+ * column reads as a single family. Default state shows just the
+ * gradient swatch; on hover the swatch animates subtly. */
 .hypso-legend-toggle {
   appearance: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  min-height: 36px;
-  border: 0;
-  background: transparent;
+  width: var(--float-size);
+  height: var(--float-size);
+  border: 1px solid var(--hairline);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-md), var(--ring);
+  border-radius: var(--float-radius);
   color: var(--fg);
   font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background var(--t-fast) var(--ease-out);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  flex: 0 0 var(--float-size);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  pointer-events: auto;
   position: relative;
 }
 @media (hover: hover) {
   .hypso-legend-toggle:hover {
-    background: var(--bg-side-soft);
+    background: var(--glass-bg-strong);
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--hairline));
+  }
+  .hypso-legend-toggle:hover .hypso-legend-glyph {
+    transform: scaleY(1.06);
   }
 }
 .hypso-legend-toggle:active {
-  background: var(--hairline);
+  transform: scale(0.94);
 }
 .hypso-legend-toggle:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
-/* Hairline separator between toggle and panel, but only when the
-   panel is visible. Position-aware so the line is on the side facing
-   the panel. */
-.hypso-legend-host[data-position="br"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-toggle,
-.hypso-legend-host[data-position="bl"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-toggle {
-  border-top: 1px solid var(--hairline);
-}
-.hypso-legend-host[data-position="tr"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-toggle,
-.hypso-legend-host[data-position="tl"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-toggle {
-  border-bottom: 1px solid var(--hairline);
+.hypso-legend[data-collapsed="false"] .hypso-legend-toggle {
+  /* Highlight the toggle while the panel is open so the user can
+     find their way back to the close affordance. */
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--hairline));
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-/* Tiny gradient swatch on the left of the pill — mirrors the active
-   ramp so the user can see WHICH legend they're looking at without
-   expanding. JS sets its `background` property. */
+/* The gradient swatch is now the entire visual content of the toggle
+   — a tall narrow strip centered in the 40 px square. JS sets its
+   `background` to the active ramp's CSS gradient. */
 .hypso-legend-glyph {
-  width: 4px;
-  height: 22px;
-  border-radius: 2px;
+  width: 6px;
+  height: 26px;
+  border-radius: 3px;
   background: linear-gradient(to top, #2da356, #d28f15, #d04839);
-  flex: 0 0 4px;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform var(--t-fast) var(--ease-spring);
 }
 
+/* The title / unit / chevron are no longer on the toggle — they live
+ * inside the panel header now. Keep the rules around so accidental
+ * lookups by JS or tests don't paint stray glyphs. */
 .hypso-legend-title {
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fg);
-  flex: 1;
-  text-align: left;
   line-height: 1;
 }
 .hypso-legend-unit {
@@ -136,59 +149,111 @@
   text-transform: none;
 }
 
-.hypso-legend-chev {
-  width: 13px;
-  height: 13px;
-  color: var(--fg-muted);
-  transition: transform var(--t-base) var(--ease-spring), color var(--t-fast) var(--ease-out);
-  flex: 0 0 13px;
-}
-.hypso-legend-toggle:hover .hypso-legend-chev {
-  color: var(--fg);
-}
-
-/* Chevron direction tracks the panel-open hint:
- *   br / bl  →  panel grows UP    →  collapsed = "up", expanded = "down"
- *   tr / tl  →  panel grows DOWN  →  collapsed = "down", expanded = "up"
+/* --- Panel --------------------------------------------------------
+ * Absolutely positioned next to the toggle so it doesn't affect the
+ * toggle's anchor position. The panel emerges FROM the toggle on the
+ * axis that points toward the canvas centre:
+ *   – br: panel grows UP   (bottom anchored, sits ABOVE the toggle)
+ *   – bl: panel grows UP   (same, mirrored)
+ *   – tr: panel grows DOWN (top anchored, sits BELOW the toggle)
+ *   – tl: panel grows DOWN (same, mirrored)
  *
- * The SVG is authored as a DOWN chevron; for the br/bl default we
- * pre-rotate 180° to flip it. The expanded-state rule then takes
- * precedence and rotates back. */
-.hypso-legend-host[data-position="br"] .hypso-legend-chev,
-.hypso-legend-host[data-position="bl"] .hypso-legend-chev {
-  transform: rotate(180deg);
+ * The transition shares timing + curve with the dock panels and HUD
+ * so every floating element animates in lock-step.
+ */
+.hypso-legend-panel {
+  position: absolute;
+  width: var(--legend-panel-w, 168px);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md), var(--ring);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  /* Cap the panel so it never overlaps the fullscreen / geolocate
+   * controls in the top-right column. The full top-right stack
+   * (anchor + zoom + compass + geolocate + fullscreen + insets) is
+   * ~280 px tall; we reserve 360 px to keep a comfortable buffer on
+   * shorter viewports. The min() picks the smaller of 280 px and the
+   * remaining canvas height so the panel never spills off-screen. */
+  max-height: min(280px, calc(100dvh - 360px));
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--t-base) var(--ease-out-soft),
+    transform var(--t-base) var(--ease-out-soft),
+    visibility var(--t-base);
 }
-.hypso-legend-host[data-position="br"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-chev,
-.hypso-legend-host[data-position="bl"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-chev {
-  transform: rotate(0deg);
-}
-.hypso-legend-host[data-position="tr"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-chev,
-.hypso-legend-host[data-position="tl"] .hypso-legend:not([data-collapsed="true"]) .hypso-legend-chev {
-  transform: rotate(180deg);
+.hypso-legend[data-collapsed="false"] .hypso-legend-panel {
+  opacity: 1;
+  visibility: visible;
 }
 
-/* --- Panel -------------------------------------------------------- */
-.hypso-legend-panel {
-  padding: 14px 14px 12px;
-  overflow: hidden;
-  max-height: 240px;
-  opacity: 1;
-  transform-origin: center bottom;
-  transition:
-    max-height var(--t-slow) var(--ease-out-soft),
-    opacity var(--t-base) var(--ease-out),
-    padding var(--t-slow) var(--ease-out-soft);
+/* Bottom-right (default): panel anchored above the toggle, right
+ * edges aligned. Slides up + fades in. */
+.hypso-legend-host[data-position="br"] .hypso-legend-panel {
+  right: 0;
+  bottom: calc(var(--float-size) + var(--float-gap));
+  transform-origin: bottom right;
+  transform: translateY(8px) scale(0.96);
 }
-.hypso-legend[data-collapsed="true"] .hypso-legend-panel {
-  max-height: 0;
-  opacity: 0;
-  padding-block: 0;
-  pointer-events: none;
+.hypso-legend-host[data-position="br"] .hypso-legend[data-collapsed="false"] .hypso-legend-panel {
+  transform: translateY(0) scale(1);
+}
+
+/* Bottom-left: same as br but left edges aligned. */
+.hypso-legend-host[data-position="bl"] .hypso-legend-panel {
+  left: 0;
+  bottom: calc(var(--float-size) + var(--float-gap));
+  transform-origin: bottom left;
+  transform: translateY(8px) scale(0.96);
+}
+.hypso-legend-host[data-position="bl"] .hypso-legend[data-collapsed="false"] .hypso-legend-panel {
+  transform: translateY(0) scale(1);
+}
+
+/* Top-right: panel anchored BELOW the toggle, right edges aligned.
+ * Slides down + fades in. */
+.hypso-legend-host[data-position="tr"] .hypso-legend-panel {
+  right: 0;
+  top: calc(var(--float-size) + var(--float-gap));
+  transform-origin: top right;
+  transform: translateY(-8px) scale(0.96);
+}
+.hypso-legend-host[data-position="tr"] .hypso-legend[data-collapsed="false"] .hypso-legend-panel {
+  transform: translateY(0) scale(1);
+}
+
+/* Top-left: same as tr but left edges aligned. */
+.hypso-legend-host[data-position="tl"] .hypso-legend-panel {
+  left: 0;
+  top: calc(var(--float-size) + var(--float-gap));
+  transform-origin: top left;
+  transform: translateY(-8px) scale(0.96);
+}
+.hypso-legend-host[data-position="tl"] .hypso-legend[data-collapsed="false"] .hypso-legend-panel {
+  transform: translateY(0) scale(1);
+}
+
+/* Header — title + unit. Hairline separator under it before the
+ * gradient track. */
+.hypso-legend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--hairline);
 }
 
 /* The track holds the gradient bar (left), the labels (centre), and
    the floating "you-are-here" cursor (overlay). Layout: a 2-column
-   grid, gradient + ticks side-by-side. */
+   grid, gradient + ticks side-by-side. The container carries its own
+   padding so the gradient bar has breathing room from the panel edge. */
 .hypso-legend-track {
   position: relative;
   display: grid;
@@ -196,6 +261,8 @@
   gap: 12px;
   height: 200px;
   width: 100%;
+  padding: 10px 14px 14px;
+  box-sizing: content-box;
 }
 
 .hypso-legend-bar {

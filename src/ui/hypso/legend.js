@@ -76,6 +76,9 @@ export function mountHypsoLegend(opts) {
 
   host.classList.add('hypso-legend-host');
   host.dataset.position = position;
+  // Markup: square icon-toggle (40 px, MapLibre control family) + a
+  // panel that slides out alongside it. The panel carries its own
+  // "Висота · м" header so the toggle reads as a pure icon-pill.
   host.innerHTML = `
     <section
       class="hypso-legend"
@@ -85,6 +88,10 @@ export function mountHypsoLegend(opts) {
     >
       <div class="hypso-legend-panel" id="${PANEL_ID}" data-ctl="panel"
            aria-hidden="${initiallyCollapsed ? 'true' : 'false'}">
+        <header class="hypso-legend-head">
+          <span class="hypso-legend-title">Висота</span>
+          <span class="hypso-legend-unit">м</span>
+        </header>
         <div class="hypso-legend-track">
           <div class="hypso-legend-bar" data-ctl="bar" aria-hidden="true"></div>
           <ul class="hypso-legend-ticks" data-ctl="ticks" aria-hidden="true"></ul>
@@ -102,14 +109,10 @@ export function mountHypsoLegend(opts) {
         type="button"
         aria-controls="${PANEL_ID}"
         aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
+        aria-label="Висота — легенда"
+        title="Висота"
       >
         <span class="hypso-legend-glyph" aria-hidden="true" data-ctl="glyph"></span>
-        <span class="hypso-legend-title">Висота</span>
-        <span class="hypso-legend-unit">м</span>
-        <svg class="hypso-legend-chev" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M4 6 L8 10 L12 6" fill="none" stroke="currentColor"
-                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
       </button>
     </section>
   `;

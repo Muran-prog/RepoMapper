@@ -1,13 +1,14 @@
 /* =====================================================================
- *  HUD — premium telemetry pill at the bottom-left.
+ *  HUD — collapsible telemetry chip at the bottom-left.
  *
- *  Layout model:
- *    [ FPS  ] · [ ZOOM ] · [ TILES ]   ← primary group (always)
- *    [ LAT  ] · [ LON  ] · [ ELEV  ]   ← cursor group (hover-only)
+ *  Visual model:
+ *    Collapsed:    [●]                                       ← anchor only
+ *    Expanded:     [●][ FPS · ZOOM · TILES · LAT · LON · ELEV ]
  *
- *  Each stat is a vertical micro-widget — a tiny uppercase label
- *  stacked above a mono-spaced value. The whole pill is a glass-morphism
- *  surface matched to the dock + brand chip.
+ *  The anchor button is the same 40 px square as the MapLibre controls
+ *  and the hypso legend toggle (shared --float-size token). Its centre
+ *  dot picks up the current FPS health tier so the user has a colour
+ *  signal even without the panel open.
  *
  *  The cursor group fades out when the pointer leaves the canvas so
  *  stale coordinates don't sit in front of the user.
@@ -17,8 +18,8 @@
   position: absolute;
   z-index: 3;
   pointer-events: none;
-  left: max(14px, env(safe-area-inset-left));
-  bottom: calc(56px + env(safe-area-inset-bottom));
+  left: max(var(--edge-inset), env(safe-area-inset-left));
+  bottom: max(var(--edge-inset), env(safe-area-inset-bottom));
 }
 
 .hud {
@@ -30,15 +31,134 @@
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--hairline);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm), var(--ring);
+  border-radius: var(--float-radius);
+  box-shadow: var(--shadow-md), var(--ring);
 
   padding: 0;
   pointer-events: auto;
   user-select: none;
   overflow: hidden;
-  /* Smoothly animate width changes when the cursor group fades in. */
-  transition: box-shadow var(--t-base) var(--ease-out);
+  /* Smoothly animate width changes when the panel reveals. */
+  transition:
+    box-shadow var(--t-base) var(--ease-out),
+    border-radius var(--t-base) var(--ease-out);
+}
+
+/* When collapsed the chip is a perfect square — indistinguishable from
+   the MapLibre buttons up the right edge or the legend at bottom-right.
+   Drop the radius slightly so it visually clusters with single-cell
+   controls. */
+.hud[data-collapsed="true"] {
+  border-radius: var(--float-radius);
+}
+
+/* --- Anchor toggle ------------------------------------------------- */
+.hud-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  width: var(--float-size);
+  height: var(--float-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  cursor: pointer;
+  font: inherit;
+  flex: 0 0 var(--float-size);
+  -webkit-tap-highlight-color: transparent;
+  position: relative;
+  transition: background var(--t-fast) var(--ease-out);
+}
+.hud-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .hud-toggle:hover {
+    background: var(--bg-side-soft);
+  }
+}
+.hud-toggle:active {
+  background: var(--hairline);
+}
+
+/* The anchor dot is the visual heartbeat — it grows when the panel
+ * collapses (single-purpose status indicator) and shrinks back to a
+ * subtle marker when expanded (the FPS cell takes over). */
+.hud-toggle-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  flex: 0 0 10px;
+  position: relative;
+  transition:
+    background var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out),
+    transform var(--t-base) var(--ease-spring);
+}
+.hud[data-collapsed="true"] .hud-toggle-dot {
+  width: 12px;
+  height: 12px;
+  flex-basis: 12px;
+  transform: scale(1);
+}
+.hud[data-collapsed="false"] .hud-toggle-dot {
+  transform: scale(0.85);
+}
+.hud[data-tier="good"] .hud-toggle-dot {
+  background: #2da356;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #2da356 18%, transparent);
+}
+.hud[data-tier="mid"] .hud-toggle-dot {
+  background: #d28f15;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #d28f15 18%, transparent);
+}
+.hud[data-tier="low"] .hud-toggle-dot {
+  background: #d04839;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #d04839 18%, transparent);
+}
+[data-theme="dark"] .hud[data-tier="good"] .hud-toggle-dot { background: #61d68f; }
+[data-theme="dark"] .hud[data-tier="mid"]  .hud-toggle-dot { background: #f6c25b; }
+[data-theme="dark"] .hud[data-tier="low"]  .hud-toggle-dot { background: #ff7a6b; }
+
+.hud-chev {
+  width: 12px;
+  height: 12px;
+  color: var(--fg-muted);
+  flex: 0 0 12px;
+  transition: transform var(--t-base) var(--ease-spring), opacity var(--t-fast) var(--ease-out);
+}
+.hud[data-collapsed="true"] .hud-chev {
+  transform: rotate(0deg);
+}
+.hud[data-collapsed="false"] .hud-chev {
+  transform: rotate(180deg);
+}
+
+/* --- Panel --------------------------------------------------------- */
+.hud-panel {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  border-left: 1px solid var(--hairline);
+  overflow: hidden;
+  max-width: 720px;
+  opacity: 1;
+  transition:
+    max-width var(--t-base) var(--ease-spring),
+    opacity var(--t-base) var(--ease-out),
+    padding var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out);
+}
+.hud[data-collapsed="true"] .hud-panel {
+  max-width: 0;
+  opacity: 0;
+  border-left-color: transparent;
+  pointer-events: none;
 }
 
 /* --- Stat groups --------------------------------------------------- */
@@ -51,7 +171,7 @@
 
 /* The cursor group sits to the right of the primary stats, separated
    by a hairline column. When idle it fades out and shrinks to zero
-   width — a single property animation that preserves the pill's
+   width — a single property animation that preserves the chip's
    shape elegantly. */
 [data-hud-group="cursor"] {
   position: relative;
@@ -158,6 +278,58 @@
 
 /* --- Narrow phone tweaks ------------------------------------------ */
 @media (max-width: 540px) {
+  /* The expanded panel switches to a vertical stack so the chip
+   * doesn't push the dock off-screen on phones in portrait. */
+  .hud {
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: var(--r-lg);
+  }
+  .hud-toggle {
+    width: 100%;
+    flex-basis: auto;
+    height: var(--float-size);
+    justify-content: center;
+  }
+  .hud-panel {
+    flex-direction: column;
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+    /* Vertical reveal: cap height instead of width. */
+    max-width: none;
+    max-height: 400px;
+    transition:
+      max-height var(--t-base) var(--ease-spring),
+      opacity var(--t-base) var(--ease-out),
+      border-color var(--t-base) var(--ease-out);
+  }
+  .hud[data-collapsed="true"] .hud-panel {
+    max-height: 0;
+    border-top-color: transparent;
+  }
+  .hud-stat-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  [data-hud-group="cursor"] {
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+    /* Active state on mobile uses height — width is full-bleed. */
+    transition:
+      opacity var(--t-base) var(--ease-out),
+      max-height var(--t-base) var(--ease-out),
+      border-color var(--t-base) var(--ease-out),
+      padding var(--t-base) var(--ease-out);
+  }
+  [data-hud-group="cursor"][data-state="idle"] {
+    max-width: none;
+    max-height: 0;
+    overflow: hidden;
+  }
+  [data-hud-group="cursor"][data-state="active"] {
+    max-width: none;
+    max-height: 60px;
+  }
   .hud-stat {
     padding: 4px 9px;
   }

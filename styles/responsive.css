@@ -23,13 +23,20 @@
 @media (max-width: 960px) and (min-width: 540px) {
   :root {
     --panel-w: 288px;
+    --edge-inset: 12px;
   }
   .dock {
-    left: max(12px, env(safe-area-inset-left));
+    left: max(var(--edge-inset), env(safe-area-inset-left));
   }
   .panel {
-    /* Slightly tighter horizontal inset on tablets. */
-    max-width: calc(100vw - var(--dock-w) - 32px);
+    /* Slightly tighter horizontal inset on tablets, but still leave
+     * room for the MapLibre control column on the right. */
+    max-width: calc(100vw - var(--dock-w) - var(--float-size) - var(--edge-inset) * 4 - var(--panel-gap));
+  }
+  /* The vertical scale stays under the dock on tablets, just nudged a
+   * bit closer to the dock since the viewport is shorter. */
+  .cart-scale-host {
+    top: calc(50% + 200px);
   }
 }
 
@@ -41,12 +48,13 @@
 @media (max-width: 540px) {
   :root {
     --panel-w: 100%;
+    --edge-inset: 10px;
   }
 
   .dock {
     /* Horizontal pill at the bottom of the screen. */
     top: auto;
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: max(var(--edge-inset), env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%);
     flex-direction: row;
@@ -98,7 +106,8 @@
 
   /* Panels become bottom-sheets — full width, slide up from the bottom.
      They sit ABOVE the floating dock pill so the user can switch panels
-     without dismissing first. */
+     without dismissing first. The transform timing matches the desktop
+     popover so panels feel like "the same UI, in a different form". */
   .panel {
     top: auto;
     /* Park just above the floating dock pill at the bottom. */
@@ -113,8 +122,8 @@
     border-radius: var(--sheet-radius);
     border: 1px solid var(--hairline);
     transition:
-      transform 360ms var(--ease-out-soft),
-      visibility 360ms;
+      transform var(--t-slow) var(--ease-out-soft),
+      visibility var(--t-slow);
   }
   .panel[data-open="true"] {
     transform: translateY(0);
@@ -132,7 +141,9 @@
     transform: translateY(0);
   }
 
-  /* Add a soft drag handle indicator on the panel head. */
+  /* Add a soft drag handle indicator on the panel head. The pointer-
+     events on the head itself power the drag-to-close gesture wired
+     in src/ui/controls.js. */
   .panel-head::after {
     content: "";
     position: absolute;
@@ -143,10 +154,15 @@
     height: 4px;
     border-radius: 2px;
     background: var(--hairline-strong);
+    pointer-events: none;
   }
   .panel-head {
     position: relative;
     padding-top: 20px;
+    cursor: grab;
+  }
+  .panel[data-dragging="1"] .panel-head {
+    cursor: grabbing;
   }
 
   /* Standard padding — the dock is now OUTSIDE the panel so we don't
@@ -163,17 +179,29 @@
     display: none;
   }
 
-  /* HUD sits just below the brand chip on mobile so it doesn't fight
-     the MapLibre controls (top-right) or the dock (bottom-centre). */
+  /* HUD sits at the top-left, below the brand chip but still in the
+     same column. The collapsible chip keeps its anchor visible while
+     the panel is folded so the FPS pulse remains a glanceable cue. */
   .hud-host {
-    left: max(14px, env(safe-area-inset-left));
+    left: max(var(--edge-inset), env(safe-area-inset-left));
     right: auto;
     bottom: auto;
-    top: calc(56px + env(safe-area-inset-top));
+    top: calc(58px + env(safe-area-inset-top));
   }
 
-  /* Native MapLibre controls move up and stay clear of the dock. */
-  .maplibregl-ctrl-bottom-right,
+  /* The custom vertical scale is hidden on phones — there isn't enough
+     left-edge real estate to host both it and the dock without
+     crowding the canvas. The scale is informational rather than
+     interactive, so the loss is acceptable. */
+  .cart-scale-host {
+    display: none;
+  }
+
+  /* Native MapLibre attribution moves up and stays clear of the dock.
+     The bottom-left edge is now empty (scale hidden, dock at center). */
+  .maplibregl-ctrl-bottom-right {
+    margin-bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
+  }
   .maplibregl-ctrl-bottom-left {
     margin-bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
   }
@@ -212,6 +240,11 @@
   .panel {
     max-height: 88dvh;
   }
+  /* Short viewports: tighten the scale's offset from the dock centre
+   * so it doesn't run off the bottom edge. */
+  .cart-scale-host {
+    top: calc(50% + 160px);
+  }
 }
 
 /* =====================================================================
@@ -224,11 +257,12 @@
     --dock-size: 56px;
     --dock-icon: 22px;
     --dock-w: 64px;
+    --edge-inset: 24px;
   }
   .dock {
-    left: max(24px, env(safe-area-inset-left));
+    left: max(var(--edge-inset), env(safe-area-inset-left));
   }
   .panel {
-    left: calc(max(24px, env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
+    left: calc(max(var(--edge-inset), env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
   }
 }
