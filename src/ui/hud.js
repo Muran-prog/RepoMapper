@@ -158,6 +158,7 @@ export function mountHUD(map, perf, root, { caps } = {}) {
 
   let onMouseMove = null;
   let onMouseLeave = null;
+  let onHudLeave = null;
   let flushTimer = null;
 
   if (showCursor) {
@@ -203,12 +204,36 @@ export function mountHUD(map, perf, root, { caps } = {}) {
       }
     };
 
-    onMouseLeave = () => {
+    onMouseLeave = (e) => {
+      // The HUD is overlaid on the map and captures pointer events, so
+      // crossing onto it makes MapLibre fire `mouseout` on the canvas.
+      // If we idled unconditionally the cursor group would collapse,
+      // the HUD would shrink out from under the pointer, the canvas
+      // would receive `mousemove` again, the group would re-expand,
+      // and we'd ping-pong — the visible flicker on the HUD's right
+      // edge. Detect that case via the original DOM event's
+      // relatedTarget and keep the stats stable when the pointer is
+      // simply hovering us.
+      const related = e?.originalEvent?.relatedTarget;
+      if (related instanceof Node && root.contains(related)) return;
+      if (refs.cursorGroup) refs.cursorGroup.dataset.state = 'idle';
+    };
+
+    // Symmetric guard: when the pointer leaves the HUD to anything
+    // that isn't the map canvas (the dock, the legend, the window
+    // chrome…) idle the cursor stats so stale coordinates don't sit
+    // on the chip. If it goes back to the map, the canvas's own
+    // `mousemove` will keep them fresh — no action needed here.
+    onHudLeave = (e) => {
+      const related = e.relatedTarget;
+      const mapEl = map.getContainer();
+      if (related instanceof Node && mapEl.contains(related)) return;
       if (refs.cursorGroup) refs.cursorGroup.dataset.state = 'idle';
     };
 
     map.on('mousemove', onMouseMove);
     map.on('mouseout', onMouseLeave);
+    hud.addEventListener('mouseleave', onHudLeave);
 
     // Periodically flush coalesced samples so the readout settles when
     // the mouse stops moving inside the throttle window.
@@ -222,6 +247,7 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     stop();
     if (onMouseMove) map.off('mousemove', onMouseMove);
     if (onMouseLeave) map.off('mouseout', onMouseLeave);
+    if (onHudLeave) hud.removeEventListener('mouseleave', onHudLeave);
     if (flushTimer) clearInterval(flushTimer);
   };
 }

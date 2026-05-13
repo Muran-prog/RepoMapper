@@ -41,6 +41,22 @@
 }
 
 /* =====================================================================
+ *  SHORT VIEWPORT — laptops and windowed desktops. The same scale
+ *  nudge the tablet rule applies, but driven by viewport HEIGHT rather
+ *  than width. The 5-button dock occupies ~365 px centred at 50 %, so
+ *  its bottom edge sits at ~50 % + 182. With the scale anchored at the
+ *  default 50 % + 220 + ~88 px tall, its lower edge lands at 50 % + 308
+ *  from the top — close enough to collide with the bottom-left HUD on
+ *  any viewport under ~724 px tall (the typical 1366×768 laptop after
+ *  browser chrome). Pulling the scale to 50 % + 200 reclaims 20 px and
+ *  restores a clean separation between the scale and the HUD chip. */
+@media (max-height: 800px) {
+  .cart-scale-host {
+    top: calc(50% + 200px);
+  }
+}
+
+/* =====================================================================
  *  MOBILE — dock relocates to the bottom edge, panels slide up from the
  *  bottom as bottom-sheets with a drag handle.
  * ===================================================================== */
