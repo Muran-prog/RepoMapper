@@ -15,19 +15,27 @@
  *
  * Auto-connection model — one source of truth
  * -------------------------------------------
- * Auto-generated connection LineStrings (sequence / hub / mesh) are
- * treated as PERMANENT DATA, not derived views. Once a marker is
- * placed, the lines produced by that gesture are committed to
- * `state.features` with `properties.autoGen: true` and live alongside
- * hand-drawn geometry: they persist, they undo, they export. Changing
- * `connectionMode` is a pure preference patch — it affects only
- * FUTURE marker placements and never mutates existing features.
+ * Auto-generated connection LineStrings (sequence / hub / mesh /
+ * optimal) are treated as PERMANENT DATA, not derived views. Once a
+ * marker is placed, the lines produced by that gesture are committed
+ * to `state.features` with `properties.autoGen: true` and live along-
+ * side hand-drawn geometry: they persist, they undo, they export.
+ * Changing `connectionMode` is a pure preference patch — it affects
+ * only FUTURE marker placements and never mutates existing features.
  *
- * `optimal` is NOT a connection mode. Computing the shortest tour
- * through existing markers is an explicit action (`optimizeRoute()`)
- * that the UI exposes as its own button — it replaces every auto-gen
- * line with the tour in a single undoable step and leaves
- * `connectionMode` untouched.
+ * Optimal mode, scope isolation
+ * -----------------------------
+ * `optimal` is a connection mode with a strictly local effect: the
+ * TSP tour is computed **only over markers placed since the mode was
+ * most recently activated**, never over pre-existing markers. The
+ * moment the user switches to `optimal` a fresh "optimizer epoch" is
+ * minted, and every marker placed while the mode is live is stamped
+ * with that epoch. Placing a new marker triggers a scope-bounded
+ * TSP re-solve that replaces only lines carrying the **same** epoch
+ * stamp — markers and lines from earlier epochs (or from any other
+ * mode) are untouched forever. The programmatic `optimizeRoute()`
+ * helper sidesteps the epoch scoping entirely and optimises all
+ * markers in one shot; it's kept for tests and future power features.
  *
  * Style-rebuild resilience
  * ------------------------
@@ -72,13 +80,14 @@ const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
 
 /**
- * Valid connection modes. `optimal` is intentionally absent — it is
- * an operation, not a mode (see `optimizeRoute()`). Anything outside
- * this set is ignored by `setConnectionMode`, which makes stale
- * persisted prefs from earlier schema versions a silent no-op instead
- * of a crash.
+ * Valid connection modes recognised by `setConnectionMode`. Anything
+ * outside this set is a silent no-op so stale persisted prefs cannot
+ * crash the engine. `optimal` is here, but it's a scope-isolated mode
+ * (see the "Optimal mode, scope isolation" section above) — very
+ * different from the other three, which are memoryless per-placement
+ * rules.
  */
-const VALID_CONNECTION_MODES = new Set(['none', 'sequence', 'mesh', 'hub']);
+const VALID_CONNECTION_MODES = new Set(['none', 'sequence', 'mesh', 'hub', 'optimal']);
 
 /** Stable monotonically-increasing id generator. */
 let __idCounter = 0;
@@ -144,6 +153,22 @@ export function createDrawEngine(map) {
 
   const prefs = loadPrefs();
   state.tool = prefs.tool;
+
+  /**
+   * Monotonic stamp identifying the current "optimal mode session".
+   * Every `setConnectionMode('optimal')` transition bumps it, and
+   * every marker / line produced while the mode is live is tagged
+   * with the current value. TSP re-solves only touch features whose
+   * epoch matches `optimizerEpoch` — markers and lines from previous
+   * sessions (this tab OR a reloaded page) are immutable.
+   *
+   * Seeded with `Date.now()` rather than zero so that stamps persisted
+   * across reloads cannot collide with fresh ones: a new session's
+   * `optimizerEpoch` starts strictly greater than any plausible stamp
+   * from the previous session, even if the user incremented the
+   * counter millions of times.
+   */
+  let optimizerEpoch = Date.now();
 
   // -------------------------------------------------------------------
   // Event bus — minimal pub/sub for the UI to follow state changes.
@@ -468,17 +493,22 @@ export function createDrawEngine(map) {
    *   • `sequence`: one line from marker[N-1] → marker[N].
    *   • `hub`:      one line from marker[0]   → marker[N].
    *   • `mesh`:     N lines from every prior marker → marker[N].
+   *   • `optimal`:  TSP over every marker stamped with the current
+   *                 optimizer epoch; replaces lines of the same epoch.
+   *                 See `optimalConnect()` below for the details and
+   *                 the rationale for scope-isolated re-solves.
    *   • `none`:     no auto-connection.
-   *
-   * `optimal` is deliberately not handled here — it is exposed as the
-   * standalone `optimizeRoute()` action, not a per-placement mode, so
-   * individual marker drops never re-solve the TSP.
    *
    * After this returns, the created lines are permanent — switching
    * connection mode later leaves them untouched.
    */
   const autoConnectOnMarker = (newMarkerId) => {
     const mode = prefs.connectionMode;
+
+    if (mode === 'optimal') {
+      optimalConnect();
+      return;
+    }
     // Defensive: non-connecting mode (or unknown string from stale
     // persisted prefs) — nothing to do.
     if (mode !== 'sequence' && mode !== 'hub' && mode !== 'mesh') return;
@@ -504,6 +534,64 @@ export function createDrawEngine(map) {
     }
   };
 
+  /**
+   * Re-solve the open TSP inside the current optimizer epoch scope
+   * and replace the epoch's tour legs with the new ones. Called from
+   * `autoConnectOnMarker` when `mode === 'optimal'`.
+   *
+   * Scope definition:
+   *
+   *   • A marker is "in scope" iff its `properties.optimizerEpoch`
+   *     equals the current `optimizerEpoch` closure value.
+   *   • A line is "in scope" iff it is autoGen, `autoMode === 'optimal'`
+   *     and its `properties.optimizerEpoch` matches.
+   *
+   * The just-placed marker was stamped in `addFeature`, so by the
+   * time we're called it is already in scope. Markers/lines from a
+   * previous optimal session (different epoch), or from any other
+   * mode (no stamp), are NEVER touched — this is the architectural
+   * promise the user asked for.
+   *
+   * Replacing rather than appending keeps the visible state optimal
+   * at every step: as markers arrive, the tour reshuffles only among
+   * same-epoch markers, so the result always looks like a single
+   * coherent route, not a growing pile of insert-heuristic artifacts.
+   */
+  const optimalConnect = () => {
+    const scope = state.markerOrder
+      .map((mid) => state.features.get(mid))
+      .filter((f) => f
+        && f.geometry?.type === 'Point'
+        && f.properties?.kind === 'marker'
+        && f.properties?.optimizerEpoch === optimizerEpoch);
+    if (scope.length < 2) return; // Need at least two points for a leg.
+
+    // Sweep only lines belonging to THIS epoch. Lines from prior
+    // optimal sessions (or from a persisted reload) have a different
+    // stamp and are invisible to this replacement pass.
+    for (const [id, f] of state.features) {
+      if (f.properties?.autoGen
+          && f.properties?.autoMode === 'optimal'
+          && f.properties?.optimizerEpoch === optimizerEpoch) {
+        state.features.delete(id);
+      }
+    }
+    // Drop selection if it referenced a cleared line.
+    if (state.selectedId && !state.features.has(state.selectedId)) {
+      state.selectedId = null;
+    }
+
+    const pts = scope.map((m) => m.geometry.coordinates);
+    const tour = optimalTour(pts);
+    for (let i = 0; i < tour.length - 1; i++) {
+      const from = scope[tour[i]];
+      const to = scope[tour[i + 1]];
+      const ln = makeAutoGenLine(from, to, 'optimal');
+      ln.properties.optimizerEpoch = optimizerEpoch;
+      state.features.set(ln.id, ln);
+    }
+  };
+
   const addFeature = (feature, { skipHistory = false } = {}) => {
     if (!skipHistory) pushHistory();
     const id = feature.id ?? nextId(feature.properties?.kind ?? 'f');
@@ -515,6 +603,14 @@ export function createDrawEngine(map) {
       state.markerOrder.push(id);
       // Stamp the per-marker number so the symbol layer can render it.
       feature.properties.order = state.markerOrder.length;
+      // If the user is in optimal mode, stamp the marker with the
+      // current epoch BEFORE auto-connecting — `optimalConnect` reads
+      // this property to decide which markers are in scope. Markers
+      // placed in any other mode carry no stamp, which makes them
+      // invisible to every future optimizer session.
+      if (prefs.connectionMode === 'optimal') {
+        feature.properties.optimizerEpoch = optimizerEpoch;
+      }
       // Freeze auto-connections inline. One user click = one history
       // entry: the snapshot taken above covers both the marker and
       // every auto-line it triggers, so Ctrl+Z reverses the whole
@@ -946,26 +1042,35 @@ export function createDrawEngine(map) {
   };
 
   /**
-   * Set the connection mode used for FUTURE marker placements. Pure:
+   * Set the connection mode used for FUTURE marker placements:
    *
-   *   • validates `mode` is one of the four supported values,
+   *   • validates `mode` is one of the supported values,
    *   • no-op when it's the current mode,
+   *   • bumps `optimizerEpoch` on a transition INTO `'optimal'` — this
+   *     is the _only_ side effect beyond prefs/emit, and it's pure in
+   *     the sense that no feature geometry is touched. The bump is
+   *     what makes the next marker placement start a fresh TSP scope
+   *     rather than re-open the previous optimizer session.
    *   • writes prefs (in-memory + localStorage),
    *   • emits `connectionMode` for the UI.
    *
    * Does NOT:
    *
    *   • recompute, move or delete any existing geometry,
-   *   • run the TSP solver (see `optimizeRoute`),
    *   • re-render the map (nothing changed on screen).
    *
-   * This is the central invariant: "mode change affects only future
-   * placements". Every piece of the auto-connection pipeline leans on
-   * it, from the architecture down to the regression tests.
+   * The central invariant — "mode change affects only future
+   * placements" — still holds: a new epoch only affects markers
+   * placed AFTER the transition. Existing stamped markers from a
+   * previous optimizer session retain their stamps and remain frozen
+   * because no subsequent re-solve will target their epoch.
    */
   const setConnectionMode = (mode) => {
     if (!VALID_CONNECTION_MODES.has(mode)) return;
     if (prefs.connectionMode === mode) return;
+    if (mode === 'optimal') {
+      optimizerEpoch += 1;
+    }
     prefs.connectionMode = mode;
     savePrefs({ connectionMode: mode });
     emit('connectionMode', mode);

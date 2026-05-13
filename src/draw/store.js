@@ -18,10 +18,10 @@
  *
  * @typedef {object} DrawPrefs
  * @property {string} tool                 Active tool slug (select/marker/…)
- * @property {string} connectionMode       'none'|'sequence'|'mesh'|'hub'
- *   `optimal` is deliberately NOT a persisted mode — it is an action
- *   (`engine.optimizeRoute()`), not a state. Stale persisted `optimal`
- *   from earlier schema versions is migrated to `none` on load.
+ * @property {string} connectionMode       'none'|'sequence'|'mesh'|'hub'|'optimal'
+ *   `optimal` is a scope-isolated mode — see the engine's architecture
+ *   header for its semantics. Persisted normally alongside the other
+ *   four modes. Unknown values coerce to `'none'` on load.
  * @property {string} shapeType            'circle'|'rectangle'|'regular'|'arrow'|'star'
  * @property {number} shapeSides           Sides count for regular polygon.
  * @property {number} shapeSize            Placement radius in PIXELS at the
@@ -45,12 +45,11 @@ const PREFS_KEY = 'cart:draw:prefs:v1';
 
 /**
  * Allow-list of connection modes recognised by the current schema.
- * Matches `VALID_CONNECTION_MODES` in engine.js — kept here in
- * addition so the storage layer can sanitise stale values BEFORE
- * they reach the live engine state. Pre-refactor builds persisted
- * `'optimal'` as a mode; that value is migrated to `'none'` on load.
+ * Mirrors `VALID_CONNECTION_MODES` in engine.js — kept here so the
+ * storage layer can sanitise values BEFORE they reach the live
+ * engine state. Unknown / truly-foreign values coerce to `'none'`.
  */
-const VALID_MODES = new Set(['none', 'sequence', 'mesh', 'hub']);
+const VALID_MODES = new Set(['none', 'sequence', 'mesh', 'hub', 'optimal']);
 
 /** Probe localStorage availability without throwing. */
 function ls() {
@@ -103,11 +102,9 @@ export function loadPrefs() {
         Object.entries(parsed).filter(([k]) => k in fallback),
       ),
     };
-    // Migrate stale `connectionMode: 'optimal'` from pre-refactor
-    // builds. Optimal is no longer a mode — it's an action — so we
-    // coerce it to the safe default. The user can re-trigger the TSP
-    // any time via the optimise button; we never silently re-draw
-    // their committed routes for them on load.
+    // Sanitise unknown / foreign connectionMode values to the safe
+    // default. We never throw on malformed prefs — a missing or
+    // garbage value must not prevent the engine from starting.
     if (!VALID_MODES.has(merged.connectionMode)) merged.connectionMode = 'none';
     return merged;
   } catch {

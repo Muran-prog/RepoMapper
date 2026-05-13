@@ -3,7 +3,7 @@
  *
  *   node tools/smoke-tsp.mjs
  *
- * Covers four invariants:
+ * Covers five invariants:
  *
  *   1. OPEN-TSP solver: every converged tour has NO self-intersecting
  *      segments over Euclidean-in-lng/lat layouts. A converged 2-opt
@@ -17,13 +17,22 @@
  *      what makes the drawing tab predictable: the user's route stays
  *      exactly as drawn, regardless of what the mode picker shows.
  *
- *   3. OPTIMISE-ROUTE as an explicit action, not a mode. Calling
- *      `engine.optimizeRoute()` replaces every auto-gen line with the
- *      TSP tour, leaves `connectionMode` alone, and coalesces into
- *      a single undoable history entry. The old "click optimal,
- *      silently revert to none" UX is intentionally gone.
+ *   3. OPTIMAL MODE as a scope-isolated mode. Activating `optimal`
+ *      bumps an "optimizer epoch" and stamps every subsequent marker
+ *      with it. Each new marker triggers a TSP re-solve — but the
+ *      scope is restricted to same-epoch markers, so pre-existing
+ *      markers / lines (from other modes OR from a previous optimal
+ *      session) are untouched forever. Re-activating optimal mints a
+ *      FRESH epoch: previous optimizer tours become immutable, new
+ *      markers start a brand-new subtour.
  *
- *   4. UNDO coalescing + PERSISTENCE round-trip. One user operation
+ *   4. OPTIMIZE-ROUTE programmatic helper: `engine.optimizeRoute()`
+ *      remains available as a one-shot action that re-tours every
+ *      marker (ignoring epoch scoping). Tests verify it still exists,
+ *      coalesces into one history entry, and preserves hand-drawn
+ *      content.
+ *
+ *   5. UNDO coalescing + PERSISTENCE round-trip. One user operation
  *      equals one history entry: dropping a marker in `sequence` mode
  *      pushes a single snapshot that covers the marker AND the auto-
  *      line. Persisting state and re-creating the engine yields a
@@ -312,7 +321,9 @@ const PTS = [
   // the committed route — not the count, not the coordinates, not any
   // property. This is the regression signature of the old bug, where
   // switching to hub/mesh re-drew the graph under the new rules.
-  for (const nextMode of ['hub', 'mesh', 'none', 'sequence']) {
+  // `optimal` is included because even though it's scope-isolated, the
+  // mere act of activating it must not touch existing lines either.
+  for (const nextMode of ['hub', 'mesh', 'optimal', 'none', 'sequence']) {
     engine.setConnectionMode(nextMode);
     const snapshot = onlyLines(engine).map(lineKey).sort();
     invariantCheck(`sequence→${nextMode} preserves lines (count + coords)`, snapshot, before);
@@ -396,37 +407,140 @@ const PTS = [
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: setConnectionMode is pure — 'optimal' is no longer a mode so
-// attempting to set it should be a defensive no-op. The TSP action lives
-// on engine.optimizeRoute() instead.
+// Test 4: optimal MODE — core scope-isolation contract.
+//
+//   a. Activating optimal mode doesn't touch existing lines.
+//   b. First new marker in optimal mode: no line yet (scope has 1 point).
+//   c. Second new marker: a 1-leg tour emerges, leg has autoMode=optimal
+//      and an optimizerEpoch stamp.
+//   d. Third new marker: TSP re-solves within the current epoch scope.
+//   e. Pre-optimal markers / sequence lines are byte-identical throughout.
+//   f. Garbage mode strings are rejected defensively.
 // ---------------------------------------------------------------------------
 {
   resetStorage();
   const engine = createDrawEngine(makeMockMap());
   engine.setConnectionMode('sequence');
   for (const p of PTS) placeMarker(engine, p);
-  const before = onlyLines(engine).map(lineKey).sort();
+  const preOptimalMarkers = onlyMarkers(engine).map((m) => m.geometry.coordinates);
+  const preOptimalLines = onlyLines(engine).map(lineKey).sort();
+  const preOptimalLineProps = onlyLines(engine)
+    .map((l) => ({ autoMode: l.properties.autoMode, fromId: l.properties.fromId, toId: l.properties.toId }));
 
-  // Attempt to set the deprecated 'optimal' mode — must be ignored.
+  // a. Activate optimal. Existing stuff must stay put.
   engine.setConnectionMode('optimal');
+  invariantCheck('optimal accepts: mode stored', engine.getPrefs().connectionMode, 'optimal');
   invariantCheck(
-    'setConnectionMode("optimal") is a no-op (not a valid mode)',
-    engine.getPrefs().connectionMode,
-    'sequence',
+    'activating optimal does NOT touch existing markers',
+    onlyMarkers(engine).map((m) => m.geometry.coordinates),
+    preOptimalMarkers,
   );
   invariantCheck(
-    'setConnectionMode("optimal") does not mutate existing lines',
+    'activating optimal does NOT touch existing sequence lines (coords)',
     onlyLines(engine).map(lineKey).sort(),
-    before,
+    preOptimalLines,
+  );
+  invariantCheck(
+    'activating optimal does NOT touch existing sequence lines (autoMode)',
+    onlyLines(engine).map((l) => ({ autoMode: l.properties.autoMode, fromId: l.properties.fromId, toId: l.properties.toId })),
+    preOptimalLineProps,
   );
 
-  // Garbage strings are also rejected defensively.
+  // b. First optimizer marker — still no optimizer legs possible yet.
+  placeMarker(engine, [25.0, 48.3]);
+  const optimalLegs1 = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  invariantCheck('optimal: 1st new marker → 0 optimizer legs', optimalLegs1.length, 0);
+  invariantCheck(
+    'optimal: 1st new marker → sequence lines still intact',
+    onlyLines(engine).filter((l) => l.properties.autoMode === 'sequence').map(lineKey).sort(),
+    preOptimalLines,
+  );
+
+  // c. Second optimizer marker — exactly one tour leg, stamped.
+  placeMarker(engine, [25.2, 48.5]);
+  const optimalLegs2 = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  invariantCheck('optimal: 2nd new marker → 1 optimizer leg', optimalLegs2.length, 1);
+  invariantCheck(
+    'optimal: leg carries an optimizerEpoch stamp',
+    typeof optimalLegs2[0].properties.optimizerEpoch,
+    'number',
+  );
+  const epoch = optimalLegs2[0].properties.optimizerEpoch;
+  const optimizerMarkers2 = onlyMarkers(engine).filter((m) => m.properties.optimizerEpoch === epoch);
+  invariantCheck('optimal: 2 markers carry the current epoch stamp', optimizerMarkers2.length, 2);
+
+  // d. Third marker — TSP solves over 3 points → 2 legs, still same epoch.
+  placeMarker(engine, [25.1, 48.1]);
+  const optimalLegs3 = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  invariantCheck('optimal: 3rd new marker → 2 legs (TSP over 3 points)', optimalLegs3.length, 2);
+  invariantCheck(
+    'optimal: every optimizer leg shares the epoch',
+    optimalLegs3.every((l) => l.properties.optimizerEpoch === epoch),
+    true,
+  );
+
+  // e. Sequence lines + pre-optimal markers byte-identical after all
+  //    the optimizer activity.
+  invariantCheck(
+    'optimal mode never mutated pre-optimal markers',
+    onlyMarkers(engine).slice(0, PTS.length).map((m) => m.geometry.coordinates),
+    preOptimalMarkers,
+  );
+  invariantCheck(
+    'optimal mode never mutated pre-optimal sequence lines',
+    onlyLines(engine).filter((l) => l.properties.autoMode === 'sequence').map(lineKey).sort(),
+    preOptimalLines,
+  );
+
+  // f. Garbage strings are still rejected.
   engine.setConnectionMode('bogus');
   invariantCheck(
     'setConnectionMode("bogus") is a no-op',
     engine.getPrefs().connectionMode,
-    'sequence',
+    'optimal',
   );
+
+  engine.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// Test 4b: re-activating optimal mints a FRESH epoch.
+//
+// After placing optimizer markers and switching to another mode, turning
+// optimal back on starts a new session. Previous optimizer lines are now
+// "frozen" — they share an OLD epoch, so they won't be touched by the
+// re-solves triggered by the new session's marker placements.
+// ---------------------------------------------------------------------------
+{
+  resetStorage();
+  const engine = createDrawEngine(makeMockMap());
+  engine.setConnectionMode('optimal');
+  placeMarker(engine, [24.0, 48.0]);
+  placeMarker(engine, [24.2, 48.2]);
+  const legs1 = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  invariantCheck('first optimal session: 1 leg', legs1.length, 1);
+  const epoch1 = legs1[0].properties.optimizerEpoch;
+
+  // Leave optimal, come back. Epoch must change.
+  engine.setConnectionMode('none');
+  engine.setConnectionMode('optimal');
+
+  // Still only the frozen leg from the first session — no new leg yet.
+  const afterReenter = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  invariantCheck('re-enter optimal: existing legs untouched', afterReenter.length, 1);
+  invariantCheck('re-enter optimal: epoch preserved on frozen leg', afterReenter[0].properties.optimizerEpoch, epoch1);
+
+  // Place two markers in the new session.
+  placeMarker(engine, [24.6, 48.0]);
+  placeMarker(engine, [24.8, 48.3]);
+  const allOptimal = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  const newSessionLegs = allOptimal.filter((l) => l.properties.optimizerEpoch !== epoch1);
+  invariantCheck('second optimal session: 1 new leg', newSessionLegs.length, 1);
+  invariantCheck('second optimal session: epoch is distinct', newSessionLegs[0].properties.optimizerEpoch !== epoch1, true);
+
+  // Frozen first-session leg still present and untouched.
+  const frozen = allOptimal.filter((l) => l.properties.optimizerEpoch === epoch1);
+  invariantCheck('first-session leg is still exactly 1 line', frozen.length, 1);
 
   engine.dispose();
 }
@@ -625,6 +739,8 @@ const PTS = [
 
 // ---------------------------------------------------------------------------
 // Test 8: changing connection mode never affects marker features.
+// Includes flips into `optimal` — the epoch bump is pure state on the
+// engine's side and must not leak into feature geometry or properties.
 // ---------------------------------------------------------------------------
 {
   resetStorage();
@@ -633,7 +749,7 @@ const PTS = [
   for (const p of PTS) placeMarker(engine, p);
   const markersBefore = onlyMarkers(engine).map((m) => m.geometry.coordinates);
 
-  for (const mode of ['hub', 'mesh', 'none', 'sequence']) {
+  for (const mode of ['hub', 'mesh', 'optimal', 'none', 'sequence']) {
     engine.setConnectionMode(mode);
   }
 
@@ -644,24 +760,52 @@ const PTS = [
 }
 
 // ---------------------------------------------------------------------------
-// Test 9: stale 'optimal' persisted in prefs is migrated to 'none' on load.
-// Pre-refactor builds could write connectionMode: 'optimal' to localStorage.
-// The current schema rejects that value; loadPrefs must coerce it cleanly.
+// Test 9: persisted `connectionMode: 'optimal'` loads as-is.
+//
+// `optimal` is a first-class mode, so a previously-persisted value
+// must survive reload unchanged. The fresh engine should be in optimal
+// mode from the first frame, and its optimizer epoch should be a fresh
+// Date.now()-class number — strictly greater than any epoch stamp
+// carried by previously-persisted markers, so old stamps can't collide
+// with the new session.
+//
+// Unknown mode strings (from a future version or tampering) still
+// coerce to `'none'` defensively.
 // ---------------------------------------------------------------------------
 {
   resetStorage();
-  // Simulate pre-refactor persisted prefs.
   fakeStorage.set(
     'cart:draw:prefs:v1',
     JSON.stringify({ tool: 'marker', connectionMode: 'optimal' }),
   );
   const engine = createDrawEngine(makeMockMap());
   invariantCheck(
-    'stale connectionMode:"optimal" is migrated to "none"',
+    'persisted connectionMode:"optimal" survives reload',
     engine.getPrefs().connectionMode,
+    'optimal',
+  );
+  // Placing 2 markers in optimal after reload: a tour emerges with a
+  // FRESH epoch. (No pre-existing stamped markers here so we don't
+  // verify the inequality — that's covered by Test 4b.)
+  placeMarker(engine, [24.0, 48.0]);
+  placeMarker(engine, [24.2, 48.2]);
+  const legs = onlyLines(engine).filter((l) => l.properties.autoMode === 'optimal');
+  invariantCheck('reloaded optimal mode still produces a tour', legs.length, 1);
+  engine.dispose();
+
+  // Tampered / foreign mode coerces to 'none'.
+  resetStorage();
+  fakeStorage.set(
+    'cart:draw:prefs:v1',
+    JSON.stringify({ connectionMode: 'not-a-real-mode' }),
+  );
+  const engine2 = createDrawEngine(makeMockMap());
+  invariantCheck(
+    'unknown connectionMode is coerced to "none"',
+    engine2.getPrefs().connectionMode,
     'none',
   );
-  engine.dispose();
+  engine2.dispose();
 }
 
 console.log(`Mode-switch invariance + architecture: ${invPass} passed, ${invFail} failed out of ${invPass + invFail}`);
