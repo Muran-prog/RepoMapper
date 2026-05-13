@@ -78,6 +78,16 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
   // `feature-state.selected` is toggled by the engine via setFeatureState.
   const selectedBoost = ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0];
 
+  // Fraction of the stroke opacity that the fill inherits. Keeps
+  // polygons readable over busy basemaps without the user needing
+  // a second "fill opacity" slider. Tuned so a 95 % stroke gives a
+  // ~38 % fill — comfortably visible but still see-through.
+  const FILL_OPACITY_FRACTION = 0.4;
+  /** `feature.opacity` with a sensible default, clamped to [0..1]. */
+  const strokeOpacityExpr = ['max', 0, ['min', 1, ['coalesce', ['get', 'opacity'], 0.95]]];
+  /** Fill opacity derived from stroke opacity × the fraction above. */
+  const fillOpacityExpr = ['*', strokeOpacityExpr, FILL_OPACITY_FRACTION];
+
   return [
     // ---- Fills --------------------------------------------------------
     {
@@ -92,14 +102,20 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
         'fill-color': ['coalesce', ['get', 'fill'], fill],
         'fill-opacity': [
           'case',
-          ['boolean', ['feature-state', 'selected'], false], 0.32,
-          0.18,
+          ['boolean', ['feature-state', 'selected'], false],
+            ['min', 1, ['*', fillOpacityExpr, 1.5]],
+          fillOpacityExpr,
         ],
         'fill-antialias': true,
       },
     },
 
     // ---- Line casings (halo under main strokes) -----------------------
+    //
+    // Auto-generated "mesh" lines get a slightly darker casing so that
+    // dense all-to-all connections still read as grouped without the
+    // white halo visually merging them into a fat blob. Everything
+    // else keeps the standard white halo.
     {
       id: LAYERS.lineCasing,
       type: 'line',
@@ -112,11 +128,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       paint: {
         'line-color': [
           'case',
-          ['==', ['get', 'kind'], 'connection'],
-            ['case',
-              ['==', ['get', 'connectionMode'], 'optimal'], 'rgba(0, 0, 0, 0.32)',
-              'rgba(0, 0, 0, 0.28)',
-            ],
+          ['==', ['get', 'autoMode'], 'mesh'], 'rgba(0, 0, 0, 0.30)',
           'rgba(255, 255, 255, 0.85)',
         ],
         'line-width': [
@@ -130,6 +142,17 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
     },
 
     // ---- Main strokes -------------------------------------------------
+    //
+    // Auto-generated and user-drawn lines share the same paint: the
+    // feature carries its own `color`, `weight`, `opacity`, so the
+    // renderer doesn't need to know whether the line came from a
+    // sequence auto-connect, a hand-drawn polyline, or an imported
+    // GeoJSON. That's what lets mode changes leave existing lines
+    // untouched — there is no mode-driven style to re-apply.
+    //
+    // The one special case is `autoMode === 'mesh'`: a dense all-to-
+    // all graph is easier to read when its strokes are a little more
+    // transparent. Everything else follows the feature's own opacity.
     {
       id: LAYERS.line,
       type: 'line',
@@ -140,17 +163,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       ],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': [
-          'case',
-          ['==', ['get', 'kind'], 'connection'],
-            ['case',
-              ['==', ['get', 'connectionMode'], 'optimal'], color,
-              ['==', ['get', 'connectionMode'], 'mesh'],    'rgba(198, 104, 9, 0.7)',
-              ['==', ['get', 'connectionMode'], 'hub'],     'rgba(0, 91, 187, 0.85)',
-              color,
-            ],
-          ['coalesce', ['get', 'color'], color],
-        ],
+        'line-color': ['coalesce', ['get', 'color'], color],
         'line-width': [
           '+',
           ['coalesce', ['get', 'weight'], weight],
@@ -158,28 +171,25 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
         ],
         'line-opacity': [
           'case',
-          ['==', ['get', 'kind'], 'connection'],
-            ['case',
-              ['==', ['get', 'connectionMode'], 'mesh'], 0.65,
-              0.9,
-            ],
-          ['coalesce', ['get', 'opacity'], 0.95],
+          ['==', ['get', 'autoMode'], 'mesh'], ['*', strokeOpacityExpr, 0.6],
+          strokeOpacityExpr,
         ],
+        // Only the in-flight rubber-band preview uses a dashed stroke
+        // (so the user can tell the authoring-state ghost apart from
+        // committed geometry). Auto-gen and user-drawn lines are both
+        // solid — they're real features, they should look real.
         'line-dasharray': [
           'case',
           ['==', ['get', 'preview'], true], ['literal', [1.2, 1.2]],
-          ['==', ['get', 'kind'], 'connection'],
-            ['case',
-              ['==', ['get', 'connectionMode'], 'mesh'], ['literal', [3, 2]],
-              ['==', ['get', 'connectionMode'], 'hub'],  ['literal', [4, 2]],
-              ['literal', [1, 0]],
-            ],
           ['literal', [1, 0]],
         ],
       },
     },
 
     // ---- Arrow heads (always filled, never outlined) ------------------
+    // Arrow heads use the STROKE colour (not the fill colour) since
+    // they're a stylistic extension of the shaft, and the stroke
+    // opacity so they stay fully opaque with the rest of the arrow.
     {
       id: LAYERS.arrowHead,
       type: 'fill',
@@ -190,12 +200,17 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       ],
       paint: {
         'fill-color': ['coalesce', ['get', 'color'], color],
-        'fill-opacity': ['coalesce', ['get', 'opacity'], 0.95],
+        'fill-opacity': strokeOpacityExpr,
         'fill-antialias': true,
       },
     },
 
     // ---- Marker halo (under the dot) ----------------------------------
+    // The halo extends noticeably beyond the dot (~5 px under default
+    // radius) so it reads as a halo rather than a one-pixel ring under
+    // the white stroke — that was the old "first marker invisible"
+    // bug. All circle layers use viewport alignment so tilted cameras
+    // don't shrink the marker to zero.
     {
       id: LAYERS.pointHalo,
       type: 'circle',
@@ -208,20 +223,23 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       paint: {
         'circle-radius': [
           '+',
-          ['coalesce', ['get', 'radius'], 9],
+          ['coalesce', ['get', 'radius'], 8],
           ['case',
-            ['boolean', ['feature-state', 'selected'], false], 5,
-            ['boolean', ['feature-state', 'hover'], false], 3,
-            2,
+            ['boolean', ['feature-state', 'selected'], false], 8,
+            ['boolean', ['feature-state', 'hover'], false], 5,
+            4,
           ],
         ],
         'circle-color': ['coalesce', ['get', 'color'], color],
         'circle-opacity': [
           'case',
-          ['boolean', ['feature-state', 'selected'], false], 0.42,
-          0.22,
+          ['boolean', ['feature-state', 'selected'], false],
+            ['min', 1, ['*', strokeOpacityExpr, 0.5]],
+          ['min', 1, ['*', strokeOpacityExpr, 0.28]],
         ],
-        'circle-blur': 0.55,
+        'circle-blur': 0.5,
+        'circle-pitch-alignment': 'viewport',
+        'circle-pitch-scale': 'viewport',
       },
     },
 
@@ -236,20 +254,26 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
         ['!=', ['get', 'kind'], 'vertex-mid'],
       ],
       paint: {
-        'circle-radius': ['coalesce', ['get', 'radius'], 7],
+        'circle-radius': ['coalesce', ['get', 'radius'], 8],
         'circle-color': ['coalesce', ['get', 'color'], color],
+        'circle-opacity': strokeOpacityExpr,
         'circle-stroke-color': '#ffffff',
         'circle-stroke-width': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], 3,
           2,
         ],
-        'circle-stroke-opacity': 1,
-        'circle-pitch-alignment': 'map',
+        'circle-stroke-opacity': strokeOpacityExpr,
+        'circle-pitch-alignment': 'viewport',
+        'circle-pitch-scale': 'viewport',
       },
     },
 
     // ---- Marker numeric label -----------------------------------------
+    // `displayOrder` is stamped by buildCollection() on every render
+    // and reflects the ACTIVE connection mode (insertion order for
+    // sequence, tour order for optimal). That way the number you see
+    // on a marker always matches the route drawn through it.
     {
       id: LAYERS.pointLabel,
       type: 'symbol',
@@ -257,10 +281,10 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       filter: ['all',
         ['==', '$type', 'Point'],
         ['==', ['get', 'kind'], 'marker'],
-        ['has', 'order'],
+        ['has', 'displayOrder'],
       ],
       layout: {
-        'text-field': ['to-string', ['get', 'order']],
+        'text-field': ['to-string', ['get', 'displayOrder']],
         'text-size': 11,
         'text-font': ['Noto Sans Bold', 'Noto Sans Regular'],
         'text-anchor': 'center',
@@ -271,8 +295,8 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       },
       paint: {
         'text-color': '#ffffff',
-        'text-halo-color': 'rgba(0, 0, 0, 0.0)',
-        'text-halo-width': 0,
+        'text-halo-color': 'rgba(0, 0, 0, 0.35)',
+        'text-halo-width': 0.8,
       },
     },
 

@@ -123,12 +123,20 @@ export function chaikin(pts) {
 }
 
 /**
- * Create a free-draw recorder bound to a MapLibre map. The caller is
- * responsible for calling `start()` on pointerdown and `commit()` on
- * pointerup; everything in between is handled automatically.
+ * Create a free-draw recorder bound to a MapLibre map.
  *
- * The recorder briefly disables map panning during the stroke so the
- * pen tracks the finger / mouse instead of dragging the map.
+ * The recorder owns its own native PointerEvent listeners on the map
+ * container. The engine calls `attach()` when the pencil tool becomes
+ * active and `detach()` when it switches away. No routing through
+ * MapLibre's `mousedown/mousemove/mouseup` is used — MapLibre only
+ * synthesises those for mouse input, so touch devices would never
+ * fire them; and even for mouse, MapLibre's event objects are not
+ * PointerEvents so a `pointerId` filter on the move stream silently
+ * dropped every sample.
+ *
+ * During an in-flight stroke the recorder disables map gestures so
+ * the pen tracks the finger / mouse instead of dragging the map; on
+ * commit/cancel it restores them.
  *
  * @param {maplibregl.Map} map
  * @param {object} [opts]
@@ -136,8 +144,11 @@ export function chaikin(pts) {
  * @param {boolean} [opts.smooth=true]    Run a Chaikin pass after RDP.
  * @param {number} [opts.minSamples=3]    Discard strokes shorter than this.
  * @param {function(Array<[number, number]>):void} [opts.onPreview]
- *        Called with screen-pixel samples on every animation frame so the
- *        UI can paint an in-flight preview (e.g. a temporary canvas).
+ *        Called with screen-pixel samples on every animation frame so
+ *        the caller can draw a live preview.
+ * @param {function(GeoJSON.LineString|null):void} [opts.onCommit]
+ *        Called on pointerup/cancel with the simplified geographic
+ *        LineString, or `null` if the stroke was too short / cancelled.
  */
 export function createFreeDrawRecorder(map, opts = {}) {
   const {
@@ -145,7 +156,10 @@ export function createFreeDrawRecorder(map, opts = {}) {
     smooth = true,
     minSamples = 3,
     onPreview,
+    onCommit,
   } = opts;
+
+  const container = map.getContainer();
 
   /** @type {Array<[number, number]>} */
   let samples = [];
@@ -153,7 +167,7 @@ export function createFreeDrawRecorder(map, opts = {}) {
   let pointerId = null;
   let rafId = null;
   let pendingFlush = false;
-  const container = map.getContainer();
+  let attached = false;
 
   const localCoords = (e) => {
     const rect = container.getBoundingClientRect();
@@ -165,8 +179,71 @@ export function createFreeDrawRecorder(map, opts = {}) {
     pendingFlush = true;
     rafId = requestAnimationFrame(() => {
       pendingFlush = false;
+      rafId = null;
       onPreview?.(samples);
     });
+  };
+
+  const suspendMapGestures = () => {
+    map.dragPan?.disable?.();
+    map.scrollZoom?.disable?.();
+    map.doubleClickZoom?.disable?.();
+    map.touchPitch?.disable?.();
+    map.touchZoomRotate?.disable?.();
+  };
+
+  const restoreMapGestures = () => {
+    map.dragPan?.enable?.();
+    map.scrollZoom?.enable?.();
+    map.doubleClickZoom?.enable?.();
+    map.touchPitch?.enable?.();
+    map.touchZoomRotate?.enable?.();
+  };
+
+  const resetStroke = () => {
+    if (rafId != null) cancelAnimationFrame(rafId);
+    rafId = null;
+    pendingFlush = false;
+    samples = [];
+    active = false;
+    pointerId = null;
+  };
+
+  const finalise = (pts) => {
+    if (pts.length < minSamples) return null;
+    let simplified = rdp(pts, epsilonPx);
+    if (smooth) simplified = chaikin(simplified);
+    const coords = simplified
+      .map(([x, y]) => {
+        try {
+          const ll = map.unproject([x, y]);
+          return [ll.lng, ll.lat];
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    if (coords.length < 2) return null;
+    return { type: 'LineString', coordinates: coords };
+  };
+
+  // Pointer event handlers — attached to the map container directly.
+  const onPointerDown = (e) => {
+    if (active) return;
+    // Only the primary button for mouse; touch/pen always report
+    // button === 0 so this is a safe filter across input types.
+    if (e.button != null && e.button !== 0) return;
+
+    e.preventDefault();
+    // Capture the pointer so we keep receiving move/up events even if
+    // the finger/mouse drifts outside the map container.
+    try { container.setPointerCapture(e.pointerId); } catch { /* unsupported */ }
+
+    active = true;
+    pointerId = e.pointerId;
+    samples = [localCoords(e)];
+    suspendMapGestures();
+    scheduleFlush();
   };
 
   const onPointerMove = (e) => {
@@ -174,109 +251,84 @@ export function createFreeDrawRecorder(map, opts = {}) {
     e.preventDefault();
     const p = localCoords(e);
     const last = samples[samples.length - 1];
-    // Dedup adjacent samples that landed in the same pixel.
     if (!last || Math.abs(last[0] - p[0]) > 0.5 || Math.abs(last[1] - p[1]) > 0.5) {
       samples.push(p);
       scheduleFlush();
     }
   };
 
-  const onPointerEndCapture = (e) => {
-    if (!active || (pointerId != null && e.pointerId !== pointerId)) return;
-    // Caller drives the actual commit via `commit()` — we just stop
-    // listening here. The recorder still owns `active` so a stray
-    // pointermove after up doesn't keep appending samples.
-    cleanup();
+  const onPointerUp = (e) => {
+    if (!active || e.pointerId !== pointerId) return;
+    e.preventDefault();
+    try { container.releasePointerCapture(pointerId); } catch { /* */ }
+    const pts = samples.slice();
+    resetStroke();
+    restoreMapGestures();
+    onCommit?.(finalise(pts));
   };
 
-  const cleanup = () => {
-    container.removeEventListener('pointermove', onPointerMove, { capture: true });
-    container.removeEventListener('pointerup', onPointerEndCapture, { capture: true });
-    container.removeEventListener('pointercancel', onPointerEndCapture, { capture: true });
-    if (rafId != null) cancelAnimationFrame(rafId);
-    rafId = null;
-    pendingFlush = false;
+  const onPointerCancel = (e) => {
+    if (!active) return;
+    if (e.pointerId != null && e.pointerId !== pointerId) return;
+    try { container.releasePointerCapture(pointerId); } catch { /* */ }
+    resetStroke();
+    restoreMapGestures();
+    onCommit?.(null);
   };
+
+  // Prevent the browser from turning a touch-drag into a page scroll
+  // on iOS while the pencil is armed. We set `touch-action: none` on
+  // the container via the attach flag below.
 
   return {
     /** True while a stroke is being recorded. */
     isActive: () => active,
 
     /**
-     * Begin recording. Disables map panning for the duration of the
-     * gesture so the pen tracks the pointer.
+     * Start listening for pointer events on the map container.
+     * Idempotent — safe to call repeatedly.
      */
-    start(e) {
-      if (active) return;
-      active = true;
-      pointerId = e.pointerId ?? null;
-      samples = [localCoords(e)];
-      // Suppress map gestures while drawing. Each is checked to avoid
-      // throwing on builds that haven't initialised them yet.
-      map.dragPan?.disable?.();
-      map.scrollZoom?.disable?.();
-      map.doubleClickZoom?.disable?.();
-      map.touchPitch?.disable?.();
-      map.touchZoomRotate?.disable?.();
-      container.addEventListener('pointermove', onPointerMove, { passive: false, capture: true });
-      container.addEventListener('pointerup', onPointerEndCapture, { capture: true });
-      container.addEventListener('pointercancel', onPointerEndCapture, { capture: true });
+    attach() {
+      if (attached) return;
+      attached = true;
+      container.addEventListener('pointerdown', onPointerDown, { passive: false });
+      container.addEventListener('pointermove', onPointerMove, { passive: false });
+      container.addEventListener('pointerup', onPointerUp, { passive: false });
+      container.addEventListener('pointercancel', onPointerCancel, { passive: false });
+      // Prevent native touch gestures (scroll, pinch-to-zoom) from
+      // hijacking the stroke on iOS / Android.
+      container.dataset.cartPencil = '1';
     },
 
     /**
-     * Cancel an in-flight stroke without committing it. Re-enables the
-     * map gestures.
+     * Stop listening and cancel any in-flight stroke. Idempotent.
      */
-    cancel() {
-      cleanup();
-      active = false;
-      pointerId = null;
-      samples = [];
-      this.restore();
-    },
-
-    /**
-     * Commit the current stroke. Returns the simplified geographic
-     * `LineString` geometry or `null` if the stroke was too short.
-     */
-    commit() {
-      cleanup();
-      active = false;
-      const pts = samples;
-      samples = [];
-      this.restore();
-      if (pts.length < minSamples) return null;
-      let simplified = rdp(pts, epsilonPx);
-      if (smooth) {
-        simplified = chaikin(simplified);
+    detach() {
+      if (!attached) return;
+      attached = false;
+      container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('pointercancel', onPointerCancel);
+      delete container.dataset.cartPencil;
+      if (active) {
+        try { container.releasePointerCapture(pointerId); } catch { /* */ }
+        resetStroke();
+        restoreMapGestures();
       }
-      const coords = simplified
-        .map(([x, y]) => {
-          try {
-            const ll = map.unproject([x, y]);
-            return [ll.lng, ll.lat];
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
-      if (coords.length < 2) return null;
-      return { type: 'LineString', coordinates: coords };
     },
 
-    /** Re-enable map gestures suppressed in `start()`. */
-    restore() {
-      map.dragPan?.enable?.();
-      map.scrollZoom?.enable?.();
-      map.doubleClickZoom?.enable?.();
-      map.touchPitch?.enable?.();
-      map.touchZoomRotate?.enable?.();
+    /** Cancel an in-flight stroke without committing. */
+    cancel() {
+      if (!active) return;
+      try { container.releasePointerCapture(pointerId); } catch { /* */ }
+      resetStroke();
+      restoreMapGestures();
     },
 
     /** Drop all listeners — call when the engine is torn down. */
     dispose() {
-      cleanup();
-      this.restore();
+      this.detach();
     },
   };
 }

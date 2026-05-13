@@ -21,10 +21,17 @@
  * @property {string} connectionMode       'none'|'sequence'|'optimal'|'mesh'|'hub'
  * @property {string} shapeType            'circle'|'rectangle'|'regular'|'arrow'|'star'
  * @property {number} shapeSides           Sides count for regular polygon.
+ * @property {number} shapeSize            Placement radius in PIXELS at the
+ *                                         current zoom. Single knob that
+ *                                         drives every shape's initial size
+ *                                         so a circle, star and rectangle
+ *                                         all come out visually similar.
  * @property {string} color                CSS colour for new features.
  * @property {string} fill                 CSS fill for polygons.
  * @property {number} weight               Line weight in px.
- * @property {number} opacity              0..1 stroke opacity.
+ * @property {number} opacity              0..1 stroke opacity (fill follows
+ *                                         at a fixed fraction so one slider
+ *                                         controls all transparency).
  * @property {boolean} geodesic            Render connections as geodesics.
  * @property {boolean} labels              Show marker number labels.
  * @property {boolean} snap                Snap-to-vertex when placing.
@@ -52,6 +59,7 @@ export function defaultPrefs() {
     connectionMode: 'sequence',
     shapeType: 'circle',
     shapeSides: 6,
+    shapeSize: 100,
     color: '#c66809',
     fill: '#c66809',
     weight: 3,

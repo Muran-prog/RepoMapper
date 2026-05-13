@@ -21,16 +21,14 @@
  *     vertex (polygon auto-close). Esc cancels (handled in engine.js).
  */
 
-import { LAYERS, SOURCE_ID, HIT_LAYERS, HANDLE_LAYERS } from './layers.js';
+import { HIT_LAYERS, HANDLE_LAYERS } from './layers.js';
 import {
   makeCircle,
   makeRectangle,
   makeRegularPolygon,
   makeStar,
   makeArrow,
-  defaultRadiusForZoom,
 } from './shapes.js';
-import { createFreeDrawRecorder } from './freedraw.js';
 import {
   updateVertex,
   insertVertex,
@@ -40,6 +38,41 @@ import { haversine } from './connections.js';
 
 /** Pixel threshold below which we classify pointer travel as "click". */
 const CLICK_SLOP_PX = 5;
+
+/** Default shape size (pixels) used when prefs.shapeSize is missing. */
+const DEFAULT_SHAPE_SIZE_PX = 100;
+
+/**
+ * Build a uniform style bag for newly-authored features. Every tool
+ * goes through this so the layer paint can rely on the same property
+ * set (`color`, `fill`, `weight`, `opacity`) without per-kind
+ * fallbacks.
+ */
+function styleBag(prefs) {
+  return {
+    color: prefs.color,
+    fill: prefs.fill,
+    weight: prefs.weight,
+    opacity: prefs.opacity,
+  };
+}
+
+/**
+ * Convert a pixel radius to metres at the given map centre + zoom.
+ * Uses the map's current projection so shapes retain their apparent
+ * on-screen size across zoom levels at commit time (the shape itself
+ * is then in metres, so it grows/shrinks correctly on zoom-out).
+ */
+function pxRadiusToMeters(map, center, radiusPx) {
+  try {
+    const screen = map.project(center);
+    const edge = map.unproject([screen.x + radiusPx, screen.y]);
+    return haversine(center, [edge.lng, edge.lat]);
+  } catch {
+    // Fallback on pathological camera states.
+    return radiusPx * 100;
+  }
+}
 
 /** Tap radius (px) — clicking inside this radius of the first vertex of
  *  a polygon draft closes it. Generous so touch users hit it easily. */
@@ -126,9 +159,8 @@ const markerTool = {
       geometry: { type: 'Point', coordinates: lngLat },
       properties: {
         kind: 'marker',
-        color: prefs.color,
-        radius: 7,
-        label: '',
+        ...styleBag(prefs),
+        radius: 8,
       },
     });
   },
@@ -152,9 +184,7 @@ const lineTool = {
         geometry: { type: 'LineString', coordinates: [lngLat, lngLat] },
         properties: {
           kind: 'line-draft',
-          color: prefs.color,
-          weight: prefs.weight,
-          opacity: prefs.opacity,
+          ...styleBag(prefs),
           preview: false,
         },
       };
@@ -205,6 +235,7 @@ function finishLine(ctx) {
     properties: {
       kind: 'line',
       color: draft.properties.color,
+      fill: draft.properties.fill,
       weight: draft.properties.weight,
       opacity: draft.properties.opacity,
     },
@@ -229,10 +260,7 @@ const polygonTool = {
         geometry: { type: 'LineString', coordinates: [lngLat, lngLat] },
         properties: {
           kind: 'polygon-draft',
-          color: prefs.color,
-          fill: prefs.fill,
-          weight: prefs.weight,
-          opacity: prefs.opacity,
+          ...styleBag(prefs),
           preview: false,
         },
       };
@@ -304,45 +332,46 @@ function finishPolygon(ctx) {
 
 /**
  * SHAPE — single-click drops a template centred on the click point.
- * Sizes are picked relative to the current zoom so the shape is
- * visually sensible without the user having to drag. They can then
- * re-size via vertex handles in select mode.
+ * All shapes share one size knob (`prefs.shapeSize` in pixels) that
+ * controls the on-screen radius / half-extent at the moment of
+ * placement. Pixel-based sizing keeps every shape visually similar
+ * regardless of zoom level — no more "rectangle in pixels, circle in
+ * metres" inconsistency the old code had.
  */
 const shapeTool = {
   click(ctx, e) {
     if (hasReservedModifier(e)) return;
     const { map, prefs, addFeature, nextId } = ctx;
     const center = [e.lngLat.lng, e.lngLat.lat];
-    const zoom = map.getZoom();
-    const radius = defaultRadiusForZoom(zoom);
+    const sizePx = Math.max(20, Math.min(400, prefs.shapeSize ?? DEFAULT_SHAPE_SIZE_PX));
+    const radiusM = pxRadiusToMeters(map, center, sizePx);
 
     let geometry;
     const kind = `shape-${prefs.shapeType}`;
     switch (prefs.shapeType) {
       case 'rectangle': {
-        const tl = map.unproject([
-          map.project(center).x - 70,
-          map.project(center).y - 50,
-        ]);
-        const br = map.unproject([
-          map.project(center).x + 70,
-          map.project(center).y + 50,
-        ]);
+        const screen = map.project(center);
+        const halfW = sizePx * 1.3;
+        const halfH = sizePx * 0.85;
+        const tl = map.unproject([screen.x - halfW, screen.y - halfH]);
+        const br = map.unproject([screen.x + halfW, screen.y + halfH]);
         geometry = makeRectangle([tl.lng, tl.lat], [br.lng, br.lat]);
         break;
       }
       case 'regular':
-        geometry = makeRegularPolygon(center, radius, prefs.shapeSides ?? 6);
+        geometry = makeRegularPolygon(center, radiusM, prefs.shapeSides ?? 6);
         break;
       case 'star':
-        geometry = makeStar(center, radius, 5);
+        geometry = makeStar(center, radiusM, 5);
         break;
       case 'arrow': {
-        // Arrow is a pair of features (shaft + head). We commit them
-        // together, sharing a group id so they can be moved as one.
+        // Arrow is a pair of features (shaft + head) committed
+        // together; they share a group id so future editing can
+        // recognise them as a unit.
         const screen = map.project(center);
-        const start = map.unproject([screen.x - 80, screen.y]);
-        const end = map.unproject([screen.x + 80, screen.y]);
+        const halfLen = sizePx * 1.5;
+        const start = map.unproject([screen.x - halfLen, screen.y]);
+        const end = map.unproject([screen.x + halfLen, screen.y]);
         const arrow = makeArrow([start.lng, start.lat], [end.lng, end.lat]);
         const groupId = nextId('arrow');
         addFeature({
@@ -351,9 +380,7 @@ const shapeTool = {
           geometry: arrow.shaft,
           properties: {
             kind: 'arrow-shaft',
-            color: prefs.color,
-            weight: prefs.weight,
-            opacity: prefs.opacity,
+            ...styleBag(prefs),
             groupId,
           },
         }, { skipHistory: false });
@@ -363,8 +390,7 @@ const shapeTool = {
           geometry: arrow.head,
           properties: {
             kind: 'arrow-head',
-            color: prefs.color,
-            opacity: prefs.opacity,
+            ...styleBag(prefs),
             groupId,
           },
         }, { skipHistory: true });
@@ -372,7 +398,7 @@ const shapeTool = {
       }
       case 'circle':
       default:
-        geometry = makeCircle(center, radius);
+        geometry = makeCircle(center, radiusM);
         break;
     }
 
@@ -382,93 +408,18 @@ const shapeTool = {
       geometry,
       properties: {
         kind,
-        color: prefs.color,
-        fill: prefs.fill,
-        weight: prefs.weight,
-        opacity: prefs.opacity,
+        ...styleBag(prefs),
       },
     });
   },
 };
 
-/**
- * PENCIL — free-draw. Down-drag-up records a stroke that is RDP-
- * simplified and committed as a LineString. The recorder is
- * instantiated lazily on first use so it doesn't subscribe to map
- * pointer events until the user actually opens the pencil tool.
- */
-function makePencilTool(ctx) {
-  let recorder = null;
-  const getRecorder = () => {
-    if (!recorder) {
-      recorder = createFreeDrawRecorder(ctx.map, {
-        epsilonPx: 2.2,
-        smooth: true,
-        onPreview: (samples) => {
-          if (!samples || samples.length < 2) return;
-          const coords = samples.map(([x, y]) => {
-            try {
-              const ll = ctx.map.unproject([x, y]);
-              return [ll.lng, ll.lat];
-            } catch { return null; }
-          }).filter(Boolean);
-          if (coords.length < 2) return;
-          ctx.state.draft = {
-            type: 'Feature',
-            id: '__draft_pencil',
-            geometry: { type: 'LineString', coordinates: coords },
-            properties: {
-              kind: 'pencil-draft',
-              color: ctx.prefs.color,
-              weight: ctx.prefs.weight,
-              opacity: ctx.prefs.opacity,
-              preview: true,
-            },
-          };
-          ctx.rerender();
-        },
-      });
-    }
-    return recorder;
-  };
-
-  return {
-    mousedown(ctx, e) {
-      const pointerEvent = e.originalEvent;
-      if (!pointerEvent) return;
-      // Only the primary button (left mouse / first touch).
-      if (pointerEvent.button !== 0 && pointerEvent.button !== undefined) return;
-      getRecorder().start(pointerEvent);
-    },
-    mouseup(ctx, e) {
-      const pointerEvent = e.originalEvent;
-      const r = recorder;
-      if (!r) return;
-      if (!r.isActive() && pointerEvent?.type !== 'pointerup') return;
-      const geom = r.commit();
-      ctx.state.draft = null;
-      if (geom) {
-        ctx.addFeature({
-          type: 'Feature',
-          id: ctx.nextId('pencil'),
-          geometry: geom,
-          properties: {
-            kind: 'pencil',
-            color: ctx.prefs.color,
-            weight: ctx.prefs.weight,
-            opacity: ctx.prefs.opacity,
-          },
-        });
-      } else {
-        ctx.rerender();
-      }
-    },
-    dispose() {
-      recorder?.dispose();
-      recorder = null;
-    },
-  };
-}
+// Pencil (free-draw) is NOT a map-event tool — the engine installs a
+// dedicated PointerEvent listener directly on the map container when
+// state.tool === 'pencil'. See createDrawEngine() for the lifecycle.
+// This keeps touch devices working (MapLibre doesn't emit mouse*
+// events on pure-touch input) and removes the pointerId filtering
+// bug the old implementation suffered from.
 
 /**
  * SELECT — click to select / clear, drag a vertex to edit, drag a body
@@ -502,8 +453,6 @@ const selectTool = {
       return;
     }
     if (hit.kind === 'feature') {
-      // Connections are not directly selectable — they're computed.
-      if (hit.feature.properties?.kind === 'connection') return;
       selectFeature(hit.feature.id);
     }
   },
@@ -531,7 +480,7 @@ const selectTool = {
       return;
     }
     // Body drag: translate the feature.
-    if (hit.kind === 'feature' && hit.feature.properties?.kind !== 'connection') {
+    if (hit.kind === 'feature') {
       e.preventDefault();
       ctx.selectFeature(hit.feature.id, { silent: true });
       state.drag = {
@@ -600,15 +549,14 @@ const TOOLS = {
   line: lineTool,
   polygon: polygonTool,
   shape: shapeTool,
-  // pencil is constructed per-engine via makePencilTool (it owns state)
+  // pencil has no map-event handlers — see note above.
 };
-
-// Holds the per-engine pencil instance keyed by map.
-const pencilByMap = new WeakMap();
 
 /**
  * Public dispatcher invoked by the engine on every map event. Looks up
- * the active tool's handler for `eventName` and runs it.
+ * the active tool's handler for `eventName` and runs it. When the
+ * pencil tool is active every map event is ignored here — the
+ * dedicated PointerEvent listener in engine.js handles strokes.
  *
  * @param {string} eventName
  * @param {object} ctx
@@ -616,15 +564,6 @@ const pencilByMap = new WeakMap();
  */
 export function runTool(eventName, ctx, e) {
   const tool = ctx.state.tool;
-  if (tool === 'pencil') {
-    let p = pencilByMap.get(ctx.map);
-    if (!p) {
-      p = makePencilTool(ctx);
-      pencilByMap.set(ctx.map, p);
-    }
-    p[eventName]?.(ctx, e);
-    return;
-  }
   const t = TOOLS[tool];
   if (!t) return;
   t[eventName]?.(ctx, e);

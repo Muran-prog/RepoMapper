@@ -40,11 +40,11 @@ const SHAPE_DEFS = [
 ];
 
 const CONN_DEFS = [
-  { id: 'none',     label: 'Без зʼєднань', tip: 'Метки залишаються окремими', icon: I.connectionNone },
-  { id: 'sequence', label: 'Послідовно',    tip: 'Зʼєднати у порядку розміщення', icon: I.connectionSequence },
-  { id: 'optimal',  label: 'Оптимально',    tip: 'Найкоротший шлях через усі мітки (2-opt)', icon: I.connectionOptimal },
-  { id: 'mesh',     label: 'Усі з усіма',   tip: 'Зʼєднати кожну з кожною', icon: I.connectionMesh },
-  { id: 'hub',      label: 'Зірка',         tip: 'Перша мітка — центр',     icon: I.connectionHub },
+  { id: 'none',     label: 'Без зʼєднань', tip: 'Нові мітки не зʼєднуються автоматично', icon: I.connectionNone },
+  { id: 'sequence', label: 'Послідовно',    tip: 'Кожну нову мітку зʼєднувати з попередньою', icon: I.connectionSequence },
+  { id: 'optimal',  label: 'Короткий маршрут', tip: 'Одноразова дія: перебудувати авто-зʼєднання у найкоротший маршрут (режим вимкнеться)', icon: I.connectionOptimal },
+  { id: 'mesh',     label: 'Усі з усіма',   tip: 'Кожну нову мітку зʼєднувати з усіма попередніми', icon: I.connectionMesh },
+  { id: 'hub',      label: 'Зірка',         tip: 'Кожну нову мітку зʼєднувати з першою (центром)', icon: I.connectionHub },
 ];
 
 /**
@@ -91,6 +91,15 @@ export function renderDrawPanelBody() {
             </button>
           `)
           .join('')}
+      </div>
+      <div class="draw-shape-size">
+        <div class="slider-row">
+          <label class="slider-label" for="draw-shape-size">
+            <span>Розмір</span>
+            <span data-ctl="draw-shape-size-readout">100 px</span>
+          </label>
+          <input id="draw-shape-size" type="range" min="20" max="220" step="5" value="100" data-ctl="draw-shape-size">
+        </div>
       </div>
       <div class="draw-shape-sides" data-ctl="draw-shape-sides-row" hidden>
         <div class="slider-row">
@@ -260,6 +269,19 @@ export function mountDrawPanel({ engine, host }) {
     sidesSlider.addEventListener('input', apply);
   }
 
+  // Unified shape-size slider — one knob, every shape.
+  const sizeSlider = $('[data-ctl="draw-shape-size"]');
+  const sizeReadout = $('[data-ctl="draw-shape-size-readout"]');
+  if (sizeSlider) {
+    const apply = () => {
+      const n = Number(sizeSlider.value) || 100;
+      if (sizeReadout) sizeReadout.textContent = `${n} px`;
+      engine.setPrefs({ shapeSize: n });
+      updateSliderFill(sizeSlider);
+    };
+    sizeSlider.addEventListener('input', apply);
+  }
+
   // -------------------------------------------------------------------
   // Connection mode
   // -------------------------------------------------------------------
@@ -384,6 +406,12 @@ export function mountDrawPanel({ engine, host }) {
     sidesSlider.value = String(prefs.shapeSides ?? 6);
     if (sidesReadout) sidesReadout.textContent = String(prefs.shapeSides ?? 6);
     updateSliderFill(sidesSlider);
+  }
+  if (sizeSlider) {
+    const initSize = prefs.shapeSize ?? 100;
+    sizeSlider.value = String(initSize);
+    if (sizeReadout) sizeReadout.textContent = `${initSize} px`;
+    updateSliderFill(sizeSlider);
   }
 
   // -------------------------------------------------------------------

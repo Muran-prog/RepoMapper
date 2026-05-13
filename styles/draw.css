@@ -175,6 +175,7 @@
   color: var(--accent);
 }
 
+.draw-shape-size,
 .draw-shape-sides {
   margin-top: 8px;
 }
@@ -463,6 +464,16 @@
 /* The drawing UI never wants to capture pointer events on the in-flight
  * preview; MapLibre's GL canvas remains the single hit surface. */
 .maplibregl-canvas { caret-color: transparent; }
+
+/* When the pencil tool is armed, `freedraw.js` stamps
+ * `data-cart-pencil="1"` on the map container. Suppress the browser's
+ * native touch-scroll/pinch so pointermove events stream through
+ * uninterrupted — otherwise iOS Safari turns the first drag into a
+ * page scroll before our listener ever fires. */
+[data-cart-pencil="1"] .maplibregl-canvas-container,
+[data-cart-pencil="1"] .maplibregl-canvas {
+  touch-action: none;
+}
 
 /* ---------------------------------------------------------------------
  * Responsive

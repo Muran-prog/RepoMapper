@@ -186,19 +186,42 @@ function tourLength(tour, points) {
 }
 
 /**
- * 2-opt improvement. Repeatedly reverse sub-tours that shorten the
- * total length. Converges to a local minimum; combined with the NN
- * seed this is typically within a few percent of the true optimum.
+ * 2-opt improvement for an OPEN tour. Repeatedly reverses sub-tours
+ * that strictly reduce total length; terminates when a full pass
+ * finds no improvement.
  *
- * Bounded by `maxIterations` to keep the worst case predictable on
- * large N. For the marker counts a user would realistically place
- * (≤ ~50) it converges in a handful of passes.
+ * Every non-adjacent edge pair `(tour[i], tour[i+1])` vs
+ * `(tour[j], tour[j+1])` is considered for 1 ≤ i ≤ n-3 and
+ * i+2 ≤ j ≤ n-1. When `j == n-1` there is no "right" edge, so the
+ * swap replaces a single edge:
+ *   before = |ab|,   after = |ac|.
+ * Otherwise both edges flip:
+ *   before = |ab| + |cd|,   after = |ac| + |bd|.
+ *
+ * Critical correctness notes:
+ *
+ *   • The bound is `j < n` for every i. An earlier version special-
+ *     cased `i === 0` to skip `j = n-1` — that is correct for CLOSED
+ *     TSP (where reversing [1..n-1] is a no-op rotation) but wrong
+ *     for OPEN TSP, where it misses a common improvement that
+ *     swaps the first edge `tour[0]→tour[1]` for `tour[0]→tour[n-1]`.
+ *
+ *   • `b` is recomputed on every iteration of the j loop. After a
+ *     successful reversal `tour[i+1]` changes (it becomes what was
+ *     at tour[j]), so caching `b` once per `i` leaves stale data
+ *     in `before` for all subsequent j — either rejecting real
+ *     improvements or accepting phantom ones. The tiny extra
+ *     lookup per iteration is irrelevant versus the two haversine
+ *     calls already in the inner loop.
+ *
+ * For realistic marker counts (≤ ~50) this converges in a handful
+ * of passes; `maxIterations` is a safety net, not a hot loop bound.
  *
  * @param {Array<number>} initialTour
  * @param {Array<[number, number]>} points
  * @returns {Array<number>}
  */
-function twoOpt(initialTour, points, { maxIterations = 50 } = {}) {
+function twoOpt(initialTour, points, { maxIterations = 200 } = {}) {
   const tour = initialTour.slice();
   const n = tour.length;
   if (n < 4) return tour;
@@ -207,15 +230,16 @@ function twoOpt(initialTour, points, { maxIterations = 50 } = {}) {
     let improved = false;
     for (let i = 0; i < n - 2; i++) {
       const a = points[tour[i]];
-      const b = points[tour[i + 1]];
-      for (let j = i + 2; j < n - (i === 0 ? 1 : 0); j++) {
+      for (let j = i + 2; j < n; j++) {
+        // `b` may have been changed by an earlier successful swap
+        // in this pass; read it fresh every iteration.
+        const b = points[tour[i + 1]];
         const c = points[tour[j]];
-        const d = points[tour[j + 1]] ?? null;
-        // Compare current (ab + cd) vs swapped (ac + bd). The open-
-        // tour variant simply omits the segment past the last index.
-        const before = haversine(a, b) + (d ? haversine(c, d) : 0);
-        const after = haversine(a, c) + (d ? haversine(b, d) : 0);
-        if (after + 1e-6 < before) {
+        const hasRight = j + 1 < n;
+        const d = hasRight ? points[tour[j + 1]] : null;
+        const before = haversine(a, b) + (hasRight ? haversine(c, d) : 0);
+        const after = haversine(a, c) + (hasRight ? haversine(b, d) : 0);
+        if (after + 1e-9 < before) {
           // Reverse the sub-tour [i+1 .. j].
           let lo = i + 1;
           let hi = j;

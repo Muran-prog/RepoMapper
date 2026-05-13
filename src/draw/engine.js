@@ -36,16 +36,21 @@ import {
   makeLayers,
   findInsertBeforeLayer,
 } from './layers.js';
-import { buildConnections, formatDistance, haversine } from './connections.js';
+import {
+  connectionCoords,
+  haversine,
+  optimalTour,
+  formatDistance,
+} from './connections.js';
 import { listVertices, listMidpoints } from './edit.js';
 import {
   loadFeatures,
   saveFeatures,
   loadPrefs,
   savePrefs,
-  defaultPrefs,
 } from './store.js';
 import { runTool } from './tools.js';
+import { createFreeDrawRecorder } from './freedraw.js';
 
 const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
@@ -257,31 +262,69 @@ export function createDrawEngine(map) {
     canvas.style.cursor = map2cursor[state.tool] ?? '';
   };
 
+  /**
+   * Clear the on-canvas hover state. Called when the active tool
+   * changes so a stale "hovered feature" doesn't keep its highlight
+   * after the user switches into drawing mode and back.
+   */
+  const clearHover = () => {
+    if (!state.hoverId) return;
+    try {
+      map.setFeatureState(
+        { source: SOURCE_ID, id: state.hoverId },
+        { hover: false },
+      );
+    } catch { /* source may not exist — ignore */ }
+    state.hoverId = null;
+  };
+
   // -------------------------------------------------------------------
   // Renderer — build the FeatureCollection that drives the source.
   // -------------------------------------------------------------------
 
+  /**
+   * Length of a LineString in metres. Works for both straight (2-point)
+   * connections and densely-sampled geodesics — summing haversines
+   * between consecutive points equals the true arc length of the
+   * underlying geodesic, since each step IS the great-circle distance
+   * between those two samples.
+   */
+  const lineStringLengthMeters = (coords) => {
+    let total = 0;
+    for (let i = 1; i < coords.length; i++) {
+      total += haversine(coords[i - 1], coords[i]);
+    }
+    return total;
+  };
+
   const buildCollection = () => {
     const out = [];
 
-    // 1. Persistent user features.
-    for (const f of state.features.values()) out.push(f);
+    // 1. Persistent user features. Auto-connections are now stored as
+    //    permanent `kind: 'line'` features with `autoGen: true` on
+    //    their properties — so they flow through the same pipeline as
+    //    hand-drawn lines. Mode switches can't mutate them any more.
+    //
+    //    We stamp `displayOrder` on markers from insertion order so
+    //    the label layer renders a stable 1..N matching `markerOrder`.
+    const markerIndex = new Map();
+    state.markerOrder.forEach((mid, i) => markerIndex.set(mid, i + 1));
 
-    // 2. Auto-connections between markers.
-    const markers = state.markerOrder
-      .map((id) => state.features.get(id))
-      .filter((f) => f && f.geometry?.type === 'Point' && f.properties?.kind === 'marker')
-      .map((f) => ({ id: f.id, lngLat: f.geometry.coordinates }));
-    const { features: conns, totalMeters } = buildConnections(markers, {
-      mode: prefs.connectionMode,
-      geodesic: prefs.geodesic,
-    });
-    for (const c of conns) out.push(c);
+    for (const f of state.features.values()) {
+      if (f.properties?.kind === 'marker') {
+        const display = markerIndex.get(f.id);
+        if (display != null) {
+          out.push({ ...f, properties: { ...f.properties, displayOrder: display } });
+          continue;
+        }
+      }
+      out.push(f);
+    }
 
-    // 3. In-progress draft (line being authored, shape preview, …).
+    // 2. In-progress draft (line being authored, shape preview, …).
     if (state.draft) out.push(state.draft);
 
-    // 4. Vertex + midpoint handles for the selected feature.
+    // 3. Vertex + midpoint handles for the selected feature.
     if (state.selectedId && state.tool === 'select') {
       const sel = state.features.get(state.selectedId);
       if (sel) {
@@ -315,7 +358,22 @@ export function createDrawEngine(map) {
       }
     }
 
-    emit('metrics', { markers: markers.length, totalMeters, formatted: formatDistance(totalMeters) });
+    // Route-length stat is the sum of every auto-gen line's arc length.
+    // User-drawn lines don't count — they're arbitrary polylines and
+    // don't form a "route" semantically. Keeping the stat scoped to
+    // auto-gen features means it remains meaningful after mode switches
+    // (because those lines don't disappear).
+    let totalMeters = 0;
+    for (const f of state.features.values()) {
+      if (f.properties?.autoGen && f.geometry?.type === 'LineString') {
+        totalMeters += lineStringLengthMeters(f.geometry.coordinates);
+      }
+    }
+    emit('metrics', {
+      markers: state.markerOrder.length,
+      totalMeters,
+      formatted: formatDistance(totalMeters),
+    });
     return { type: 'FeatureCollection', features: out };
   };
 
@@ -340,7 +398,82 @@ export function createDrawEngine(map) {
   // Feature lifecycle helpers used by tools.
   // -------------------------------------------------------------------
 
-  const addFeature = (feature, { skipHistory = false } = {}) => {
+  /**
+   * Build an auto-gen line feature from one marker to another. The
+   * feature is a regular `kind: 'line'` so all the rendering, editing
+   * and persistence paths treat it uniformly — the only discriminator
+   * is `properties.autoGen` plus `properties.autoMode` (which records
+   * the mode that produced it, for diagnostics and the route-stat
+   * filter). Marker endpoints are tracked via `fromId`/`toId` for
+   * possible future cleanup on marker deletion.
+   */
+  const makeAutoGenLine = (from, to, autoMode) => {
+    const id = nextId('line');
+    const coords = connectionCoords(
+      from.geometry.coordinates,
+      to.geometry.coordinates,
+      { geodesic: !!prefs.geodesic },
+    );
+    return {
+      type: 'Feature',
+      id,
+      geometry: { type: 'LineString', coordinates: coords },
+      properties: {
+        kind: 'line',
+        color: prefs.color,
+        fill: prefs.fill,
+        weight: prefs.weight,
+        opacity: prefs.opacity,
+        autoGen: true,
+        autoMode,
+        fromId: from.id,
+        toId: to.id,
+        createdAt: Date.now(),
+      },
+    };
+  };
+
+  /**
+   * Freeze auto-connections for the just-placed marker into permanent
+   * line features. Mutates `state.features` in place — does NOT push
+   * history (the caller's `addFeature` already did) and does not
+   * rerender (the caller does that one step up).
+   *
+   *   • `sequence`: one line from marker[N-1] → marker[N].
+   *   • `hub`:      one line from marker[0]   → marker[N].
+   *   • `mesh`:     N lines from every prior marker → marker[N].
+   *   • `optimal`:  handled as a one-shot on mode-switch, not here.
+   *   • `none`:     no auto-connection.
+   *
+   * After this returns, the created lines are permanent — switching
+   * connection mode later leaves them untouched.
+   */
+  const autoConnectOnMarker = (newMarkerId) => {
+    const mode = prefs.connectionMode;
+    if (mode === 'none' || mode === 'optimal') return;
+
+    const markers = state.markerOrder
+      .map((mid) => state.features.get(mid))
+      .filter((f) => f && f.geometry?.type === 'Point' && f.properties?.kind === 'marker');
+    const newIdx = markers.findIndex((m) => m.id === newMarkerId);
+    if (newIdx < 1) return; // First marker has nothing to connect to.
+    const to = markers[newIdx];
+
+    if (mode === 'sequence') {
+      const ln = makeAutoGenLine(markers[newIdx - 1], to, 'sequence');
+      state.features.set(ln.id, ln);
+    } else if (mode === 'hub') {
+      const ln = makeAutoGenLine(markers[0], to, 'hub');
+      state.features.set(ln.id, ln);
+    } else if (mode === 'mesh') {
+      for (let i = 0; i < newIdx; i++) {
+        const ln = makeAutoGenLine(markers[i], to, 'mesh');
+        state.features.set(ln.id, ln);
+      }
+    }
+  };
+
+  const addFeature = (feature, { skipHistory = false, skipAutoConnect = false } = {}) => {
     if (!skipHistory) pushHistory();
     const id = feature.id ?? nextId(feature.properties?.kind ?? 'f');
     feature.id = id;
@@ -351,6 +484,10 @@ export function createDrawEngine(map) {
       state.markerOrder.push(id);
       // Stamp the per-marker number so the symbol layer can render it.
       feature.properties.order = state.markerOrder.length;
+      // Freeze auto-connections inline so the history snapshot already
+      // taken above covers both the marker and its connection lines —
+      // one undo reverses the whole click.
+      if (!skipAutoConnect) autoConnectOnMarker(id);
     }
     schedulePersist();
     emit('change');
@@ -422,6 +559,80 @@ export function createDrawEngine(map) {
   };
 
   // -------------------------------------------------------------------
+  // Pencil recorder — a DOM-listener stroke capture installed/removed
+  // as the pencil tool is armed/disarmed. Runs entirely on native
+  // PointerEvents so mouse, touch and pen input all work uniformly.
+  // -------------------------------------------------------------------
+  const pencilRecorder = createFreeDrawRecorder(map, {
+    epsilonPx: 2.2,
+    smooth: true,
+    onPreview: (samples) => {
+      if (!samples || samples.length < 2) {
+        if (state.draft?.properties?.kind === 'pencil-draft') {
+          state.draft = null;
+          rerender();
+        }
+        return;
+      }
+      const coords = [];
+      for (const [x, y] of samples) {
+        try {
+          const ll = map.unproject([x, y]);
+          coords.push([ll.lng, ll.lat]);
+        } catch { /* skip invalid */ }
+      }
+      if (coords.length < 2) return;
+      state.draft = {
+        type: 'Feature',
+        id: '__draft_pencil',
+        geometry: { type: 'LineString', coordinates: coords },
+        properties: {
+          kind: 'pencil-draft',
+          color: prefs.color,
+          weight: prefs.weight,
+          opacity: prefs.opacity,
+          preview: true,
+        },
+      };
+      rerender();
+    },
+    onCommit: (geom) => {
+      const hadDraft = !!state.draft;
+      state.draft = null;
+      if (geom) {
+        addFeature({
+          type: 'Feature',
+          id: nextId('pencil'),
+          geometry: geom,
+          properties: {
+            kind: 'pencil',
+            color: prefs.color,
+            fill: prefs.fill,
+            weight: prefs.weight,
+            opacity: prefs.opacity,
+          },
+        });
+      } else if (hadDraft) {
+        rerender();
+      }
+    },
+  });
+
+  /**
+   * Toggle the pencil recorder based on the active tool. Idempotent —
+   * attach/detach internally short-circuit if already in the desired
+   * state. Called from setTool() and also after style rebuilds so a
+   * theme swap can't orphan the listeners.
+   */
+  const syncPencilLifecycle = () => {
+    if (state.enabled && state.tool === 'pencil') {
+      pencilRecorder.attach();
+    } else {
+      pencilRecorder.detach();
+    }
+  };
+
+  // -------------------------------------------------------------------
   // Map event wiring. One listener per map event; the tool dispatcher
   // (`runTool`) reads `state.tool` and routes to the right handler.
   // -------------------------------------------------------------------
@@ -479,10 +690,14 @@ export function createDrawEngine(map) {
 
   const onStyleData = () => {
     // Style rebuild — our source/layers were wiped. Reinstate them and
-    // push the current state back so drawings reappear.
+    // push the current state back so drawings reappear. The pencil
+    // recorder listens on the map CONTAINER, not the style, so it
+    // survives a rebuild unchanged — but we still re-sync in case a
+    // container swap ever happens (defensive).
     queueMicrotask(() => {
       ensureLayers();
       rerender();
+      syncPencilLifecycle();
     });
   };
 
@@ -513,6 +728,7 @@ export function createDrawEngine(map) {
   map.once('load', () => {
     ensureLayers();
     rerender();
+    syncPencilLifecycle();
   });
   window.addEventListener('keydown', onKeyDown);
 
@@ -544,9 +760,41 @@ export function createDrawEngine(map) {
   }
 
   // Restore persisted features.
+  //
+  // Legacy upgrade path: in earlier versions, auto-connections were
+  // ephemeral `kind: 'connection'` features produced on every render
+  // from `connectionMode`. They were never persisted, but some older
+  // internal builds may have tried to save them — normalise those to
+  // permanent `kind: 'line'` auto-gen entries so the upgrade is loss-
+  // less. See the follow-up `backfillAutoConnections` step below for
+  // the case where users had markers + a live mode but no saved lines.
   const persisted = loadFeatures();
+  let sawLegacyConnection = false;
   for (const f of persisted) {
-    if (f.properties?.kind === 'connection') continue; // connections are recomputed
+    if (f.properties?.kind === 'connection') {
+      sawLegacyConnection = true;
+      const coords = f.geometry?.coordinates;
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      const lid = nextId('line');
+      state.features.set(lid, {
+        type: 'Feature',
+        id: lid,
+        geometry: { type: 'LineString', coordinates: coords.slice() },
+        properties: {
+          kind: 'line',
+          color: f.properties.color ?? prefs.color,
+          fill: f.properties.fill ?? prefs.fill,
+          weight: f.properties.weight ?? prefs.weight,
+          opacity: f.properties.opacity ?? prefs.opacity,
+          autoGen: true,
+          autoMode: f.properties.connectionMode ?? 'sequence',
+          fromId: f.properties.fromId,
+          toId: f.properties.toId,
+          createdAt: f.properties.createdAt ?? Date.now(),
+        },
+      });
+      continue;
+    }
     state.features.set(f.id, f);
     if (f.properties?.kind === 'marker') {
       state.markerOrder.push(f.id);
@@ -558,6 +806,58 @@ export function createDrawEngine(map) {
     const m = state.features.get(mid);
     if (m && m.properties) m.properties.order = i + 1;
   });
+
+  /**
+   * Second leg of the legacy upgrade: if the user had a live
+   * connection mode + ≥ 2 markers but NO auto-gen lines in storage
+   * (because the old code never persisted the ephemeral connections),
+   * synthesise them now as permanent auto-gen lines matching the
+   * stored mode. Runs exactly once — a guard on any existing autoGen
+   * feature means reloads after the first upgrade are no-ops.
+   */
+  const backfillAutoConnections = () => {
+    const mode = prefs.connectionMode;
+    if (mode === 'none') return;
+    if (state.markerOrder.length < 2) return;
+    for (const f of state.features.values()) {
+      if (f.properties?.autoGen) return; // already backfilled
+    }
+    const markers = state.markerOrder
+      .map((mid) => state.features.get(mid))
+      .filter((f) => f && f.geometry?.type === 'Point' && f.properties?.kind === 'marker');
+    if (markers.length < 2) return;
+
+    const addLine = (from, to, autoMode) => {
+      const ln = makeAutoGenLine(from, to, autoMode);
+      state.features.set(ln.id, ln);
+    };
+    if (mode === 'sequence') {
+      for (let i = 1; i < markers.length; i++) addLine(markers[i - 1], markers[i], 'sequence');
+    } else if (mode === 'hub') {
+      for (let i = 1; i < markers.length; i++) addLine(markers[0], markers[i], 'hub');
+    } else if (mode === 'mesh') {
+      for (let i = 0; i < markers.length; i++) {
+        for (let j = i + 1; j < markers.length; j++) addLine(markers[i], markers[j], 'mesh');
+      }
+    } else if (mode === 'optimal') {
+      const pts = markers.map((m) => m.geometry.coordinates);
+      const tour = optimalTour(pts);
+      for (let i = 0; i < tour.length - 1; i++) {
+        addLine(markers[tour[i]], markers[tour[i + 1]], 'optimal');
+      }
+      // Optimal is a one-shot; revert mode so a future marker placement
+      // doesn't re-trigger auto-connection under the wrong semantics.
+      prefs.connectionMode = 'none';
+      savePrefs({ connectionMode: 'none' });
+    }
+    schedulePersist();
+  };
+  // Only backfill when we actually detect a legacy situation: either
+  // a legacy `kind: 'connection'` entry was filtered above, or the
+  // user has live markers with a non-none mode but no autogen lines.
+  if (sawLegacyConnection || (prefs.connectionMode !== 'none' && state.markerOrder.length >= 2)) {
+    backfillAutoConnections();
+  }
   rerender();
 
   // -------------------------------------------------------------------
@@ -567,6 +867,7 @@ export function createDrawEngine(map) {
   /** Activate the engine (subscribed to map events). */
   const enable = () => {
     state.enabled = true;
+    syncPencilLifecycle();
     setLayerCursor();
     emit('enabled', true);
   };
@@ -574,6 +875,9 @@ export function createDrawEngine(map) {
   const disable = () => {
     state.enabled = false;
     state.draft = null;
+    state.drag = null;
+    clearHover();
+    syncPencilLifecycle();
     setLayerCursor();
     rerender();
     emit('enabled', false);
@@ -582,19 +886,104 @@ export function createDrawEngine(map) {
   const setTool = (tool) => {
     if (state.tool === tool) return;
     state.tool = tool;
+    // One-shot invariants that must hold immediately after a tool
+    // switch, regardless of which tool we came from or which we're
+    // heading to. Keeping them here (instead of sprinkled in each
+    // tool handler) is what makes the state model predictable.
     state.draft = null;
+    state.drag = null;
+    clearHover();
     savePrefs({ tool });
     prefs.tool = tool;
+    syncPencilLifecycle();
     setLayerCursor();
     rerender();
     emit('tool', tool);
   };
 
+  /**
+   * Solve the open TSP over the current markers, REPLACE every prior
+   * auto-generated connection with the tour, and revert the mode to
+   * `'none'`. Called when the user selects "optimal" — it's a one-shot
+   * action, not an ongoing mode. Returns the number of lines added.
+   *
+   * The rationale: "optimal" is an OPERATION ("compute the best route
+   * for what I have now"), not a MODE ("connect every new marker
+   * optimally to everything else"). Treating it as a mode would require
+   * re-solving the TSP on every new marker and would move existing
+   * committed tour legs around in the process — the same architectural
+   * problem users hit with the old sequence/hub/mesh modes.
+   *
+   * Replacement (not additive) semantics matter: users who had been
+   * drawing in sequence/hub/mesh and click "optimal" want their route
+   * recomputed, not a second overlapping graph dropped on top. We
+   * strip every feature with `properties.autoGen` before committing
+   * the new tour; user-drawn lines / polygons / shapes / markers are
+   * untouched.
+   */
+  const runOptimalOnce = () => {
+    const markers = state.markerOrder
+      .map((mid) => state.features.get(mid))
+      .filter((f) => f && f.geometry?.type === 'Point' && f.properties?.kind === 'marker');
+    if (markers.length < 2) return 0;
+
+    pushHistory();
+
+    // Clear every pre-existing auto-gen connection so the new tour
+    // replaces — rather than overlays — whatever sequence/hub/mesh
+    // route was previously visible. Safe during iteration: JS Map
+    // iteration is insertion-order and tolerates deletion of the
+    // current entry.
+    for (const [id, f] of state.features) {
+      if (f.properties?.autoGen) state.features.delete(id);
+    }
+    // A cleared auto-gen line might have been the currently-selected
+    // feature — drop the selection so the handle layer doesn't try to
+    // render vertices for a feature that no longer exists.
+    if (state.selectedId && !state.features.has(state.selectedId)) {
+      state.selectedId = null;
+    }
+
+    const pts = markers.map((m) => m.geometry.coordinates);
+    const tour = optimalTour(pts);
+    let added = 0;
+    for (let i = 0; i < tour.length - 1; i++) {
+      const from = markers[tour[i]];
+      const to = markers[tour[i + 1]];
+      const ln = makeAutoGenLine(from, to, 'optimal');
+      state.features.set(ln.id, ln);
+      added++;
+    }
+    schedulePersist();
+    emit('change');
+    rerender();
+    return added;
+  };
+
   const setConnectionMode = (mode) => {
+    if (mode === 'optimal') {
+      // Treat optimal as a one-shot action: run the solver NOW over
+      // the current markers and revert the mode to `'none'` so it
+      // doesn't try to apply again on the next marker placement.
+      runOptimalOnce();
+      if (prefs.connectionMode !== 'none') {
+        prefs.connectionMode = 'none';
+        savePrefs({ connectionMode: 'none' });
+        emit('connectionMode', 'none');
+      } else {
+        // Re-emit so the UI re-selects the "none" radio even if it
+        // was already there (user clicking optimal shouldn't leave
+        // the "optimal" pill highlighted).
+        emit('connectionMode', 'none');
+      }
+      return;
+    }
     if (prefs.connectionMode === mode) return;
     prefs.connectionMode = mode;
     savePrefs({ connectionMode: mode });
-    rerender();
+    // No rerender needed — mode change affects only FUTURE marker
+    // placements, never existing features. Emit so the panel's radio
+    // group updates to reflect the new selection.
     emit('connectionMode', mode);
   };
 
@@ -608,14 +997,22 @@ export function createDrawEngine(map) {
   const setPrefs = (patch) => {
     Object.assign(prefs, patch);
     savePrefs(patch);
-    if (patch.color || patch.fill || patch.weight) {
-      // Layer paint expressions reference the prefs at composition time;
-      // a colour change is best reflected by re-adding layers with the
-      // new defaults. Cheap because the source isn't replaced.
-      for (const layer of Object.values(LAYERS)) {
-        if (map.getLayer(layer)) map.removeLayer(layer);
+    // The layer paint expressions read every style property from each
+    // feature's own `properties` bag (`color`, `fill`, `weight`,
+    // `opacity`). New features pick up the updated prefs automatically
+    // via styleBag(prefs) in tools.js — no need to rebuild layers.
+    //
+    // We DO push the new colour into the vertex-handle layers, since
+    // those don't read from feature properties (handles are synthetic
+    // and have no user-controlled colour). Handle stroke colour
+    // matches the palette so it feels connected to the rest.
+    if (patch.color) {
+      for (const id of [LAYERS.vertex, LAYERS.vertexMid]) {
+        if (map.getLayer(id)) {
+          try { map.setPaintProperty(id, 'circle-stroke-color', prefs.color); }
+          catch { /* */ }
+        }
       }
-      ensureLayers();
     }
     rerender();
     emit('prefs', { ...prefs });
@@ -664,6 +1061,7 @@ export function createDrawEngine(map) {
   };
 
   const dispose = () => {
+    pencilRecorder.dispose();
     map.off('click', onClick);
     map.off('dblclick', onDblClick);
     map.off('mousedown', onMouseDown);
