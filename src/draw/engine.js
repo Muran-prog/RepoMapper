@@ -253,30 +253,33 @@ export function createDrawEngine(map) {
 
   /**
    * Install the engine's source + layers if the style is far enough
-   * along to accept them. Bails silently when the style is still
-   * loading — the `styledata`/`load` listeners below retry as soon as
-   * the style is ready, so the very first user-visible call succeeds.
+   * along to accept them. Returns `true` once the source AND every
+   * expected layer are present in the live style; `false` while we're
+   * still waiting for the style to settle.
    *
-   * Re-entrant by design: it gets called from three places — install
-   * time, the `load` callback, and the `styledata` listener that fires
-   * on every theme/quality rebuild.
+   * Re-entrant by design: it gets called from install time, the
+   * `load` callback, the `styledata` listener that fires on every
+   * theme/quality/mode rebuild, AND the `idle` fallback that catches
+   * the slower `setStyle` cases where `styledata` only fires while
+   * `isStyleLoaded()` is still false.
    */
   const ensureLayers = () => {
-    if (!map.getStyle) return;
+    if (!map.getStyle) return false;
     // MapLibre throws on addSource/addLayer until the style has fully
     // parsed. The `isStyleLoaded` probe is the canonical guard; older
     // builds may not expose it, in which case we fall back to a
     // try/catch on addSource alone.
-    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return;
+    if (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) return false;
     if (!map.getSource(SOURCE_ID)) {
       try {
         map.addSource(SOURCE_ID, makeSource());
       } catch {
-        // Style still settling — let the next styledata try again.
-        return;
+        // Style still settling — let the next styledata / idle try again.
+        return false;
       }
     }
     const before = findInsertBeforeLayer(map);
+    let allLayersPresent = true;
     for (const spec of makeLayers({
       color: prefs.color,
       fill: prefs.fill,
@@ -286,10 +289,14 @@ export function createDrawEngine(map) {
         try { map.addLayer(spec, before); }
         catch {
           try { map.addLayer(spec); }
-          catch { /* style still settling — retry on next styledata */ }
+          catch {
+            // Style still settling — retry on next styledata / idle.
+            allLayersPresent = false;
+          }
         }
       }
     }
+    return allLayersPresent && !!map.getSource(SOURCE_ID);
   };
 
   const setLayerCursor = () => {
@@ -434,20 +441,11 @@ export function createDrawEngine(map) {
   };
 
   const rerender = () => {
-    ensureLayers();
-    const src = map.getSource(SOURCE_ID);
-    if (!src) return;
-    src.setData(buildCollection());
-
-    // Sync feature-state for selection / hover so the layer paint
-    // expressions can pick them up. setFeatureState requires the
-    // feature to be visible in the source.
-    if (state.selectedId) {
-      try {
-        map.setFeatureState({ source: SOURCE_ID, id: state.selectedId }, { selected: true });
-      } catch { /* feature may not exist yet */ }
+    if (!tryInstallAndRender()) {
+      // Style is mid-swap — schedule a single retry once it settles
+      // so the engine doesn't sit on stale state forever.
+      scheduleStyleSettleRetry();
     }
-    setLayerCursor();
   };
 
   // -------------------------------------------------------------------
@@ -924,12 +922,67 @@ export function createDrawEngine(map) {
     // recorder listens on the map CONTAINER, not the style, so it
     // survives a rebuild unchanged — but we still re-sync in case a
     // container swap ever happens (defensive).
+    //
+    // `setStyle({ diff: false })` (used by the theme / mode switcher)
+    // emits multiple `styledata` events while the style is still
+    // mid-swap. During those early events `isStyleLoaded()` reports
+    // false, so `ensureLayers` correctly bails — but a later
+    // `styledata` may not arrive until the user touches the map again,
+    // and that left a window where the drawings stayed invisible
+    // until the first new gesture poked the source back into life.
+    //
+    // The fix: when the early attempt bails, fall back to a one-shot
+    // `idle` listener. `idle` is guaranteed to fire after every
+    // setStyle once the new style finishes settling, so we always
+    // converge on a ready state without spamming retries.
     queueMicrotask(() => {
-      ensureLayers();
-      rerender();
-      syncPencilLifecycle();
-      syncEraserLifecycle();
+      const ready = tryInstallAndRender();
+      if (!ready) scheduleStyleSettleRetry();
     });
+  };
+
+  /**
+   * Try to install the engine's source/layers and push the current
+   * collection. Returns `true` when both succeeded, `false` when the
+   * style was still mid-swap. Safe to call repeatedly — every step is
+   * idempotent.
+   */
+  const tryInstallAndRender = () => {
+    const installed = ensureLayers();
+    const src = map.getSource(SOURCE_ID);
+    if (!installed || !src) return false;
+    try {
+      src.setData(buildCollection());
+    } catch {
+      return false;
+    }
+    if (state.selectedId) {
+      try {
+        map.setFeatureState({ source: SOURCE_ID, id: state.selectedId }, { selected: true });
+      } catch { /* feature may not exist yet */ }
+    }
+    setLayerCursor();
+    syncPencilLifecycle();
+    syncEraserLifecycle();
+    return true;
+  };
+
+  // One-shot retry latch. Multiple `styledata` events during a single
+  // `setStyle` would otherwise pile up a stack of `idle` listeners; the
+  // flag debounces them down to a single retry per swap.
+  let styleSettleRetryArmed = false;
+  const scheduleStyleSettleRetry = () => {
+    if (styleSettleRetryArmed) return;
+    styleSettleRetryArmed = true;
+    const retry = () => {
+      styleSettleRetryArmed = false;
+      tryInstallAndRender();
+    };
+    // `idle` fires after every setStyle once the new style has fully
+    // settled (sources registered, sprite/glyphs loaded, first frame
+    // rendered) — that's the canonical "done" signal in MapLibre and
+    // the most reliable single hook to retry installation on.
+    map.once('idle', retry);
   };
 
   // -------------------------------------------------------------------
