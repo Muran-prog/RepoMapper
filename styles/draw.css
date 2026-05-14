@@ -476,6 +476,49 @@
 }
 
 /* ---------------------------------------------------------------------
+ * Eraser — DOM-overlay cursor
+ *
+ * The eraser tool draws a circle the size of the erase radius right on
+ * the map container. We use a DOM overlay (rather than a CSS `cursor:
+ * url(...)`) so the preview can resize live as the user drags the
+ * "Розмір гумки" slider, and so the radius scales in true CSS pixels
+ * regardless of OS cursor-size policies.
+ *
+ * The element is positioned via `transform: translate(...)` so updates
+ * stay on the GPU compositor and never trigger layout. While the
+ * eraser is armed we also flip `touch-action: none` so the gesture
+ * doesn't get hijacked into a page scroll on touch devices.
+ * ------------------------------------------------------------------- */
+
+[data-cart-eraser="1"] .maplibregl-canvas-container,
+[data-cart-eraser="1"] .maplibregl-canvas {
+  touch-action: none;
+}
+
+.cart-eraser-cursor {
+  /* Outline matches the destructive action palette so users read it
+   * as "things will be removed", complementing the .draw-danger button
+   * styling on Очистити. Soft drop shadow + light fill make the disk
+   * legible over both the bright and dark hypsometric ramps. */
+  border: 1.5px solid color-mix(in srgb, #c4402f 80%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, #c4402f 12%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.55) inset,
+    0 1px 2px rgba(0, 0, 0, 0.35);
+  z-index: 4;
+}
+
+[data-theme="dark"] .cart-eraser-cursor {
+  border-color: color-mix(in srgb, #ff7a6b 85%, transparent);
+  background: color-mix(in srgb, #ff7a6b 14%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cart-eraser-cursor { box-shadow: none; }
+}
+
+/* ---------------------------------------------------------------------
  * Responsive
  * ------------------------------------------------------------------- */
 

@@ -41,6 +41,15 @@ export const DRAW_ICONS = Object.freeze({
     <path d="M4 20 C 8 12 16 12 20 4"/>
     <circle cx="4" cy="20" r="1.2" fill="currentColor" stroke="none"/>
   `),
+  // Eraser — classic rubber/eraser block tilted along a diagonal so the
+  // square corner reads as the active "tip" pointing toward the bottom-
+  // left of the icon. The diagonal divider hints at the two-tone
+  // schoolbook look; small flecks underneath suggest the wiped-off mark.
+  eraser: stroke(`
+    <path d="M3.5 17 L11 9.5 a2 2 0 0 1 2.8 0 L19.5 15.2 a2 2 0 0 1 0 2.8 L17.3 20.2 a2 2 0 0 1 -1.4 0.6 H8 a2 2 0 0 1 -1.4 -0.6 L3.5 17 z"/>
+    <path d="M9 11.5 L17.5 20"/>
+    <path d="M5 21 H10"/>
+  `),
 
   // ----- Shape templates -----------------------------------------------
   shapeCircle: stroke(`

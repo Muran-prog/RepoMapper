@@ -75,6 +75,7 @@ import {
 } from './store.js';
 import { runTool } from './tools.js';
 import { createFreeDrawRecorder } from './freedraw.js';
+import { createEraserRecorder, eraseFeatureInRadius } from './eraser.js';
 
 const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
@@ -309,6 +310,10 @@ export function createDrawEngine(map) {
       pencil: 'crosshair',
       shape: 'crosshair',
       polygon: 'crosshair',
+      // Eraser uses a DOM overlay (`.cart-eraser-cursor`) for its
+      // size-aware preview, so the native cursor must get out of the
+      // way — `none` hides the OS arrow without disabling clicks.
+      eraser: 'none',
     };
     canvas.style.cursor = map2cursor[state.tool] ?? '';
   };
@@ -761,6 +766,103 @@ export function createDrawEngine(map) {
   };
 
   // -------------------------------------------------------------------
+  // Eraser recorder — owns its own pointer listeners so the gesture
+  // works on touch as well as mouse, and so the in-flight cursor
+  // overlay can be drawn once into the map container without fighting
+  // with MapLibre's own pan/zoom handlers.
+  //
+  // History coalescing: one drag = one undo step. We push a single
+  // snapshot at pointerdown via `onStrokeStart`, then every per-tick
+  // erase mutates `state.features` directly with `skipHistory`. On
+  // pointerup the last state of the stroke is what `state` holds, so
+  // a subsequent Ctrl+Z restores the pre-drag world in one step.
+  // -------------------------------------------------------------------
+
+  /**
+   * Apply the eraser disk centred at `[lng, lat]` once. Walks every
+   * persistent feature, deletes those entirely covered, splits the
+   * partially-covered LineStrings (lines / pencils / auto-gen
+   * connections) into surviving fragments, and never touches features
+   * the disk doesn't intersect.
+   *
+   * No history push here — the caller (the eraser recorder) frames the
+   * whole drag with a single `pushHistory` at stroke start, so each
+   * tick coalesces into that one undo step.
+   *
+   * @param {[number, number]} centerLngLat
+   */
+  const eraseAt = (centerLngLat) => {
+    const radiusPx = Math.max(2, Number(prefs.eraserSize) || 30);
+    let mutated = false;
+
+    // Snapshot the iteration target — `state.features` may grow with
+    // replacement fragments inside the loop, and we don't want to
+    // re-scan our own outputs (their IDs are fresh, so they were
+    // born OUTSIDE the disk by construction).
+    const snapshotIds = Array.from(state.features.keys());
+    for (const id of snapshotIds) {
+      const feature = state.features.get(id);
+      if (!feature) continue;
+      // Skip drafts/handles entirely — those live in the rendered
+      // collection but not in `state.features`, so they can't be hit
+      // here in the first place. Defensive guard for synthetic kinds
+      // that might one day end up persisted by mistake.
+      const kind = feature.properties?.kind;
+      if (kind === 'vertex' || kind === 'vertex-mid') continue;
+
+      const result = eraseFeatureInRadius(feature, centerLngLat, radiusPx, map);
+      if (result === 'unchanged') continue;
+
+      mutated = true;
+      state.features.delete(id);
+      if (state.selectedId === id) state.selectedId = null;
+      // Drop the marker from the ordered list if it was one. Replacement
+      // fragments are LineStrings (eraser only splits lines), so they
+      // never re-enter `markerOrder`.
+      const orderIdx = state.markerOrder.indexOf(id);
+      if (orderIdx >= 0) state.markerOrder.splice(orderIdx, 1);
+
+      for (const piece of result.replace) {
+        const newId = nextId(piece.properties?.kind ?? 'erased');
+        piece.id = newId;
+        state.features.set(newId, piece);
+      }
+    }
+
+    if (mutated) {
+      // Renumber markers after a marker erasure so labels stay 1..N.
+      state.markerOrder.forEach((mid, i) => {
+        const m = state.features.get(mid);
+        if (m && m.properties) m.properties.order = i + 1;
+      });
+      schedulePersist();
+      emit('change');
+      rerender();
+    }
+  };
+
+  const eraserRecorder = createEraserRecorder(map, {
+    getRadius: () => Number(prefs.eraserSize) || 30,
+    onStrokeStart: () => { pushHistory(); },
+    onErase: (lngLat) => { eraseAt(lngLat); },
+    // No onStrokeEnd payload — the per-tick mutations already drove
+    // schedulePersist/emit, so all that's left at pointerup is to
+    // release the gesture suspension, which the recorder does itself.
+  });
+
+  /**
+   * Toggle the eraser recorder based on the active tool. Mirrors
+   * `syncPencilLifecycle` — same idempotent attach/detach contract.
+   */
+  const syncEraserLifecycle = () => {
+    if (state.enabled && state.tool === 'eraser') {
+      eraserRecorder.attach();
+    } else {
+      eraserRecorder.detach();
+    }
+  };
+
+  // -------------------------------------------------------------------
   // Map event wiring. One listener per map event; the tool dispatcher
   // (`runTool`) reads `state.tool` and routes to the right handler.
   // -------------------------------------------------------------------
@@ -826,6 +928,7 @@ export function createDrawEngine(map) {
       ensureLayers();
       rerender();
       syncPencilLifecycle();
+      syncEraserLifecycle();
     });
   };
 
@@ -857,6 +960,7 @@ export function createDrawEngine(map) {
     ensureLayers();
     rerender();
     syncPencilLifecycle();
+    syncEraserLifecycle();
   });
   window.addEventListener('keydown', onKeyDown);
 
@@ -943,6 +1047,7 @@ export function createDrawEngine(map) {
   const enable = () => {
     state.enabled = true;
     syncPencilLifecycle();
+    syncEraserLifecycle();
     setLayerCursor();
     emit('enabled', true);
   };
@@ -953,6 +1058,7 @@ export function createDrawEngine(map) {
     state.drag = null;
     clearHover();
     syncPencilLifecycle();
+    syncEraserLifecycle();
     setLayerCursor();
     rerender();
     emit('enabled', false);
@@ -971,6 +1077,7 @@ export function createDrawEngine(map) {
     savePrefs({ tool });
     prefs.tool = tool;
     syncPencilLifecycle();
+    syncEraserLifecycle();
     setLayerCursor();
     rerender();
     emit('tool', tool);
@@ -1103,6 +1210,9 @@ export function createDrawEngine(map) {
         }
       }
     }
+    // Resize the eraser cursor immediately so the user sees their
+    // slider adjustment without having to nudge the pointer.
+    if ('eraserSize' in patch) eraserRecorder.syncRadius();
     rerender();
     emit('prefs', { ...prefs });
   };
@@ -1151,6 +1261,7 @@ export function createDrawEngine(map) {
 
   const dispose = () => {
     pencilRecorder.dispose();
+    eraserRecorder.dispose();
     map.off('click', onClick);
     map.off('dblclick', onDblClick);
     map.off('mousedown', onMouseDown);

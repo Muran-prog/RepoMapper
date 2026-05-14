@@ -29,6 +29,12 @@
  *                                         drives every shape's initial size
  *                                         so a circle, star and rectangle
  *                                         all come out visually similar.
+ * @property {number} eraserSize           Eraser radius in PIXELS at the
+ *                                         current zoom. Drives both the
+ *                                         on-canvas cursor preview and the
+ *                                         hit-test radius used by the
+ *                                         eraser tool when removing /
+ *                                         splitting features.
  * @property {string} color                CSS colour for new features.
  * @property {string} fill                 CSS fill for polygons.
  * @property {number} weight               Line weight in px.
@@ -71,6 +77,7 @@ export function defaultPrefs() {
     shapeType: 'circle',
     shapeSides: 6,
     shapeSize: 100,
+    eraserSize: 30,
     color: '#c66809',
     fill: '#c66809',
     weight: 3,

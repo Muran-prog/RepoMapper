@@ -29,6 +29,7 @@ const TOOL_DEFS = [
   { id: 'polygon', label: 'Полігон',    tip: 'Накреслити багатокутник', icon: I.polygon },
   { id: 'pencil',  label: 'Олівець',    tip: 'Вільне малювання',        icon: I.pencil },
   { id: 'shape',   label: 'Фігура',     tip: 'Готова фігура',            icon: I.shapeHex },
+  { id: 'eraser',  label: 'Гумка',      tip: 'Стерти намальоване',       icon: I.eraser },
 ];
 
 const SHAPE_DEFS = [
@@ -117,6 +118,17 @@ export function renderDrawPanelBody() {
           </label>
           <input id="draw-shape-sides" type="range" min="3" max="12" step="1" value="6" data-ctl="draw-shape-sides">
         </div>
+      </div>
+    </div>
+
+    <div class="panel-group draw-eraser-group" data-ctl="draw-eraser-group" hidden>
+      <h4 class="panel-group-title">Гумка</h4>
+      <div class="slider-row">
+        <label class="slider-label" for="draw-eraser-size">
+          <span>Розмір гумки</span>
+          <span data-ctl="draw-eraser-size-readout">30 px</span>
+        </label>
+        <input id="draw-eraser-size" type="range" min="5" max="120" step="5" value="30" data-ctl="draw-eraser-size">
       </div>
     </div>
 
@@ -251,6 +263,12 @@ export function mountDrawPanel({ engine, host }) {
     group.hidden = tool !== 'shape';
   };
 
+  const refreshEraserGroup = (tool) => {
+    const group = $('[data-ctl="draw-eraser-group"]');
+    if (!group) return;
+    group.hidden = tool !== 'eraser';
+  };
+
   // -------------------------------------------------------------------
   // Shape sub-selector
   // -------------------------------------------------------------------
@@ -288,6 +306,19 @@ export function mountDrawPanel({ engine, host }) {
       updateSliderFill(sizeSlider);
     };
     sizeSlider.addEventListener('input', apply);
+  }
+
+  // Eraser size slider — px radius for the eraser hit-test + cursor preview.
+  const eraserSlider = $('[data-ctl="draw-eraser-size"]');
+  const eraserReadout = $('[data-ctl="draw-eraser-size-readout"]');
+  if (eraserSlider) {
+    const apply = () => {
+      const n = Number(eraserSlider.value) || 30;
+      if (eraserReadout) eraserReadout.textContent = `${n} px`;
+      engine.setPrefs({ eraserSize: n });
+      updateSliderFill(eraserSlider);
+    };
+    eraserSlider.addEventListener('input', apply);
   }
 
   // -------------------------------------------------------------------
@@ -396,6 +427,7 @@ export function mountDrawPanel({ engine, host }) {
   setRadioGroup('[data-ctl="draw-connections"] [data-conn]', prefs.connectionMode, 'conn');
   refreshShapeGroup(prefs.tool);
   refreshShapeSidesVisibility();
+  refreshEraserGroup(prefs.tool);
   if (geodesic) geodesic.checked = !!prefs.geodesic;
   if (labels) labels.checked = !!prefs.labels;
   if (color) color.value = prefs.color;
@@ -421,6 +453,12 @@ export function mountDrawPanel({ engine, host }) {
     if (sizeReadout) sizeReadout.textContent = `${initSize} px`;
     updateSliderFill(sizeSlider);
   }
+  if (eraserSlider) {
+    const initEraser = prefs.eraserSize ?? 30;
+    eraserSlider.value = String(initEraser);
+    if (eraserReadout) eraserReadout.textContent = `${initEraser} px`;
+    updateSliderFill(eraserSlider);
+  }
 
   // -------------------------------------------------------------------
   // Live engine subscriptions
@@ -428,6 +466,7 @@ export function mountDrawPanel({ engine, host }) {
   const offTool = engine.on('tool', (t) => {
     setRadioGroup('[data-ctl="draw-tools"] [data-tool]', t, 'tool');
     refreshShapeGroup(t);
+    refreshEraserGroup(t);
   });
   const offShape = engine.on('shape', (s) => {
     setRadioGroup('[data-ctl="draw-shapes"] [data-shape]', s, 'shape');
