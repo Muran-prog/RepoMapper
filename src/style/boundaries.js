@@ -15,6 +15,40 @@ const LAYER = 'boundary';
 export function boundaryLayers(t) {
   return [
     // -- Country (admin_level == 2) -----------------------------------------
+    // Two-pass cartographic halo: a wide, blurred, semi-transparent
+    // glow line is drawn first (`*_glow`), then a crisp white core on
+    // top (`*_outer`). The halo lifts the white off ANY terrain — warm
+    // hypso, snow stops, cream paper, dark relief — so the boundary
+    // stays luminous at every zoom and theme. Halo colour comes from
+    // the `countryBorderGlow` token; core from `countryBorder` (white
+    // in both themes). Same pattern repeats for the dashed disputed
+    // variant below.
+    {
+      id: 'boundary_country_glow',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': LAYER,
+      minzoom: 2,
+      filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'disputed'], 1]],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': t.countryBorderGlow,
+        'line-opacity': 0.7,
+        'line-blur': expZoom([
+          [2, 2.0],
+          [8, 4.5],
+          [12, 6.5],
+          [18, 9.0],
+        ]),
+        'line-width': expZoom([
+          [2, 2.5],
+          [4, 4.0],
+          [8, 6.0],
+          [12, 8.5],
+          [18, 12.0],
+        ]),
+      },
+    },
     {
       id: 'boundary_country_outer',
       type: 'line',
@@ -25,13 +59,34 @@ export function boundaryLayers(t) {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': t.countryBorder,
-        'line-opacity': 0.85,
+        'line-opacity': 1.0,
         'line-width': expZoom([
-          [2, 0.6],
-          [4, 1.0],
-          [8, 1.6],
-          [12, 2.4],
-          [18, 4.0],
+          [2, 0.9],
+          [4, 1.5],
+          [8, 2.5],
+          [12, 3.6],
+          [18, 5.5],
+        ]),
+      },
+    },
+    {
+      id: 'boundary_country_disputed_glow',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': LAYER,
+      minzoom: 3,
+      filter: ['all', ['==', ['get', 'admin_level'], 2], ['==', ['get', 'disputed'], 1]],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': t.countryBorderGlow,
+        'line-opacity': 0.7,
+        'line-blur': expZoom([
+          [3, 2.5],
+          [12, 6.5],
+        ]),
+        'line-width': expZoom([
+          [3, 2.8],
+          [12, 8.5],
         ]),
       },
     },
@@ -42,12 +97,13 @@ export function boundaryLayers(t) {
       'source-layer': LAYER,
       minzoom: 3,
       filter: ['all', ['==', ['get', 'admin_level'], 2], ['==', ['get', 'disputed'], 1]],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': t.countryBorder,
-        'line-opacity': 0.85,
+        'line-opacity': 1.0,
         'line-width': expZoom([
-          [3, 0.8],
-          [12, 2.4],
+          [3, 1.1],
+          [12, 3.6],
         ]),
         'line-dasharray': stepZoom(
           ['literal', [2, 2]],

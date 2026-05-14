@@ -72,8 +72,15 @@ const LIGHT = {
   waterOutline: '#88b6d3',
   waterway: '#a4c8e1',
 
-  // Boundaries
-  countryBorder: '#9b8b9a',
+  // Boundaries — country line is a crisp white core with a dark
+  // aubergine halo (`countryBorderGlow`), painted as a two-pass
+  // cartographic glow in `boundaries.js`. The halo lifts the white
+  // off ANY terrain colour — warm hypso, snow stops, cream paper —
+  // so the boundary stays luminous everywhere. Region + city stay
+  // muted lavender so the admin hierarchy (country > region > city)
+  // remains visually obvious.
+  countryBorder: '#ffffff',
+  countryBorderGlow: '#2a1422',
   regionBorder: '#bcaab8',
   cityBorder: '#cdbac9',
 
@@ -215,7 +222,12 @@ const DARK = {
   waterOutline: '#0a1f2c',
   waterway: '#0e2a3c',
 
-  countryBorder: '#5a4f60',
+  // Country line is a crisp white core with a pure-black halo
+  // (`countryBorderGlow`) so it stays luminous against the dimmed
+  // dark-theme hypso palette. Region + city remain progressively
+  // darker to preserve admin hierarchy.
+  countryBorder: '#ffffff',
+  countryBorderGlow: '#000000',
   regionBorder: '#3d3742',
   cityBorder: '#2c2730',
 
