@@ -22,6 +22,7 @@
 
 import { OPENFREEMAP, SATELLITE_TILES } from '../config.js';
 import { labelLayers } from './labels.js';
+import { boundaryLayers } from './boundaries.js';
 import { getTokens } from './tokens.js';
 
 /**
@@ -138,6 +139,53 @@ function buildSatelliteLabels() {
 }
 
 /**
+ * Build the administrative boundaries overlay for satellite mode.
+ *
+ * Strategy: reuse the exact same `boundaryLayers()` stack that Cart
+ * mode uses so the country / region / county / city geometry, dashes
+ * and zoom-driven width curves match between modes — the user
+ * shouldn't see a different border just because the underlay
+ * changed. We only repaint the colour tokens to suit the satellite
+ * underlay:
+ *
+ *   • Country line: keep the white core (already #ffffff in both
+ *     themes) and adopt the dark-theme `countryBorderGlow` (#000000)
+ *     so the halo lifts the white reliably off bright cloud, dark
+ *     forest, water and desert alike. The two-pass glow pattern is
+ *     copied verbatim from Cart, including blur radii and width
+ *     interpolation.
+ *
+ *   • Region / county / city: light-theme imagery washes out the
+ *     dark muted lavenders. We retint these to a translucent white
+ *     so the admin hierarchy remains readable without overpowering
+ *     the photo. Dashes match Cart so the visual language is
+ *     preserved.
+ *
+ * Source-layer wiring: boundaryLayers already targets
+ * `source: 'openmaptiles'`, which composeSatelliteStyle declares
+ * alongside the imagery raster. No further sources required.
+ *
+ * @returns {Array<object>}
+ */
+function buildSatelliteBoundaries() {
+  // Start from the dark-theme tokens because the satellite underlay
+  // averages dark + saturated — the dark country halo (#000000) gives
+  // the cleanest cutout against forest, ocean and shadowed terrain
+  // alike. Then override the admin-level tints so the dashed
+  // hierarchy (region > county > city) stays legible.
+  const t = {
+    ...getTokens('dark'),
+    // Imagery underlay benefits from a slightly cooler, off-white
+    // halo for the lower-tier dashes — pure black on dark forest
+    // would disappear into the noise. We use a translucent white so
+    // the dashes whisper through bright AND dark imagery.
+    regionBorder: 'rgba(255, 255, 255, 0.78)',
+    cityBorder: 'rgba(255, 255, 255, 0.62)',
+  };
+  return boundaryLayers(t);
+}
+
+/**
  * Compose the full Satellite-mode style JSON.
  *
  * @param {object} [opts]
@@ -185,6 +233,9 @@ export function composeSatelliteStyle(opts = {}) {
         'raster-fade-duration': 220,
       },
     },
+    // Admin boundaries painted ON TOP of imagery and BELOW labels so
+    // they read as cartographic chrome, not part of the photograph.
+    ...buildSatelliteBoundaries(),
     ...buildSatelliteLabels(),
   ];
 
