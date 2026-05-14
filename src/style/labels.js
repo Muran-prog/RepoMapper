@@ -42,7 +42,7 @@
  * LabelOpts} typedef at the bottom of the file.
  */
 
-import { linZoom } from '../utils/interp.js';
+import { linZoom, inFilter } from '../utils/interp.js';
 
 const SOURCE = 'openmaptiles';
 
@@ -59,6 +59,25 @@ const halo = (color, width = 1.4) => ({
   'text-halo-color': color,
   'text-halo-width': width,
   'text-halo-blur': 0.4,
+});
+
+/**
+ * Premium-glow halo for important labels (towns and above, key POIs).
+ * The glow is rendered as a sibling label layer with the same text-field
+ * but transparent text and a wide, blurred, accent-tinted halo. Painted
+ * UNDER the real label so the readable text floats on a soft amber wash
+ * without affecting legibility. Static blur, no transitions — the
+ * reduce-motion path uses the same expression and just skips the
+ * camera-easing layer added by interactions.js elsewhere.
+ *
+ * @param {string} color  Halo colour (rgba accent token).
+ * @param {number} width  Halo width in px (relative to text-size).
+ * @param {number} blur   Halo blur in px.
+ */
+const glowHalo = (color, width = 4.0, blur = 2.5) => ({
+  'text-halo-color': color,
+  'text-halo-width': width,
+  'text-halo-blur': blur,
 });
 
 /**
@@ -116,12 +135,64 @@ function placeLabels(t, opts) {
   /**
    * Internal: build one place layer. `cfg.classes` selects features;
    * `cfg.atZoom` is the centre of the fade-in.
+   *
+   * If `cfg.glow` is set, a sibling glow layer is emitted FIRST (so it
+   * paints below the readable label). The glow uses the same text-field
+   * but transparent text + a wide blurred accent halo.
    */
   const place = (id, cfg) => {
     const fade = fadeIn(cfg.atZoom, cfg.opacity ?? 1.0, cfg.fadeWidth ?? 0.6);
     const filter = ['all', classWithRank(cfg.classes, placeRankCutoff)];
     if (cfg.extraFilter) filter.push(cfg.extraFilter);
-    return {
+    const layout = {
+      'text-field': NAME_EXPR,
+      'text-font': cfg.font ?? t.font.medium,
+      'text-size': cfg.size,
+      // Variable anchors give MapLibre more freedom in dense areas. For
+      // top-of-hierarchy places we keep the anchor centred so big city
+      // names don't drift around as you pan.
+      ...(cfg.variableAnchor
+        ? {
+            'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
+            'text-justify': 'auto',
+            'text-radial-offset': cfg.radialOffset ?? 0.5,
+          }
+        : {
+            'text-anchor': 'center',
+            'text-justify': 'center',
+          }),
+      'text-letter-spacing': cfg.tracking ?? 0.02,
+      'text-padding': Math.round((cfg.padding ?? 6) * textPaddingMul),
+      'text-max-width': 8,
+      'text-transform': cfg.transform ?? 'none',
+      // Lower rank = more important; smaller sort-key wins collisions.
+      'symbol-sort-key': ['coalesce', ['get', 'rank'], 5],
+    };
+
+    const out = [];
+
+    // Glow sibling — same layout (so collision behaviour matches the
+    // real label), transparent text, wide blurred accent halo. Sits
+    // FIRST so it paints below the readable label.
+    if (cfg.glow) {
+      out.push({
+        id: `${id}_glow`,
+        type: 'symbol',
+        source: SOURCE,
+        'source-layer': 'place',
+        minzoom: fade.renderMinZoom,
+        maxzoom: cfg.maxzoom ?? 24,
+        filter,
+        layout,
+        paint: {
+          'text-color': 'rgba(0,0,0,0)',
+          ...glowHalo(t.textGlowImportant, cfg.glow.width ?? 4.0, cfg.glow.blur ?? 2.5),
+          'text-opacity': fade.expr,
+        },
+      });
+    }
+
+    out.push({
       id,
       type: 'symbol',
       source: SOURCE,
@@ -129,40 +200,20 @@ function placeLabels(t, opts) {
       minzoom: fade.renderMinZoom,
       maxzoom: cfg.maxzoom ?? 24,
       filter,
-      layout: {
-        'text-field': NAME_EXPR,
-        'text-font': cfg.font ?? t.font.medium,
-        'text-size': cfg.size,
-        // Variable anchors give MapLibre more freedom in dense areas. For
-        // top-of-hierarchy places we keep the anchor centred so big city
-        // names don't drift around as you pan.
-        ...(cfg.variableAnchor
-          ? {
-              'text-variable-anchor': ['center', 'top', 'bottom', 'left', 'right'],
-              'text-justify': 'auto',
-              'text-radial-offset': cfg.radialOffset ?? 0.5,
-            }
-          : {
-              'text-anchor': 'center',
-              'text-justify': 'center',
-            }),
-        'text-letter-spacing': cfg.tracking ?? 0.02,
-        'text-padding': Math.round((cfg.padding ?? 6) * textPaddingMul),
-        'text-max-width': 8,
-        'text-transform': cfg.transform ?? 'none',
-        // Lower rank = more important; smaller sort-key wins collisions.
-        'symbol-sort-key': ['coalesce', ['get', 'rank'], 5],
-      },
+      layout,
       paint: {
         'text-color': cfg.color ?? t.textPrimary,
         ...halo(t.textHalo, cfg.haloWidth ?? 1.4),
         'text-opacity': fade.expr,
       },
-    };
+    });
+
+    return out;
   };
 
-  const layers = [
-    place('label_country', {
+  const layers = [];
+  layers.push(
+    ...place('label_country', {
       classes: ['country'],
       atZoom: 3,
       maxzoom: 9,
@@ -172,7 +223,7 @@ function placeLabels(t, opts) {
       transform: 'uppercase',
       haloWidth: 1.6,
     }),
-    place('label_state', {
+    ...place('label_state', {
       classes: ['state'],
       atZoom: 5,
       maxzoom: 9,
@@ -182,23 +233,30 @@ function placeLabels(t, opts) {
       transform: 'uppercase',
       color: t.textSecondary,
     }),
-    place('label_city_large', {
+    // Cities ≥ town get the premium accent treatment: bumped halo width
+    // for extra weight, plus a sibling glow layer for soft amber wash.
+    ...place('label_city_large', {
       classes: ['city'],
       atZoom: 5,
       size: ['interpolate', ['linear'], ['zoom'], 4, 11, 8, 16, 14, 22, 18, 32],
       font: t.font.bold,
-      haloWidth: 1.6,
+      // +20% over the previous halo width — visually heavier weight on
+      // major cities. Glow sibling adds the soft amber wash beneath.
+      haloWidth: 2.0,
       padding: 8,
+      glow: { width: 5.5, blur: 3.0 },
     }),
-    place('label_town', {
+    ...place('label_town', {
       classes: ['town'],
       atZoom: 8,
       size: ['interpolate', ['linear'], ['zoom'], 8, 10, 12, 14, 18, 20],
-      font: t.font.medium,
+      font: t.font.bold,
+      haloWidth: 1.7,
       variableAnchor: true,
       radialOffset: 0.4,
+      glow: { width: 4.0, blur: 2.5 },
     }),
-    place('label_village', {
+    ...place('label_village', {
       classes: ['village'],
       atZoom: 11,
       // Density gates the smallest places so phones see fewer of them
@@ -211,11 +269,11 @@ function placeLabels(t, opts) {
       variableAnchor: true,
       radialOffset: 0.4,
     }),
-  ];
+  );
 
   if (enableHamlets) {
     layers.push(
-      place('label_hamlet', {
+      ...place('label_hamlet', {
         classes: ['hamlet', 'isolated_dwelling'],
         atZoom: 13,
         size: ['interpolate', ['linear'], ['zoom'], 13, 9, 16, 11, 20, 14],
@@ -230,7 +288,7 @@ function placeLabels(t, opts) {
 
   if (enableSuburbs) {
     layers.push(
-      place('label_suburb', {
+      ...place('label_suburb', {
         classes: ['suburb', 'quarter'],
         atZoom: 12,
         size: ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 12, 20, 15],
@@ -244,7 +302,7 @@ function placeLabels(t, opts) {
 
   if (enableNeighbourhoods) {
     layers.push(
-      place('label_neighbourhood', {
+      ...place('label_neighbourhood', {
         classes: ['neighbourhood'],
         atZoom: 14,
         size: ['interpolate', ['linear'], ['zoom'], 14, 9, 18, 12, 22, 14],
@@ -521,6 +579,37 @@ function poiLayers(t, opts) {
   const { poiRankCutoff, poiDotRankCutoff, poiSizeMul, textPaddingMul } = opts;
   const dotFade = fadeIn(14.2, 1.0, 0.8);
   const labelFade = fadeIn(15.2, 1.0, 0.8);
+
+  // Important POI classes — transit hubs and monuments. Eligible for
+  // the premium glow + bumped weight treatment. Generic shop/food/etc
+  // POIs deliberately excluded — too dense to glow without clutter.
+  const IMPORTANT_POI_CLASSES = [
+    'airport',
+    'aerialway',
+    'railway',
+    'bus',
+    'ferry',
+    'monument',
+    'attraction',
+    'museum',
+    'viewpoint',
+    'town_hall',
+    'place_of_worship',
+    'religion',
+    'castle',
+    'memorial',
+    'stadium',
+    'theatre',
+  ];
+  const importantFilter = [
+    'all',
+    inFilter('class', IMPORTANT_POI_CLASSES),
+    rankCutoffFilter(poiRankCutoff + 2),
+  ];
+  // Important labels appear earlier than the generic crowd so they
+  // anchor the eye before the rest of the POI layer fades in.
+  const importantLabelFade = fadeIn(13.5, 1.0, 0.8);
+
   return [
     {
       id: 'poi_dot',
@@ -548,13 +637,133 @@ function poiLayers(t, opts) {
         'circle-stroke-opacity': dotFade.expr,
       },
     },
+    // Important-POI dot glow — soft amber wash painted UNDER the regular
+    // POI dot so transit hubs / monuments visibly pop above the canvas.
+    {
+      id: 'poi_dot_important_glow',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': 'poi',
+      minzoom: dotFade.renderMinZoom - 1,
+      filter: importantFilter,
+      paint: {
+        'circle-color': t.poiGlowImportant,
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          13,
+          5.0 * poiSizeMul,
+          16,
+          7.5 * poiSizeMul,
+          20,
+          10.0 * poiSizeMul,
+          22,
+          12.0 * poiSizeMul,
+        ],
+        'circle-blur': 0.9,
+        'circle-opacity': linZoom([
+          [13, 0.0],
+          [13.5, 1.0],
+        ]),
+      },
+    },
+    // Important-POI dot — slightly larger, accent-coloured stroke.
+    {
+      id: 'poi_dot_important',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': 'poi',
+      minzoom: dotFade.renderMinZoom - 1,
+      filter: importantFilter,
+      paint: {
+        'circle-color': t.poiFill,
+        'circle-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          13,
+          2.2 * poiSizeMul,
+          18,
+          3.4 * poiSizeMul,
+          22,
+          4.4 * poiSizeMul,
+        ],
+        'circle-stroke-color': t.buildingLandmarkOutline,
+        'circle-stroke-width': 1.4,
+        'circle-opacity': linZoom([
+          [13, 0.0],
+          [13.5, 1.0],
+        ]),
+        'circle-stroke-opacity': linZoom([
+          [13, 0.0],
+          [13.5, 1.0],
+        ]),
+      },
+    },
+    // Important-POI label glow — sits below the readable label.
+    {
+      id: 'poi_label_important_glow',
+      type: 'symbol',
+      source: SOURCE,
+      'source-layer': 'poi',
+      minzoom: importantLabelFade.renderMinZoom,
+      filter: importantFilter,
+      layout: {
+        'text-field': NAME_EXPR,
+        'text-font': t.font.bold,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 18, 13, 22, 16],
+        'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+        'text-radial-offset': 0.85,
+        'text-justify': 'auto',
+        'text-padding': Math.round(5 * textPaddingMul),
+        'text-max-width': 9,
+        'symbol-sort-key': ['coalesce', ['get', 'rank'], 5],
+      },
+      paint: {
+        'text-color': 'rgba(0,0,0,0)',
+        ...glowHalo(t.poiGlowImportant, 4.0, 2.5),
+        'text-opacity': importantLabelFade.expr,
+      },
+    },
+    // Important-POI readable label.
+    {
+      id: 'poi_label_important',
+      type: 'symbol',
+      source: SOURCE,
+      'source-layer': 'poi',
+      minzoom: importantLabelFade.renderMinZoom,
+      filter: importantFilter,
+      layout: {
+        'text-field': NAME_EXPR,
+        'text-font': t.font.bold,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 18, 13, 22, 16],
+        'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
+        'text-radial-offset': 0.85,
+        'text-justify': 'auto',
+        'text-padding': Math.round(5 * textPaddingMul),
+        'text-max-width': 9,
+        'symbol-sort-key': ['coalesce', ['get', 'rank'], 5],
+      },
+      paint: {
+        'text-color': t.textPrimary,
+        ...halo(t.textHalo, 1.8),
+        'text-opacity': importantLabelFade.expr,
+      },
+    },
     {
       id: 'poi_label',
       type: 'symbol',
       source: SOURCE,
       'source-layer': 'poi',
       minzoom: labelFade.renderMinZoom,
-      filter: rankCutoffFilter(poiRankCutoff),
+      // Exclude the important classes — they're already drawn above
+      // with the accent treatment, no point double-rendering.
+      filter: [
+        'all',
+        rankCutoffFilter(poiRankCutoff),
+        ['!', inFilter('class', IMPORTANT_POI_CLASSES)],
+      ],
       layout: {
         'text-field': NAME_EXPR,
         'text-font': t.font.regular,

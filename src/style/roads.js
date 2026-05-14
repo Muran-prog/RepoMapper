@@ -20,6 +20,8 @@
  *   • cartographic shield helper colours for secondary/tertiary
  *   • lane-count-scaled widths on motorway / trunk / primary
  *   • Carpathian serpentine double-casing at deep zoom inside the bbox
+ *   • premium glow halo for hierarchy roads (motorway/trunk/primary get a
+ *     full wash, secondary/tertiary a quieter rim, residentials untouched)
  *
  * The whole network reads as data, not boilerplate, and tuning the map's
  * "feel" is a matter of editing the config table at the top of the file
@@ -57,6 +59,10 @@ import { expZoom, stepZoom, casingWidth, inFilter } from '../utils/interp.js';
  * @property {boolean}  [carpathianDoubleCasing]
  *     Emit an extra soft halo at deep zoom inside CARPATHIAN.bbox —
  *     Imhof-style "serpentine halo" for mountain roads.
+ * @property {'major'|'minor'} [glow]
+ *     Premium glow halo emitted UNDER the casing on the ground brunnel.
+ *     'major' = motorway/trunk/primary (full amber wash). 'minor' =
+ *     secondary/tertiary (quieter rim). Residentials/services left bare.
  * @property {string}   [lineCap='round']
  */
 
@@ -238,17 +244,21 @@ const ROAD_CLASSES = [
     inlineKey: 'tertiary',
     casingKey: 'tertiaryCasing',
     widths: [
-      [10, 0.3],
-      [12, 1.0],
-      [14, 2.6],
-      [16, 5.5],
-      [18, 10],
-      [20, 18],
-      [22, 34],
+      // +25% over the original baseline — tertiary is the visible
+      // backbone of villages, especially in the Carpathians where
+      // it's often the only sealed street through the settlement.
+      [10, 0.38],
+      [12, 1.25],
+      [14, 3.25],
+      [16, 6.9],
+      [18, 12.5],
+      [20, 22.5],
+      [22, 42.5],
     ],
-    casingExtra: 2.0,
+    casingExtra: 2.6,
     surfaceAware: true,
     carpathianDoubleCasing: true,
+    glow: 'minor',
   },
   {
     id: 'secondary',
@@ -257,17 +267,21 @@ const ROAD_CLASSES = [
     inlineKey: 'secondary',
     casingKey: 'secondaryCasing',
     widths: [
-      [9, 0.3],
-      [11, 0.9],
-      [12, 1.6],
-      [14, 3.6],
-      [16, 7.0],
-      [18, 12.5],
-      [20, 23],
-      [22, 42],
+      // +30% over the original baseline — secondary is the regional
+      // spine and now reads with the same gravity as primary, no
+      // matter the zoom.
+      [9, 0.39],
+      [11, 1.17],
+      [12, 2.08],
+      [14, 4.7],
+      [16, 9.1],
+      [18, 16.25],
+      [20, 30.0],
+      [22, 54.5],
     ],
-    casingExtra: 2.4,
+    casingExtra: 3.0,
     carpathianDoubleCasing: true,
+    glow: 'major',
   },
   {
     id: 'primary',
@@ -276,19 +290,22 @@ const ROAD_CLASSES = [
     inlineKey: 'primary',
     casingKey: 'primaryCasing',
     widths: [
-      [7, 0.3],
-      [9, 0.7],
-      [11, 1.4],
-      [12, 2.2],
-      [14, 4.7],
-      [16, 8.5],
-      [18, 14.5],
-      [20, 27],
-      [22, 50],
+      // +20% over the previous curve — primaries are the visual spine of
+      // regional travel and now read distinctly heavier than secondary.
+      [7, 0.36],
+      [9, 0.84],
+      [11, 1.7],
+      [12, 2.65],
+      [14, 5.6],
+      [16, 10.2],
+      [18, 17.5],
+      [20, 32],
+      [22, 60],
     ],
-    casingExtra: 2.4,
+    casingExtra: 2.8,
     laneScale: true,
     carpathianDoubleCasing: true,
+    glow: 'major',
   },
   {
     id: 'trunk',
@@ -297,18 +314,20 @@ const ROAD_CLASSES = [
     inlineKey: 'trunk',
     casingKey: 'trunkCasing',
     widths: [
-      [6, 0.3],
-      [9, 0.9],
-      [11, 1.6],
-      [12, 2.6],
-      [14, 5.5],
-      [16, 9.5],
-      [18, 17],
-      [20, 30],
-      [22, 58],
+      // +20% over the previous curve.
+      [6, 0.36],
+      [9, 1.08],
+      [11, 1.92],
+      [12, 3.12],
+      [14, 6.6],
+      [16, 11.4],
+      [18, 20.5],
+      [20, 36],
+      [22, 70],
     ],
-    casingExtra: 2.6,
+    casingExtra: 3.0,
     laneScale: true,
+    glow: 'major',
   },
   {
     id: 'motorway',
@@ -317,19 +336,22 @@ const ROAD_CLASSES = [
     inlineKey: 'motorway',
     casingKey: 'motorwayCasing',
     widths: [
-      [5, 0.3],
-      [7, 0.6],
-      [9, 1.2],
-      [11, 1.8],
-      [12, 3.0],
-      [14, 6.2],
-      [16, 10.5],
-      [18, 18.5],
-      [20, 33],
-      [22, 64],
+      // +22% over the previous curve — the spine of inter-city
+      // movement, deserves the heaviest visual weight.
+      [5, 0.36],
+      [7, 0.74],
+      [9, 1.46],
+      [11, 2.2],
+      [12, 3.66],
+      [14, 7.6],
+      [16, 12.8],
+      [18, 22.5],
+      [20, 40],
+      [22, 78],
     ],
-    casingExtra: 3.0,
+    casingExtra: 3.4,
     laneScale: true,
+    glow: 'major',
   },
 ];
 
@@ -546,6 +568,68 @@ function carpathianHaloLayer(rc, t) {
 }
 
 // ---------------------------------------------------------------------------
+// Premium glow — a soft, blurred, accent-tinted halo painted UNDER the
+// casing on the ground brunnel. Scoped via the per-class `glow` flag so
+// only roads marked 'major' (motorway/trunk/primary/secondary) or 'minor'
+// (tertiary) get one — residentials and services stay quiet.
+//
+// Two-tier emission per road:
+//   • OUTER: very wide (+12/+8 px past casing), heavy blur, low alpha —
+//     ambient amber wash bleeding onto the surrounding fabric.
+//   • INNER: tighter (+5/+3 px), moderate blur, higher alpha — visible
+//     heat right at the road shoulder.
+//
+// Both layers are static blur (no transitions), so reduce-motion users
+// get the same look without animation.
+// ---------------------------------------------------------------------------
+
+function glowHaloLayers(rc, t) {
+  const major = rc.glow === 'major';
+
+  // Outer ambient wash.
+  const outer = {
+    id: `road_ground_${rc.id}_glow_outer`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': LAYER,
+    minzoom: rc.minZoom,
+    filter: classFilter(rc, 'ground'),
+    layout: layerCaps(rc),
+    paint: {
+      'line-color': major ? t.roadGlowMajorOuter : t.roadGlowMinorOuter,
+      'line-width': widthExpr(
+        rc.widths,
+        rc.casingExtra + (major ? 12 : 8),
+        rc.laneScale,
+      ),
+      'line-blur': major ? 6.0 : 4.0,
+    },
+  };
+
+  // Inner heat ring.
+  const inner = {
+    id: `road_ground_${rc.id}_glow`,
+    type: 'line',
+    source: SOURCE,
+    'source-layer': LAYER,
+    minzoom: rc.minZoom,
+    filter: classFilter(rc, 'ground'),
+    layout: layerCaps(rc),
+    paint: {
+      'line-color': major ? t.roadGlowMajor : t.roadGlowMinor,
+      'line-width': widthExpr(
+        rc.widths,
+        rc.casingExtra + (major ? 5 : 3),
+        rc.laneScale,
+      ),
+      'line-blur': major ? 2.8 : 2.0,
+    },
+  };
+
+  return [outer, inner];
+}
+
+// ---------------------------------------------------------------------------
 // Brunnel-level stack emission. Each road class produces:
 //   (optional Carpathian halo) → casing → inline   [for each surface variant]
 // ---------------------------------------------------------------------------
@@ -553,20 +637,31 @@ function carpathianHaloLayer(rc, t) {
 function brunnelStack(brunnel, t, opts) {
   const out = [];
 
-  // 1) Carpathian halos (ground only, gated by feature flag from caller).
+  // 1) Premium glow halos (ground only — bridges/tunnels skip the wash
+  //    so elevated/buried roads don't bleed colour off-geometry).
+  //    Order matters: glow must paint UNDER both the Carpathian halo
+  //    and the casing so the casing's crisp edge isn't softened.
+  //    Two layers per road: outer ambient wash → inner heat ring.
+  if (brunnel === 'ground') {
+    for (const rc of ROAD_CLASSES) {
+      if (rc.glow) out.push(...glowHaloLayers(rc, t));
+    }
+  }
+
+  // 2) Carpathian halos (ground only, gated by feature flag from caller).
   if (brunnel === 'ground' && opts.carpathianDoubleCasing) {
     for (const rc of ROAD_CLASSES) {
       if (rc.carpathianDoubleCasing) out.push(carpathianHaloLayer(rc, t));
     }
   }
 
-  // 2) Casings (one per class, never split by surface — the surface only
+  // 3) Casings (one per class, never split by surface — the surface only
   //    affects the inline's dashing, not the casing).
   for (const rc of ROAD_CLASSES) {
     out.push(casingLayer(rc, brunnel, t));
   }
 
-  // 3) Inlines (surface-aware classes emit paved+unpaved; others a single layer).
+  // 4) Inlines (surface-aware classes emit paved+unpaved; others a single layer).
   for (const rc of ROAD_CLASSES) {
     if (rc.surfaceAware) {
       out.push(inlineLayer(rc, brunnel, t, { idSuffix: '_paved', surface: 'paved' }));

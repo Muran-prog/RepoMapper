@@ -125,20 +125,49 @@ function trailInlineColor(t) {
 export function trailLayers(t) {
   const z = CARPATHIAN.zoomRules.trails;
 
+  // Trail widths bumped ~+18% over the previous curve — marked routes
+  // are the spine of mountain navigation and now read with the visual
+  // weight of a regional road instead of a footpath.
   const casingWidth = expZoom([
-    [z, 1.1],
-    [13, 2.4],
-    [16, 4.6],
-    [20, 9.5],
+    [z, 1.3],
+    [13, 2.85],
+    [16, 5.45],
+    [20, 11.2],
   ]);
   const inlineWidth = expZoom([
-    [z, 0.5],
-    [13, 1.1],
-    [16, 2.2],
-    [20, 5.0],
+    [z, 0.6],
+    [13, 1.3],
+    [16, 2.6],
+    [20, 5.9],
+  ]);
+  // Glow halo — wide, soft, accent-tinted ring under the casing.
+  // Reads as a warm aura so marked trails pop against the forest /
+  // hypsometric tint without competing with the readable inline.
+  const glowWidth = expZoom([
+    [z, 3.0],
+    [13, 6.5],
+    [16, 11.5],
+    [20, 22.0],
   ]);
 
   return [
+    {
+      id: 'carpathian_trail_glow',
+      type: 'line',
+      source: CARP_OSM,
+      'source-layer': 'hiking_route',
+      minzoom: z,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': t.trailGlow,
+        'line-width': glowWidth,
+        'line-blur': 3.0,
+        'line-opacity': linZoom([
+          [z, 0.0],
+          [z + 0.5, 1.0],
+        ]),
+      },
+    },
     {
       id: 'carpathian_trail_casing',
       type: 'line',
@@ -195,6 +224,77 @@ const LABEL_EXPR = ['format', NAME_EXPR, { 'font-scale': 1.0 }, '\n', {}, ELE_EX
 export function carpathianLabels(t) {
   const { zoomRules } = CARPATHIAN;
 
+  // Peak marker glow — soft, wide, accent-coloured circle behind the
+  // peak symbol. Painted FIRST so it sits below both the marker dot
+  // and the label, giving every peak a quiet halo of importance.
+  const peakGlow = {
+    id: 'carpathian_peak_glow',
+    type: 'circle',
+    source: CARP_OSM,
+    'source-layer': 'mountain_feature',
+    minzoom: zoomRules.peaks,
+    filter: ['==', ['get', 'class'], 'peak'],
+    paint: {
+      'circle-color': t.peakMarkerGlow,
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 5, 12, 9, 18, 14],
+      'circle-blur': 1.0,
+      'circle-opacity': 1.0,
+    },
+  };
+
+  // Peak marker — crisp dot above the glow, accent-coloured ring.
+  const peakMarker = {
+    id: 'carpathian_peak_marker',
+    type: 'circle',
+    source: CARP_OSM,
+    'source-layer': 'mountain_feature',
+    minzoom: zoomRules.peaks,
+    filter: ['==', ['get', 'class'], 'peak'],
+    paint: {
+      'circle-color': t.peakMarker,
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, 1.6, 12, 2.6, 18, 4.2],
+      'circle-stroke-color': t.textPeakHalo,
+      'circle-stroke-width': 1.2,
+      'circle-opacity': 1.0,
+      'circle-stroke-opacity': 1.0,
+    },
+  };
+
+  // Common layout for the peak label and its glow sibling — keeping them
+  // identical means MapLibre's collision system treats them as one
+  // unit and they never split apart.
+  const peakLayout = {
+    'text-field': LABEL_EXPR,
+    'text-font': t.font.bold,
+    // Peak text size bumped slightly to match the heavier visual
+    // weight of the marker + glow stack.
+    'text-size': ['interpolate', ['linear'], ['zoom'], 8, 11, 12, 14, 18, 17],
+    'text-anchor': 'top',
+    'text-offset': [0, 0.9],
+    'text-padding': 6,
+    'text-max-width': 8,
+    'symbol-sort-key': ['coalesce', ['get', 'rank'], 0],
+  };
+
+  // Peak label glow — transparent text + wide blurred accent halo.
+  // Painted under the readable peak label so the warm wash extends
+  // outward without clobbering legibility.
+  const peakGlowLabel = {
+    id: 'label_peak_glow',
+    type: 'symbol',
+    source: CARP_OSM,
+    'source-layer': 'mountain_feature',
+    minzoom: zoomRules.peaks,
+    filter: ['==', ['get', 'class'], 'peak'],
+    layout: peakLayout,
+    paint: {
+      'text-color': 'rgba(0,0,0,0)',
+      'text-halo-color': t.textPeakGlow,
+      'text-halo-width': 4.0,
+      'text-halo-blur': 2.5,
+    },
+  };
+
   const peak = {
     id: 'label_peak',
     type: 'symbol',
@@ -202,22 +302,40 @@ export function carpathianLabels(t) {
     'source-layer': 'mountain_feature',
     minzoom: zoomRules.peaks,
     filter: ['==', ['get', 'class'], 'peak'],
-    layout: {
-      'text-field': LABEL_EXPR,
-      'text-font': t.font.bold,
-      'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 12, 13, 18, 16],
-      'text-anchor': 'top',
-      'text-offset': [0, 0.8],
-      'text-padding': 6,
-      'text-max-width': 8,
-      // Lower sort-key wins collisions in MapLibre — feed rank directly.
-      'symbol-sort-key': ['coalesce', ['get', 'rank'], 0],
-    },
+    layout: peakLayout,
     paint: {
       'text-color': t.textPeak,
       'text-halo-color': t.textPeakHalo,
-      'text-halo-width': 1.6,
-      'text-halo-blur': 0.4,
+      // Bumped halo width — peak names now read heavier on the busy
+      // hypsometric / hillshade canvas.
+      'text-halo-width': 2.0,
+      'text-halo-blur': 0.5,
+    },
+  };
+
+  const passLayout = {
+    'text-field': LABEL_EXPR,
+    'text-font': t.font.italic,
+    'text-size': ['interpolate', ['linear'], ['zoom'], 11, 10, 16, 12, 20, 14],
+    'text-anchor': 'center',
+    'text-padding': 4,
+    'text-max-width': 8,
+    'symbol-sort-key': ['coalesce', ['get', 'rank'], 0],
+  };
+
+  const passOrSaddleGlow = {
+    id: 'label_pass_saddle_glow',
+    type: 'symbol',
+    source: CARP_OSM,
+    'source-layer': 'mountain_feature',
+    minzoom: Math.min(zoomRules.passes, zoomRules.saddles),
+    filter: inFilter('class', ['pass', 'saddle']),
+    layout: passLayout,
+    paint: {
+      'text-color': 'rgba(0,0,0,0)',
+      'text-halo-color': t.textPeakGlow,
+      'text-halo-width': 3.2,
+      'text-halo-blur': 2.0,
     },
   };
 
@@ -228,24 +346,20 @@ export function carpathianLabels(t) {
     'source-layer': 'mountain_feature',
     minzoom: Math.min(zoomRules.passes, zoomRules.saddles),
     filter: inFilter('class', ['pass', 'saddle']),
-    layout: {
-      'text-field': LABEL_EXPR,
-      'text-font': t.font.italic,
-      'text-size': ['interpolate', ['linear'], ['zoom'], 11, 10, 16, 12, 20, 14],
-      'text-anchor': 'center',
-      'text-padding': 4,
-      'text-max-width': 8,
-      'symbol-sort-key': ['coalesce', ['get', 'rank'], 0],
-    },
+    layout: passLayout,
     paint: {
       'text-color': t.textPass,
       'text-halo-color': t.textPassHalo,
-      'text-halo-width': 1.2,
-      'text-halo-blur': 0.3,
+      // Bumped halo width — passes now read with consistent weight
+      // alongside their peak siblings on a dense terrain canvas.
+      'text-halo-width': 1.6,
+      'text-halo-blur': 0.4,
     },
   };
 
-  return [peak, passOrSaddle];
+  // Order matters: glow → marker → label-glow → label so the readable
+  // text floats on top of the soft halo plus the accent dot.
+  return [peakGlow, peakMarker, peakGlowLabel, peak, passOrSaddleGlow, passOrSaddle];
 }
 
 // ---------------------------------------------------------------------------

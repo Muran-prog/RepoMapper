@@ -194,6 +194,41 @@ const LIGHT = {
   carpathianTrail: '#cc3b1f',
   carpathianTrailCasing: '#fff8e8',
   carpathianTrailDim: '#b65030',
+
+  // ---------------------------------------------------------------------
+  // Premium glow accents — derived from the existing accent family
+  // (motorwayCasing amber for roads/labels, the trail red for trails,
+  // hillshadeAccent earth tone for peaks). All semi-transparent so
+  // the underlying terrain still reads through. Use only on layers
+  // that carry the "important" filter — not for residentials, generic
+  // POIs, or hamlets.
+  // ---------------------------------------------------------------------
+  // Roads — major (motorway/trunk/primary/secondary) gets a fuller wash;
+  // minor (tertiary) gets a quieter but still visible rim. Residentials
+  // and services stay bare. Two-tier glow per road: a wider OUTER ring
+  // for ambient amber wash, and a tighter INNER ring for visible heat.
+  roadGlowMajor: 'rgba(217, 119, 6, 0.42)',
+  roadGlowMajorOuter: 'rgba(217, 119, 6, 0.22)',
+  roadGlowMinor: 'rgba(180, 110, 30, 0.34)',
+  roadGlowMinorOuter: 'rgba(180, 110, 30, 0.16)',
+
+  // Buildings — landmark accent (warm clay distinguishes from the
+  // generic cool-cream `building` token), outline + glow share the
+  // same amber accent family for cohesion.
+  buildingLandmark: '#e8c995',
+  buildingLandmarkOutline: '#9c5a1c',
+  buildingLandmarkGlowOuter: 'rgba(217, 119, 6, 0.22)',
+  buildingLandmarkGlowInner: 'rgba(217, 119, 6, 0.40)',
+
+  // Labels — town/city glow + key POI glow.
+  textGlowImportant: 'rgba(217, 119, 6, 0.30)',
+  poiGlowImportant: 'rgba(217, 119, 6, 0.32)',
+
+  // Carpathian — peak markers and trail halo.
+  peakMarker: '#3a2a1b',
+  peakMarkerGlow: 'rgba(122, 90, 56, 0.45)',
+  trailGlow: 'rgba(204, 59, 31, 0.38)',
+  textPeakGlow: 'rgba(122, 90, 56, 0.42)',
 };
 
 const DARK = {
@@ -323,6 +358,27 @@ const DARK = {
   carpathianTrail: '#ff5b3d',
   carpathianTrailCasing: '#0e1318',
   carpathianTrailDim: '#c2432a',
+
+  // Premium glow accents — dark theme uses warmer amber against
+  // the deep slate background. Slightly higher alpha than light
+  // to compensate for the dimmer base palette.
+  roadGlowMajor: 'rgba(240, 168, 80, 0.46)',
+  roadGlowMajorOuter: 'rgba(240, 168, 80, 0.24)',
+  roadGlowMinor: 'rgba(217, 152, 82, 0.38)',
+  roadGlowMinorOuter: 'rgba(217, 152, 82, 0.18)',
+
+  buildingLandmark: '#3a2e22',
+  buildingLandmarkOutline: '#d99852',
+  buildingLandmarkGlowOuter: 'rgba(240, 168, 80, 0.22)',
+  buildingLandmarkGlowInner: 'rgba(240, 168, 80, 0.42)',
+
+  textGlowImportant: 'rgba(240, 168, 80, 0.34)',
+  poiGlowImportant: 'rgba(240, 168, 80, 0.36)',
+
+  peakMarker: '#f0e6cf',
+  peakMarkerGlow: 'rgba(240, 230, 207, 0.40)',
+  trailGlow: 'rgba(255, 91, 61, 0.42)',
+  textPeakGlow: 'rgba(240, 230, 207, 0.40)',
 };
 
 export const TOKENS = Object.freeze({ light: LIGHT, dark: DARK });
