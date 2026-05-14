@@ -15,6 +15,12 @@
  *     "controlsCollapsed": boolean    // top-right MapLibre cluster
  *   }
  *
+ * The map-mode preference (`cart` | `standard` | `satellite`) lives in
+ * its OWN top-level localStorage key (`cart:map-mode`) per the brief.
+ * That key is read/written through `loadMapMode()` / `saveMapMode()`
+ * below so the mode switcher and createMap() touch the same source of
+ * truth without tripping over the older `cart:ui:prefs:v1` schema.
+ *
  * Missing fields fall back to the per-device defaults that the caller
  * supplies — on touch / narrow viewports the chrome is collapsed by
  * default to reclaim screen real estate.
@@ -23,6 +29,12 @@
  * @property {boolean} hudCollapsed
  * @property {boolean} controlsCollapsed
  */
+
+import {
+  MAP_MODES,
+  DEFAULT_MAP_MODE,
+  MAP_MODE_STORAGE_KEY,
+} from '../config.js';
 
 const KEY = 'cart:ui:prefs:v1';
 
@@ -85,6 +97,47 @@ export function saveUiPrefs(patch) {
   try {
     const next = { ...loadUiPrefs(), ...patch };
     storage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    /* quota / serialise error — best-effort */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Map-mode preference — separate top-level key per the brief.
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the persisted map-mode choice. Falls back to `DEFAULT_MAP_MODE`
+ * when storage is unavailable or the saved value isn't one of the
+ * known modes (covers stale or hand-edited keys).
+ *
+ * @returns {'cart'|'standard'|'satellite'}
+ */
+export function loadMapMode() {
+  const storage = ls();
+  if (!storage) return DEFAULT_MAP_MODE;
+  try {
+    const raw = storage.getItem(MAP_MODE_STORAGE_KEY);
+    if (typeof raw !== 'string') return DEFAULT_MAP_MODE;
+    if (!MAP_MODES.includes(raw)) return DEFAULT_MAP_MODE;
+    return raw;
+  } catch {
+    return DEFAULT_MAP_MODE;
+  }
+}
+
+/**
+ * Persist the user's map-mode choice. Best-effort — storage failures
+ * (Safari private mode, quota) are swallowed so the UI never crashes.
+ *
+ * @param {'cart'|'standard'|'satellite'} mode
+ */
+export function saveMapMode(mode) {
+  if (!MAP_MODES.includes(mode)) return;
+  const storage = ls();
+  if (!storage) return;
+  try {
+    storage.setItem(MAP_MODE_STORAGE_KEY, mode);
   } catch {
     /* quota / serialise error — best-effort */
   }

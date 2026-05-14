@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--headless"],
+      "disabled": false,
+      "autoApprove": [
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_take_screenshot",
+        "browser_close"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "disabled": false,
+      "autoApprove": [
+        "resolve-library-id",
+        "get-library-docs"
+      ]
+    },
+    "deepwiki": {
+      "url": "https://mcp.deepwiki.com/mcp",
+      "disabled": false,
+      "autoApprove": [
+        "read_wiki_structure",
+        "read_wiki_contents",
+        "ask_question"
+      ]
+    }
+  }
+}

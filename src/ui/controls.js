@@ -25,12 +25,13 @@
  * Theme toggle lives as a sun/moon button at the bottom of the dock.
  */
 
-import { applyStyle } from '../map/createMap.js';
+import { applyStyle, applyMapMode } from '../map/createMap.js';
 import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
 import { getProfileConfig } from '../device.js';
-import { FEATURES, DEFAULT_THEME } from '../config.js';
+import { FEATURES, DEFAULT_THEME, MAP_MODES, DEFAULT_MAP_MODE } from '../config.js';
 import { mountHypsoUI } from './hypso/index.js';
-import { loadUiPrefs, saveUiPrefs } from './store.js';
+import { loadUiPrefs, saveUiPrefs, loadMapMode } from './store.js';
+import { mountModeSwitcher } from './mode-switcher.js';
 import { createDrawEngine } from '../draw/index.js';
 import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
 import { DRAW_ICONS } from './draw/icons.js';
@@ -726,6 +727,20 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   }
   renderChip(chipHost);
 
+  // Mode switcher — segmented control that picks Cart / Standard /
+  // Satellite. Lives next to the brand chip at the top of the canvas
+  // so the user can see and reach it without opening any panel.
+  // `chip-host` already provides the floating-row layout (flex/gap),
+  // so a sibling `[data-ctl="mode-switcher"]` slots in next to it
+  // visually without extra positioning code.
+  let modeHost = chipHost.querySelector('[data-ctl="mode-switcher"]');
+  if (!modeHost) {
+    modeHost = document.createElement('div');
+    modeHost.dataset.ctl = 'mode-switcher';
+    modeHost.className = 'mode-switcher-host';
+    chipHost.appendChild(modeHost);
+  }
+
   // Build the dock host (the sidebar element) + the panels container +
   // the vertical scale host. The dock-root + scale share a left-edge
   // column visually; the panels live as a sibling node so their
@@ -751,6 +766,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     theme: DEFAULT_THEME,
     qualityChoice: 'auto',
     detectedProfile: profile ?? 'medium',
+    // Read from the map's stored state if available so we stay in
+    // sync with what createMap() actually applied; loadMapMode() is
+    // a safe fallback for tests that mount controls without a real
+    // _cart attached.
+    mode: map._cart?.mode ?? loadMapMode(),
     layerFeatures: {
       labels: FEATURES.labels,
       pois: FEATURES.pois,
@@ -778,6 +798,35 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     });
   };
 
+  // ----- Map-mode switcher (segmented control beside the brand chip) ---
+  // The active mode is stamped on `<html>` so CSS can dim irrelevant
+  // panels (Relief / Hypso are Cart-only) without JS having to chase
+  // every input on every switch. The applyMapMode call already
+  // persists the choice via localStorage; we just keep `state.mode`
+  // in sync so subsequent style rebuilds (theme / quality switches)
+  // route through the right branch.
+  const syncModeAttr = () => {
+    document.documentElement.dataset.mapMode = state.mode;
+  };
+  syncModeAttr();
+  const modeSwitcher = mountModeSwitcher({
+    host: modeHost,
+    activeMode: state.mode,
+    onChange: async (next) => {
+      if (state.mode === next) return;
+      state.mode = next;
+      syncModeAttr();
+      try {
+        await applyMapMode(map, next);
+      } catch (err) {
+        // The mode router itself does graceful fallback for Standard;
+        // if anything else throws here we want the user to know the
+        // switch didn't take so they can retry.
+        // eslint-disable-next-line no-console
+        console.error('[cart] applyMapMode failed:', err);
+      }
+    },
+  });
   // ----- Dock controller -----------------------------------------------
   const controller = new DockController({
     dock: dockHost,

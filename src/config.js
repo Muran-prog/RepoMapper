@@ -470,3 +470,98 @@ export const FEATURES = Object.freeze({
 
 /** Default theme on cold boot. The user can flip it from the UI. */
 export const DEFAULT_THEME = 'light'; // 'light' | 'dark'
+
+// ---------------------------------------------------------------------------
+// Map-mode switcher.
+// ---------------------------------------------------------------------------
+//
+// The user can pick between three top-level visual modes:
+//
+//   • cart       — our premium composition (this is the whole rest of
+//                  this file), composed from src/style/. Default.
+//
+//   • standard   — a third-party "Google-Maps-like" style fetched as
+//                  a ready-made MapLibre style JSON and applied AS-IS,
+//                  with no local layer mutations. The point is to give
+//                  users a familiar, ordinary cartography fallback for
+//                  when our premium glow / Imhof relief is too much
+//                  context for the task at hand.
+//
+//                  Free, key-less candidates (any of these works):
+//                    – OpenFreeMap Liberty
+//                      https://tiles.openfreemap.org/styles/liberty
+//                    – OpenFreeMap Bright
+//                      https://tiles.openfreemap.org/styles/bright
+//                    – Versatiles Colorful
+//                      https://tiles.versatiles.org/assets/styles/colorful.json
+//
+//                  Liberty is the closest visually to Google Maps, so
+//                  we use it as the default.
+//
+//   • satellite  — Esri World Imagery (no key) raster tiles with a
+//                  thin local overlay of place + transportation_name
+//                  labels for readability. Composed locally from a
+//                  minimal style skeleton — no fetch.
+//
+// Mode switches travel through `map.setStyle(newStyle, { diff: false })`
+// so the camera (centre / zoom / pitch / bearing) is preserved without
+// any extra book-keeping.
+
+/**
+ * Available modes. Order is significant — it drives the visual segment
+ * order in the UI control.
+ */
+export const MAP_MODES = Object.freeze(['cart', 'standard', 'satellite']);
+
+/** Cold-boot mode, before any `localStorage` lookup. */
+export const DEFAULT_MAP_MODE = 'cart';
+
+/** localStorage key for the persisted user choice. */
+export const MAP_MODE_STORAGE_KEY = 'cart:map-mode';
+
+/**
+ * Upstream style URL for the Standard mode. Fetched once per mode
+ * switch as the literal `style.json` and handed to `setStyle` without
+ * any local mutation. If the fetch fails, the renderer falls back to
+ * Cart and prints a single warning.
+ */
+export const STANDARD_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
+
+/**
+ * Esri World Imagery — public, no API key, served as plain raster
+ * `{z}/{y}/{x}` tiles. Subject to Esri's usage limits but they're
+ * generous for low-traffic experimental work.
+ *
+ * Note the tile path uses `{z}/{y}/{x}` order (the Esri convention),
+ * not the more common `{z}/{x}/{y}`.
+ */
+export const SATELLITE_TILES = Object.freeze({
+  /** Esri ArcGIS REST imagery service. */
+  url:
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  tileSize: 256,
+  minzoom: 0,
+  maxzoom: 19,
+  attribution:
+    'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>' +
+    ' — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+});
+
+/**
+ * Display labels in the user-friendly switcher UI. Plain strings so
+ * controls.js can mount them without an i18n bundle.
+ */
+export const MAP_MODE_LABELS = Object.freeze({
+  cart: 'Cart',
+  standard: 'Standard',
+  satellite: 'Satellite',
+});
+
+/**
+ * Tooltip / aria-description for each mode.
+ */
+export const MAP_MODE_HINTS = Object.freeze({
+  cart: 'Преміумна Cart-карта зі свіченням та акцентами',
+  standard: 'Стандартна карта (OpenFreeMap Liberty)',
+  satellite: 'Супутникові знімки (Esri World Imagery)',
+});

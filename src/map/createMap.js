@@ -34,6 +34,9 @@ import {
   CONTOURS,
   HYPSO,
   DEFAULT_THEME,
+  MAP_MODES,
+  DEFAULT_MAP_MODE,
+  STANDARD_STYLE_URL,
 } from '../config.js';
 import { composeLayers, getTokens } from '../style/index.js';
 import {
@@ -46,6 +49,7 @@ import {
   composeProjection,
   evalExaggeration,
 } from '../style/terrain.js';
+import { composeSatelliteStyle } from '../style/satellite.js';
 import {
   CONTOURS_SOURCE_LAYER,
 } from '../style/contours.js';
@@ -61,6 +65,7 @@ import {
   getProfileConfig,
   getTouchTuning,
 } from '../device.js';
+import { loadMapMode, saveMapMode } from '../ui/store.js';
 
 // ---------------------------------------------------------------------------
 // Protocol registration — once per page lifetime, regardless of how many
@@ -276,7 +281,7 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
 }
 
 /**
- * Build a MapLibre `source` entry for the contour-dynamic source. The
+ * Build a `source` entry for the contour-dynamic source. The
  * maplibre-contour library exposes its tiles via a custom URL prefix
  * (e.g. `contour://…`) that was registered by `registerContourProtocol`.
  */
@@ -422,7 +427,16 @@ export async function createMap(container, opts = {}) {
   // boot. Falls back to the frozen HYPSO config defaults.
   const hypsoState = resolveInitialHypsoState(opts.hypsoState, features, profileConfig);
 
-  const style = await buildStyle({
+  // Map-mode router. The user's persisted choice wins; explicit
+  // overrides (used by tests + the validator stub) take precedence
+  // over both. If the persisted value is somehow not in MAP_MODES we
+  // fall back to the default rather than throwing — the user
+  // shouldn't be locked out of the map by a bad localStorage value.
+  const requestedMode = opts.mode ?? loadMapMode();
+  const mode = MAP_MODES.includes(requestedMode) ? requestedMode : DEFAULT_MAP_MODE;
+
+  const style = await buildModeStyle({
+    mode,
     theme,
     features,
     profileConfig,
@@ -479,6 +493,7 @@ export async function createMap(container, opts = {}) {
     // per-profile mul.
     userExaggerationMul: 1,
     hypso: hypsoState,
+    mode,
   };
   seedHypsoState(map, hypsoState);
 
@@ -548,7 +563,22 @@ export async function applyStyle(map, patch = {}) {
     theme,
   };
 
-  const style = await buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState });
+  // Route through the mode dispatcher so theme / profile / feature
+  // patches keep working in Cart mode AND don't accidentally clobber
+  // a Standard / Satellite style with our composeLayers stack. For the
+  // non-Cart modes we just rebuild the same mode JSON — nothing here
+  // mutates the upstream style.
+  const mode = patch.mode ?? prev.mode ?? DEFAULT_MAP_MODE;
+
+  const style = await buildModeStyle({
+    mode,
+    theme,
+    features,
+    profileConfig,
+    layerOpts,
+    caps,
+    hypsoState,
+  });
   map.setStyle(style, { diff: false });
 
   // The new style means the native-color-relief probe (if any) needs
@@ -563,7 +593,83 @@ export async function applyStyle(map, patch = {}) {
     features,
     layerOpts,
     hypso: hypsoState,
+    mode,
   };
   seedHypsoState(map, hypsoState);
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// Mode router. The brief asks us to keep the camera intact during a mode
+// switch (no flyTo, no jumpTo) and to gracefully fall back to Cart when
+// the third-party Standard fetch fails.
+// ---------------------------------------------------------------------------
+
+/**
+ * Dispatch on `mode` to produce the appropriate MapLibre style JSON.
+ *
+ *   • cart       — the full composeLayers / composeSources stack
+ *   • standard   — fetched-as-is third-party style; no local edits
+ *   • satellite  — locally-composed minimal raster + labels skeleton
+ *
+ * The Standard branch falls back to Cart with a single console.warn if
+ * the upstream fetch fails (e.g. network down, CORS, 5xx). That keeps
+ * the map renderable in adverse conditions.
+ *
+ * Pure with respect to the map instance — caller is responsible for
+ * `map.setStyle` and any post-load state seeding.
+ */
+async function buildModeStyle(opts) {
+  const { mode } = opts;
+  if (mode === 'standard') {
+    try {
+      const upstream = await fetch(STANDARD_STYLE_URL, { cache: 'force-cache' })
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        });
+      if (!upstream || typeof upstream !== 'object') {
+        throw new Error('Upstream style is not an object');
+      }
+      return upstream;
+    } catch (err) {
+      // Soft fallback per the brief — render Cart instead and warn
+      // exactly once so users see something useful even on bad
+      // networks.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[cart] Failed to load Standard style from %s — falling back to Cart. %o',
+        STANDARD_STYLE_URL,
+        err,
+      );
+      return buildStyle(opts);
+    }
+  }
+  if (mode === 'satellite') {
+    return composeSatelliteStyle();
+  }
+  return buildStyle(opts);
+}
+
+/**
+ * Switch the live map to a new visual mode. Camera (centre / zoom /
+ * pitch / bearing) is preserved automatically by `setStyle({ diff:
+ * false })` — MapLibre keeps the transform across the swap. Persisted
+ * to localStorage so a reload restores the user's choice.
+ *
+ * @param {maplibregl.Map} map
+ * @param {'cart'|'standard'|'satellite'} mode
+ * @returns {Promise<maplibregl.Map>}
+ */
+export async function applyMapMode(map, mode) {
+  if (!MAP_MODES.includes(mode)) return map;
+  const prev = map._cart ?? {};
+  if (prev.mode === mode) return map;
+
+  // Run the next style build through the same plumbing as a regular
+  // style rebuild. theme / features / profile carry over so the user
+  // doesn't lose them across a mode swap.
+  await applyStyle(map, { mode });
+  saveMapMode(mode);
   return map;
 }

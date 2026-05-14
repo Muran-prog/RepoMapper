@@ -51,8 +51,17 @@ async function main() {
   const { composeLayers } = await importEsm('src/style/index.js');
   const { composeSources, sourceAvailability } = await importEsm('src/style/sources.js');
   const { composeSky, composeTerrain, composeProjection } = await importEsm('src/style/terrain.js');
+  const { composeSatelliteStyle } = await importEsm('src/style/satellite.js');
   const { getProfileConfig } = await importEsm('src/device.js');
-  const { FEATURES, TERRAIN, OPENFREEMAP, HYPSO } = await importEsm('src/config.js');
+  const {
+    FEATURES,
+    TERRAIN,
+    OPENFREEMAP,
+    HYPSO,
+    MAP_MODES,
+    STANDARD_STYLE_URL,
+    SATELLITE_TILES,
+  } = await importEsm('src/config.js');
   const { getTokens } = await importEsm('src/style/tokens.js');
   const { RAMP_IDS } = await importEsm('src/style/hypso/ramps.js');
 
@@ -267,6 +276,78 @@ async function main() {
   ];
 
   // ---------------------------------------------------------------------
+  // Mode-specific style builders.
+  //
+  // Cart-mode validation walks the whole feature/profile/theme matrix
+  // above (it's the heaviest branch). The new modes only need their
+  // own skeleton checked — the brief explicitly excludes our internal
+  // composition from the Standard / Satellite validators.
+  //
+  //   • standard — substitute a stub MapLibre style that points at the
+  //                same upstream tile source URL the runtime would
+  //                receive. We validate the SHAPE of that stub (a
+  //                spec-valid style root with sources + at least one
+  //                layer); the runtime then trusts the upstream
+  //                JSON as-is.
+  //
+  //   • satellite — locally composed via `composeSatelliteStyle()` and
+  //                 validated as a regular spec-valid style.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Stub Standard style. Real runtime fetches STANDARD_STYLE_URL and
+   * applies the upstream JSON unchanged. Here we synthesise the
+   * smallest spec-valid style that REFERENCES the same source URL,
+   * which is what the brief asks for.
+   */
+  const buildStandardStubStyle = () => ({
+    version: 8,
+    name: 'Cart · Standard (stub)',
+    metadata: { mode: 'standard', upstream: STANDARD_STYLE_URL },
+    sources: {
+      // The same OMT TileJSON URL the upstream Liberty style points at —
+      // we keep the source id stable so any consumers that probe for
+      // `openmaptiles` keep working in tests.
+      openmaptiles: {
+        type: 'vector',
+        // Exact URL the runtime would receive when it fetches the
+        // upstream style; placeholder for the real upstream descriptor.
+        url: OPENFREEMAP.tilejson,
+        attribution: OPENFREEMAP.attribution,
+      },
+    },
+    glyphs: OPENFREEMAP.glyphs,
+    layers: [
+      // Single background layer so the validator has at least one
+      // rendered layer to chew on. Upstream Liberty has 100+ layers;
+      // we don't enumerate them here because the brief explicitly
+      // says we don't validate the third-party stack.
+      {
+        id: 'standard_background',
+        type: 'background',
+        paint: { 'background-color': '#f4f1ea' },
+      },
+    ],
+  });
+
+  /**
+   * Locally-built Satellite style — same module the runtime uses, so
+   * we validate the actual JSON the user will see.
+   */
+  const buildSatelliteStubStyle = () => composeSatelliteStyle();
+
+  /**
+   * Lightweight mode-aware builder. Cart re-uses `buildStyleWithStubs`
+   * (the full feature-matrix path); the other two modes return their
+   * skeleton.
+   */
+  const buildStyleForMode = (mode, args) => {
+    if (mode === 'standard') return buildStandardStubStyle();
+    if (mode === 'satellite') return buildSatelliteStubStyle();
+    return buildStyleWithStubs(args);
+  };
+
+  // ---------------------------------------------------------------------
   // Execute
   // ---------------------------------------------------------------------
   let failed = 0;
@@ -316,6 +397,47 @@ async function main() {
         }
 
         rows.push({ theme, profile, pack: pack.name, status, layers: layerCount, details });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Map-mode matrix.
+  //
+  // The brief asks the validator to verify every (mode × theme ×
+  // profile) combination. Cart already covers the full feature-pack
+  // matrix above; here we add Standard + Satellite passes, also
+  // walking theme × profile so we don't accidentally regress one of
+  // them on a particular device tier (none of those parameters
+  // affect the upstream / satellite skeletons today, but the matrix
+  // is cheap and prevents future drift).
+  // ---------------------------------------------------------------------
+  for (const mode of MAP_MODES) {
+    if (mode === 'cart') continue; // already covered above
+    for (const theme of themes) {
+      for (const profile of profiles) {
+        const features = { ...FEATURES };
+        let status = 'ok';
+        let details = '';
+        let layerCount = 0;
+        try {
+          const style = buildStyleForMode(mode, { theme, profile, features, pack: { name: `mode-${mode}` } });
+          layerCount = style.layers.length;
+          const errors = validate(style) || [];
+          if (errors.length > 0) {
+            status = 'fail';
+            details = errors
+              .slice(0, 5)
+              .map((e) => `${e.line ? `L${e.line}: ` : ''}${e.message}`)
+              .join(' | ');
+            failed++;
+          }
+        } catch (err) {
+          status = 'throw';
+          details = err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : String(err);
+          failed++;
+        }
+        rows.push({ theme, profile, pack: `mode-${mode}`, status, layers: layerCount, details });
       }
     }
   }

@@ -850,3 +850,98 @@
  *  but no longer carries the class — controls.js now applies `.dock`
  *  to its child wrapper.
  * ===================================================================== */
+
+/* =====================================================================
+ *  Map-mode switcher.
+ *
+ *  Sits next to the brand chip in the top-left floating row so the
+ *  user can pick Cart / Standard / Satellite without opening any
+ *  panel. Uses the same `.seg seg-3` skeleton as the Quality picker
+ *  in the Settings panel — but wrapped in a glass-card so it reads
+ *  as a peer of the brand chip and the HUD pill.
+ * ===================================================================== */
+
+.mode-switcher-host {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mode-switcher {
+  /* Glass surface to match the chip / HUD / dock family. We don't
+     reuse `.chip` because we need a container with seg-3 grid behaviour
+     for the radios — the chip's flex / max-content sizing collapses
+     them. */
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--hairline);
+  border-radius: var(--float-radius);
+  box-shadow: var(--shadow-md), var(--ring);
+  padding: 3px;
+  /* Nudge the children's gap so the segments feel balanced inside
+     the glass card; the inherited `.seg` styles already supply the
+     button appearance. */
+  gap: 0;
+}
+
+.mode-switcher .mode-switcher-btn {
+  /* Inherits `.seg button` look-and-feel; override only what's
+     specific to the radiogroup pattern. */
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  appearance: none;
+  padding: 0 12px;
+  min-height: calc(var(--hit) - 10px);
+  cursor: pointer;
+  border-radius: calc(var(--float-radius) - 3px);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .mode-switcher .mode-switcher-btn:hover {
+    color: var(--fg);
+  }
+}
+.mode-switcher .mode-switcher-btn:active {
+  transform: scale(0.97);
+}
+.mode-switcher .mode-switcher-btn[aria-checked="true"],
+.mode-switcher .mode-switcher-btn.on {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm), var(--ring);
+  font-weight: 600;
+}
+.mode-switcher .mode-switcher-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* When the user picks a non-Cart mode, dim the relief / hypso dock
+ * entries — those panels' contents have no effect on the upstream
+ * Standard style or the bare Satellite skeleton. The buttons stay
+ * focusable so the layout doesn't reflow on every switch; they just
+ * read as inactive. */
+:where(html[data-map-mode="standard"], html[data-map-mode="satellite"])
+  .dock-btn[data-panel="relief"],
+:where(html[data-map-mode="standard"], html[data-map-mode="satellite"])
+  .dock-btn[data-panel="hypso"] {
+  opacity: 0.45;
+}
+
+/* On narrow viewports the chip wraps; let the mode switcher keep its
+ * full label set so it stays a usable touch target rather than
+ * shrinking icons that lose their meaning. */
+@media (max-width: 540px) {
+  .mode-switcher .mode-switcher-btn {
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+}
