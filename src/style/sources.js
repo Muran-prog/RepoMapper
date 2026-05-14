@@ -100,11 +100,14 @@ export function composeSources({
   const sources = {};
   if (vectorSource) sources.openmaptiles = vectorSource;
 
-  // Primary DEM backs hillshade, 3D terrain and dynamic contour generation.
-  // One source shared across all three so MapLibre reuses tile loads.
+  // Primary DEM backs hillshade, 3D terrain, dynamic contour generation,
+  // AND the native color-relief hypsometric tint. The latter is easy
+  // to forget: turning everything else off (Flat hypso preset) leaves
+  // hypsometricTint as the sole consumer, and without the DEM source
+  // the native color-relief layer silently degrades to 'off'.
   const primaryDem = toRasterDemSource(terrain.primary);
   const needsPrimaryDem =
-    features.hillshade || features.terrain3D || features.contours;
+    features.hillshade || features.terrain3D || features.contours || features.hypsometricTint;
   if (needsPrimaryDem && primaryDem) {
     sources['terrain-dem'] = primaryDem;
   }

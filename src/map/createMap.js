@@ -557,11 +557,28 @@ export async function applyStyle(map, patch = {}) {
   // Hypso state survives style rebuilds. theme rides along so the
   // ramp expression switches light↔dark in the new style spec without
   // a second imperative step.
+  //
+  // Edge case: when the user re-enables the Hypsometric tint feature
+  // flag after a previous off cycle, `prev.hypso.mode` is stuck on
+  // 'off' — and the composer's `resolveHypsoMode` short-circuits to
+  // 'off' even though the flag is now true, so no hypso layers get
+  // emitted. We detect that off→on transition and drop the cached
+  // mode so resolveHypsoMode falls through to its native→raster→off
+  // preference chain. Symmetrically, an on→off transition forces the
+  // mode back to 'off' so the leftover state doesn't briefly re-emit
+  // the layer on the next applyStyle.
+  const wasTintOn = !!prev.features?.hypsometricTint;
+  const isTintOn = !!features.hypsometricTint;
   const hypsoState = {
     ...(prev.hypso ?? {}),
     ...(patch.hypsoState ?? {}),
     theme,
   };
+  if (!wasTintOn && isTintOn && !patch.hypsoState?.mode) {
+    delete hypsoState.mode;
+  } else if (wasTintOn && !isTintOn && !patch.hypsoState?.mode) {
+    hypsoState.mode = 'off';
+  }
 
   // Route through the mode dispatcher so theme / profile / feature
   // patches keep working in Cart mode AND don't accidentally clobber

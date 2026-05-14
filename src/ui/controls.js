@@ -340,6 +340,15 @@ function renderLayersPanelBody() {
 
 function renderReliefPanelBody() {
   return `
+    <div class="panel-group preset-row-group" data-ctl="flat-hypso-group">
+      <label class="row preset-row">
+        <span class="preset-row-text">
+          <strong>Flat hypsometric</strong>
+          <small>Колір висот без затінення, нахилу та ізоліній</small>
+        </span>
+        <input type="checkbox" data-ctl="flatHypso" aria-describedby="flat-hypso-desc">
+      </label>
+    </div>
     <div class="panel-group">
       <h4 class="panel-group-title">Layers</h4>
       <div class="rows">
@@ -889,12 +898,36 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   );
 
   // ----- Layer toggles -------------------------------------------------
+  //
+  // The "Flat hypsometric" preset is a *computed* state: it's checked
+  // iff the four managed feature flags are in the exact configuration
+  // that produces a flat hypso-only render. This means every regular
+  // feature toggle has to refresh the preset checkbox after it
+  // changes, and the preset checkbox itself fires a single batched
+  // applyStyle() rather than four serial setStates.
+  const FLAT_HYPSO_KEYS = ['hillshade', 'terrain3D', 'contours', 'hypsometricTint'];
+  const isFlatHypsoActive = (features) =>
+    features.hypsometricTint === true &&
+    features.hillshade === false &&
+    features.terrain3D === false &&
+    features.contours === false;
+  const flatHypsoEl = panelsHost.querySelector('[data-ctl=flatHypso]');
+  const syncFlatHypsoCheckbox = () => {
+    if (!flatHypsoEl) return;
+    const next = isFlatHypsoActive(state.layerFeatures);
+    if (flatHypsoEl.checked !== next) flatHypsoEl.checked = next;
+  };
+
   const wireToggle = (selector, key = selector) => {
     const el = panelsHost.querySelector(`[data-ctl=${selector}]`);
     if (!el) return;
     el.checked = !!state.layerFeatures[key];
     el.addEventListener('change', async () => {
       state.layerFeatures[key] = el.checked;
+      // Any user-driven change to one of the four managed flags is
+      // the natural deactivation signal for the Flat hypso preset —
+      // the computed predicate handles that automatically here.
+      if (FLAT_HYPSO_KEYS.includes(key)) syncFlatHypsoCheckbox();
       await rebuildStyle();
     });
   };
@@ -909,6 +942,54 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('textureShading');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
+
+  // ----- Flat hypsometric preset --------------------------------------
+  //
+  // Atomic batch-patch of the four managed flags + a single applyStyle
+  // call. We mirror the new values back onto every dependent checkbox
+  // synchronously BEFORE awaiting rebuildStyle so the UI never shows
+  // a half-applied state mid-render. If the flags already match the
+  // target configuration, this is a no-op (no extra applyStyle).
+  if (flatHypsoEl) {
+    syncFlatHypsoCheckbox();
+    flatHypsoEl.addEventListener('change', async () => {
+      // Activation is the only meaningful user action here. Unchecking
+      // the preset directly is interpreted as "leave the preset", but
+      // since the flat configuration IS the preset, the cleanest
+      // behaviour is to toggle Hillshade back on (the most common
+      // base relief layer) so the user sees a visible change.
+      if (flatHypsoEl.checked) {
+        const target = {
+          hillshade: false,
+          terrain3D: false,
+          contours: false,
+          hypsometricTint: true,
+        };
+        const changed = FLAT_HYPSO_KEYS.some(
+          (k) => state.layerFeatures[k] !== target[k],
+        );
+        Object.assign(state.layerFeatures, target);
+        // Reflect new flag values on the regular feature checkboxes
+        // so the panel rows match state immediately.
+        for (const k of FLAT_HYPSO_KEYS) {
+          const ctlSel = k === 'hypsometricTint' ? 'hypsometricTint' : k;
+          const row = panelsHost.querySelector(`[data-ctl=${ctlSel}]`);
+          if (row && row.checked !== state.layerFeatures[k]) {
+            row.checked = state.layerFeatures[k];
+          }
+        }
+        if (changed) await rebuildStyle();
+      } else {
+        // User unticked the preset directly — restore Hillshade so the
+        // computed predicate pivots away from "flat hypso" cleanly.
+        state.layerFeatures.hillshade = true;
+        const hsRow = panelsHost.querySelector('[data-ctl=hillshade]');
+        if (hsRow) hsRow.checked = true;
+        syncFlatHypsoCheckbox();
+        await rebuildStyle();
+      }
+    });
+  }
 
   // ----- Exaggeration slider ------------------------------------------
   const slider = panelsHost.querySelector('[data-ctl=exaggeration]');

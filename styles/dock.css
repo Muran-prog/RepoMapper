@@ -936,6 +936,84 @@
   opacity: 0.45;
 }
 
+/* The Flat hypsometric preset is Cart-only — its underlying feature
+ * stack only exists in Cart mode. Hide the row entirely when a
+ * non-Cart mode is active so the user can't tick a switch that has
+ * no observable effect. */
+:where(html[data-map-mode="standard"], html[data-map-mode="satellite"])
+  .preset-row-group {
+  display: none;
+}
+
+/* =====================================================================
+ *  Flat hypsometric preset row.
+ *
+ *  A "macro" toggle that pinch-hits for four feature flags at once.
+ *  We promote it visually so it reads as an emphasised shortcut sitting
+ *  ABOVE the regular relief feature checkboxes — not as a peer in the
+ *  same uniform list. The row borrows the existing `.row` switch
+ *  primitive so the toggle UI matches the rest of the panel; the
+ *  surrounding card adds the emphasis.
+ * ===================================================================== */
+
+.preset-row-group {
+  /* Override the default `.panel-group + .panel-group` divider so the
+     preset card sits flush against the panel head with its own
+     contained look rather than borrowing from the next group's
+     hairline rhythm. */
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 8%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 4%, transparent) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--hairline));
+  box-shadow: var(--shadow-sm);
+  gap: 0;
+}
+.preset-row-group + .panel-group {
+  margin-top: 4px;
+  padding-top: 14px;
+}
+
+.row.preset-row {
+  /* The preset row is denser visually than a peer feature toggle — it
+     carries a secondary descriptor line, so we use the same flex
+     layout as the .presets buttons. */
+  align-items: center;
+  padding: 4px 6px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--fg);
+}
+@media (hover: hover) {
+  .row.preset-row:hover {
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+}
+.row.preset-row .preset-row-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.row.preset-row .preset-row-text strong {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+}
+.row.preset-row .preset-row-text small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fg-muted);
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
 /* On narrow viewports the chip wraps; let the mode switcher keep its
  * full label set so it stays a usable touch target rather than
  * shrinking icons that lose their meaning. */
