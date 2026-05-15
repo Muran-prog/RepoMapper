@@ -1297,13 +1297,56 @@ export function createDrawEngine(map) {
     emit('enabled', false);
   };
 
+  const commitDraftIfValid = () => {
+    const draft = state.draft;
+    if (!draft) return;
+    const kind = draft.properties?.kind;
+    if (kind === 'line-draft') {
+      const coords = draft.geometry?.coordinates;
+      // Drop the trailing rubber-band vertex (tracks cursor, not authored).
+      const final = coords?.slice(0, -1);
+      if (final && final.length >= 2) {
+        addFeature({
+          type: 'Feature',
+          id: nextId('line'),
+          geometry: { type: 'LineString', coordinates: final },
+          properties: {
+            kind: 'line',
+            color: draft.properties.color,
+            fill: draft.properties.fill,
+            weight: draft.properties.weight,
+            opacity: draft.properties.opacity,
+          },
+        });
+      }
+    } else if (kind === 'polygon-draft') {
+      const coords = draft.geometry?.coordinates?.slice(0, -1);
+      if (coords && coords.length >= 3) {
+        coords.push(coords[0]);
+        addFeature({
+          type: 'Feature',
+          id: nextId('polygon'),
+          geometry: { type: 'Polygon', coordinates: [coords] },
+          properties: {
+            kind: 'polygon',
+            color: draft.properties.color,
+            fill: draft.properties.fill,
+            weight: draft.properties.weight,
+            opacity: draft.properties.opacity,
+          },
+        });
+      }
+    }
+    emit('draft', null);
+  };
+
   const setTool = (tool) => {
     if (state.tool === tool) return;
     state.tool = tool;
-    // One-shot invariants that must hold immediately after a tool
-    // switch, regardless of which tool we came from or which we're
-    // heading to. Keeping them here (instead of sprinkled in each
-    // tool handler) is what makes the state model predictable.
+    // Auto-commit valid drafts on tool switch. On mobile, users
+    // can't easily double-tap or long-press to finish a line/polygon,
+    // so switching tools is their natural "done" gesture.
+    commitDraftIfValid();
     state.draft = null;
     state.drag = null;
     clearHover();
@@ -1457,16 +1500,16 @@ export function createDrawEngine(map) {
   };
 
   /**
-   * Cancel any in-progress draft (line vertex chain, polygon ring,
-   * pencil stroke). Safe no-op when nothing is being drawn. Called by
-   * the panel when the dock controller closes the draw panel — this
-   * way the user doesn't return to a stale rubber-band edge later.
+   * Finish or discard any in-progress draft. Called by the panel when
+   * the dock controller closes the draw panel. Commits valid geometry
+   * (enough vertices) so mobile users don't lose work when the panel
+   * auto-dismisses; discards incomplete stubs.
    */
   const cancelDraft = () => {
     if (!state.draft) return;
+    commitDraftIfValid();
     state.draft = null;
     rerender();
-    emit('draft', null);
   };
 
   const exportGeoJSON = () => ({
