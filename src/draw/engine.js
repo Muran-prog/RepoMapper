@@ -343,6 +343,7 @@ export function createDrawEngine(map) {
       select: state.hoverId ? 'pointer' : '',
       marker: 'crosshair',
       line: 'crosshair',
+      segment: 'crosshair',
       pencil: 'crosshair',
       shape: 'crosshair',
       polygon: 'crosshair',

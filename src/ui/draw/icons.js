@@ -29,6 +29,14 @@ export const DRAW_ICONS = Object.freeze({
     <circle cx="19" cy="18" r="2"/>
     <line x1="6.5" y1="7.5" x2="17.5" y2="16.5"/>
   `),
+  segment: stroke(`
+    <circle cx="4" cy="18" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="12" cy="6" r="1.8" fill="currentColor" stroke="none"/>
+    <line x1="4" y1="18" x2="12" y2="6"/>
+    <circle cx="14" cy="20" r="1.8" fill="currentColor" stroke="none"/>
+    <circle cx="20" cy="10" r="1.8" fill="currentColor" stroke="none"/>
+    <line x1="14" y1="20" x2="20" y2="10"/>
+  `),
   polygon: stroke(`
     <path d="M12 4 L19 9 L17 18 L7 18 L5 9 z"/>
     <circle cx="12" cy="4" r="1.6" fill="currentColor" stroke="none"/>

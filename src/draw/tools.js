@@ -568,6 +568,60 @@ const selectTool = {
   },
 };
 
+/**
+ * SEGMENT — two taps = one line, auto-committed. No need to double-tap
+ * or switch tools to finish. First tap sets the start, second tap sets
+ * the end and commits immediately. Next tap starts a new segment.
+ */
+const segmentTool = {
+  click(ctx, e) {
+    if (hasReservedModifier(e)) return;
+    const { state, prefs, addFeature, rerender, emit, nextId } = ctx;
+    const lngLat = [e.lngLat.lng, e.lngLat.lat];
+
+    if (!state.draft || state.draft.properties?.kind !== 'segment-draft') {
+      state.draft = {
+        type: 'Feature',
+        id: '__draft_segment',
+        geometry: { type: 'LineString', coordinates: [lngLat, lngLat] },
+        properties: {
+          kind: 'segment-draft',
+          ...styleBag(prefs),
+          preview: true,
+        },
+      };
+      emit('draft', 'segment');
+      rerender();
+    } else {
+      // Second tap — commit the segment immediately.
+      const coords = state.draft.geometry.coordinates;
+      const start = coords[0];
+      state.draft = null;
+      emit('draft', null);
+      addFeature({
+        type: 'Feature',
+        id: nextId('line'),
+        geometry: { type: 'LineString', coordinates: [start, lngLat] },
+        properties: {
+          kind: 'line',
+          color: prefs.color,
+          fill: prefs.fill,
+          weight: prefs.weight,
+          opacity: prefs.opacity,
+        },
+      });
+    }
+  },
+
+  mousemove(ctx, e) {
+    const { state, rerender } = ctx;
+    if (!state.draft || state.draft.properties?.kind !== 'segment-draft') return;
+    const coords = state.draft.geometry.coordinates;
+    coords[coords.length - 1] = [e.lngLat.lng, e.lngLat.lat];
+    rerender();
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Registry + dispatcher.
 // ---------------------------------------------------------------------------
@@ -576,6 +630,7 @@ const TOOLS = {
   select: selectTool,
   marker: markerTool,
   line: lineTool,
+  segment: segmentTool,
   polygon: polygonTool,
   shape: shapeTool,
   // pencil has no map-event handlers — see note above.

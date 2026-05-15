@@ -26,6 +26,7 @@ const TOOL_DEFS = [
   { id: 'select',  label: 'Выбор',     tip: 'Выделить и редактировать', icon: I.select },
   { id: 'marker',  label: 'Метка',     tip: 'Поставить метку',           icon: I.marker },
   { id: 'line',    label: 'Линия',     tip: 'Начертить линию',           icon: I.line },
+  { id: 'segment', label: 'Отрезок',   tip: 'Два тапа — одна линия',     icon: I.segment },
   { id: 'polygon', label: 'Полигон',   tip: 'Начертить многоугольник',   icon: I.polygon },
   { id: 'pencil',  label: 'Карандаш',  tip: 'Свободное рисование',       icon: I.pencil },
   { id: 'shape',   label: 'Фигура',    tip: 'Готовая фигура',             icon: I.shapeHex },
