@@ -39,6 +39,23 @@ import { haversine } from './connections.js';
 /** Pixel threshold below which we classify pointer travel as "click". */
 const CLICK_SLOP_PX = 5;
 
+/** Double-tap detection for touch devices where dblclick doesn't fire. */
+const DOUBLE_TAP_MS = 350;
+const DOUBLE_TAP_PX = 24;
+let _lastTapTime = 0;
+let _lastTapPoint = null;
+
+function isDoubleTap(point) {
+  const now = Date.now();
+  const dt = now - _lastTapTime;
+  const close = _lastTapPoint
+    ? pxDistance(point, _lastTapPoint) < DOUBLE_TAP_PX
+    : false;
+  _lastTapTime = now;
+  _lastTapPoint = { x: point.x, y: point.y };
+  return dt < DOUBLE_TAP_MS && close;
+}
+
 /** Default shape size (pixels) used when prefs.shapeSize is missing. */
 const DEFAULT_SHAPE_SIZE_PX = 100;
 
@@ -177,6 +194,12 @@ const lineTool = {
     const { state, prefs, addFeature, rerender, emit, nextId } = ctx;
     const lngLat = [e.lngLat.lng, e.lngLat.lat];
 
+    // Double-tap finishes the line (mobile can't fire dblclick reliably).
+    if (state.draft && state.draft.properties?.kind === 'line-draft' && isDoubleTap(e.point)) {
+      finishLine(ctx);
+      return;
+    }
+
     if (!state.draft || state.draft.properties?.kind !== 'line-draft') {
       state.draft = {
         type: 'Feature',
@@ -252,6 +275,12 @@ const polygonTool = {
     if (hasReservedModifier(e)) return;
     const { map, state, prefs, rerender, emit } = ctx;
     const lngLat = [e.lngLat.lng, e.lngLat.lat];
+
+    // Double-tap finishes the polygon (mobile can't fire dblclick reliably).
+    if (state.draft && state.draft.properties?.kind === 'polygon-draft' && isDoubleTap(e.point)) {
+      finishPolygon(ctx);
+      return;
+    }
 
     if (!state.draft || state.draft.properties?.kind !== 'polygon-draft') {
       state.draft = {
