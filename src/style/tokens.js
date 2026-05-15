@@ -84,10 +84,21 @@ const LIGHT = {
   regionBorder: '#bcaab8',
   cityBorder: '#cdbac9',
 
-  // Buildings
-  building: '#e2dccd',
-  buildingOutline: '#c8c0ad',
-  building3D: '#e8e2d2',
+  // Buildings — accent-tinted clay so the urban fabric clearly
+  // separates from the cream paper background. The base 2D fill
+  // sits a few shades darker and warmer than `bg`, the outline
+  // pulls toward the accent amber, and `building3D` is a touch
+  // lighter so the extruded layer reads as illuminated walls.
+  // Landmark tokens below stay as the "premium" tier — same
+  // family but more saturated.
+  building: '#e8d6b4',
+  buildingOutline: '#a86a1d',
+  building3D: '#ecd6b0',
+  // Soft outer halo around every building; brighter than the
+  // landmark glow so buildings pop against the cream fabric, but
+  // still tuned for the same amber accent family.
+  buildingGlowOuter: 'rgba(217, 119, 6, 0.36)',
+  buildingGlowInner: 'rgba(217, 119, 6, 0.55)',
 
   // Roads (inline / fill)
   motorway: '#ffb961',
@@ -131,6 +142,15 @@ const LIGHT = {
   // POI
   poiFill: '#5a6e84',
   poiHalo: '#ffffff',
+
+  // Place dots — bright accent core + soft halo for city / town / village /
+  // hamlet markers. Same hue family as the road & landmark accents so a
+  // city dot reads as an "important point" relative to the cool-cream
+  // fabric. Used by labels.js — see placeDots() for the per-class radius
+  // curve. Reuses the existing amber accent so we don't grow the palette.
+  placeDot: '#d97706',
+  placeDotStroke: '#ffffff',
+  placeDotGlow: 'rgba(217, 119, 6, 0.34)',
 
   // ---------------------------------------------------------------------
   // Relief & atmosphere — Swiss-cartography inspired light-day palette.
@@ -266,9 +286,13 @@ const DARK = {
   regionBorder: '#3d3742',
   cityBorder: '#2c2730',
 
-  building: '#1d2229',
-  buildingOutline: '#262c34',
-  building3D: '#252b34',
+  building: '#2a2a36',
+  buildingOutline: '#f0a850',
+  building3D: '#36364a',
+  // Outer + inner glow rings reuse the dark-theme amber so building
+  // edges visibly glow against the slate canvas at every zoom.
+  buildingGlowOuter: 'rgba(240, 168, 80, 0.42)',
+  buildingGlowInner: 'rgba(240, 168, 80, 0.62)',
 
   motorway: '#7d4d12',
   trunk: '#7a4f1a',
@@ -307,6 +331,14 @@ const DARK = {
 
   poiFill: '#a5b6c8',
   poiHalo: '#0e131a',
+
+  // Place dot accent — same warm amber family as the dark-theme road/
+  // landmark accents so a city dot pops against the deep slate canvas.
+  // Slightly higher alpha on the glow than light to compensate for
+  // the dimmer base palette.
+  placeDot: '#f0a850',
+  placeDotStroke: '#0e131a',
+  placeDotGlow: 'rgba(240, 168, 80, 0.40)',
 
   // ---------------------------------------------------------------------
   // Relief & atmosphere — inverted twilight palette. Shadow is deep cold

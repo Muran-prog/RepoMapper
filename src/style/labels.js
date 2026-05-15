@@ -118,6 +118,168 @@ function classWithRank(classes, rankCutoff) {
 }
 
 // ---------------------------------------------------------------------------
+// Place dots — LOD proxy for cities / towns / villages / hamlets.
+//
+// Visible from z3 (the same level country labels appear) so the map
+// shows a vivid accent constellation of populated places long before
+// any building geometry is reachable. At low zooms only the highest-
+// ranked entries pass the filter; as zoom grows the rank cutoff
+// loosens and dot radius grows on a per-class curve. The class itself
+// drives `symbol-sort-key` so collisions favour cities > towns >
+// villages > hamlets — same order the eye expects.
+//
+// Why a circle layer instead of an icon symbol: zero dependency on
+// the upstream sprite (we don't ship one), zero new sources, and
+// circles are the cheapest GPU primitive in MapLibre. The pair
+// (glow + dot) is two layers total; the glow is gated on the same
+// rank cutoff so it never paints invisible halos. Both layers are
+// emitted FIRST, before any place text label, so the dot sits
+// underneath its own name when both are visible.
+//
+// Density gating: the active `placeRankCutoff` (from device.js) caps
+// what enters the layer; on low-profile devices that's a stricter
+// cap so phones see fewer dots overall.
+// ---------------------------------------------------------------------------
+
+function placeDots(t, opts) {
+  const { placeRankCutoff } = opts;
+
+  // Per-class radius interpolated across zoom. The MapLibre style spec
+  // forbids nesting two zoom-driven interpolations, so the outer shape
+  // is `interpolate(zoom, ...)` and at every zoom stop we pick the
+  // per-class radius via `match(['get', 'class'], …)`. Cities peak
+  // around z=9, towns at z=11, villages at z=14, hamlets at z=14;
+  // each tier visually "lands" the moment its label fades in. Below
+  // every tier's useful zoom the radius is 0 px so MapLibre culls
+  // those features without the layer touching the GPU.
+  //
+  // Rank-aware: importance is decided by `rank` (lower = bigger),
+  // class is just a hint. Population isn't exposed by every backend,
+  // so we lean on `rank` which OMT always provides.
+  const perClass = (cityV, townV, villageV, hamletV, isoV) => [
+    'match', ['get', 'class'],
+    'city', cityV,
+    'town', townV,
+    'village', villageV,
+    'hamlet', hamletV,
+    'isolated_dwelling', isoV,
+    0,
+  ];
+
+  const classRadius = ['interpolate', ['linear'], ['zoom'],
+    3, perClass(1.6, 0, 0, 0, 0),
+    4, perClass(2.2, 0.6, 0, 0, 0),
+    6, perClass(3.4, 1.6, 0, 0, 0),
+    8, perClass(3.8, 2.6, 0.6, 0, 0),
+    9, perClass(4.0, 2.8, 1.2, 0, 0),
+    11, perClass(3.6, 3.0, 2.0, 0.7, 0),
+    12, perClass(3.4, 2.9, 2.2, 1.0, 0.4),
+    14, perClass(2.8, 2.4, 2.4, 1.6, 1.2),
+    15, perClass(2.2, 2.0, 2.0, 1.5, 1.2),
+    17, perClass(1.4, 1.6, 1.6, 1.4, 1.2),
+  ];
+
+  // Glow scales 2.5–3× the core radius. Same shape, larger numbers.
+  const classGlowRadius = ['interpolate', ['linear'], ['zoom'],
+    3, perClass(4.5, 0, 0, 0, 0),
+    4, perClass(6.0, 1.6, 0, 0, 0),
+    6, perClass(9.0, 4.0, 0, 0, 0),
+    8, perClass(10.0, 7.0, 1.6, 0, 0),
+    9, perClass(11.0, 7.6, 3.0, 0, 0),
+    11, perClass(9.6, 8.0, 5.0, 1.8, 0),
+    12, perClass(9.0, 7.6, 5.4, 2.4, 0.8),
+    14, perClass(7.4, 6.0, 5.5, 3.6, 2.4),
+    15, perClass(6.0, 5.2, 4.6, 3.2, 2.6),
+    17, perClass(3.6, 4.0, 4.0, 3.0, 2.6),
+  ];
+
+  // Fade in around z3 (with country labels) so cities anchor the
+  // overview viewport. Hamlets/villages enter later; their radius
+  // expression naturally suppresses them anyway.
+  const opacity = ['interpolate', ['linear'], ['zoom'],
+    2.5, 0.0,
+    3.5, 1.0,
+  ];
+
+  // Class filter: every level we render in placeLabels. Keep the
+  // village/hamlet rank cutoff tight at low zooms via `classRadius`
+  // returning 0 px below their useful zoom band — no need to
+  // duplicate the gating logic in the filter.
+  const classes = ['city', 'town', 'village', 'hamlet', 'isolated_dwelling'];
+  const filter = ['all',
+    inFilter('class', classes),
+    rankCutoffFilter(placeRankCutoff),
+  ];
+
+  // Class sort weight — cities first, hamlets last. Smaller =
+  // higher priority. `circle-sort-key` is a LAYOUT property; we
+  // also blend in `rank` so within a class the more important
+  // place wins overlap z-order.
+  const sortKey = ['+',
+    ['match', ['get', 'class'],
+      'city', 0,
+      'town', 100,
+      'village', 200,
+      'hamlet', 300,
+      'isolated_dwelling', 400,
+      500,
+    ],
+    ['coalesce', ['get', 'rank'], 5],
+  ];
+
+  return [
+    // Glow underlay — wide blurred halo. Painted FIRST so the dot
+    // sits crisp on top of the wash.
+    {
+      id: 'place_dot_glow',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': 'place',
+      minzoom: 2.5,
+      filter,
+      layout: {
+        'circle-sort-key': sortKey,
+      },
+      paint: {
+        'circle-color': t.placeDotGlow,
+        'circle-radius': classGlowRadius,
+        'circle-blur': 1.0,
+        'circle-opacity': opacity,
+        'circle-pitch-alignment': 'map',
+      },
+    },
+    // Core accent dot — bright fill + crisp white stroke. Acts as
+    // a "city dot" LOD proxy at zooms where buildings aren't yet
+    // visible (z3..13) and continues to mark the place beneath the
+    // label at higher zooms.
+    {
+      id: 'place_dot',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': 'place',
+      minzoom: 2.5,
+      filter,
+      layout: {
+        'circle-sort-key': sortKey,
+      },
+      paint: {
+        'circle-color': t.placeDot,
+        'circle-radius': classRadius,
+        'circle-stroke-color': t.placeDotStroke,
+        'circle-stroke-width': ['interpolate', ['linear'], ['zoom'],
+          3, 0.6,
+          8, 1.0,
+          14, 1.4,
+        ],
+        'circle-opacity': opacity,
+        'circle-stroke-opacity': opacity,
+        'circle-pitch-alignment': 'map',
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Place labels — countries, regions, cities, towns, villages, neighbourhoods.
 // Each tier has its own layer so we can tune minzoom & text-size separately.
 // ---------------------------------------------------------------------------
@@ -825,6 +987,7 @@ export function labelLayers(t, opts = {}) {
     ...waterLabels(t, merged),
     ...parkLabels(t, merged),
     ...roadLabels(t, merged),
+    ...placeDots(t, merged),
     ...placeLabels(t, merged),
     ...poiLayers(t, merged),
   ];

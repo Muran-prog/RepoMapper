@@ -118,6 +118,67 @@ export function buildingLayers(t, { threeD = true } = {}) {
   const layers = [];
 
   // ---------------------------------------------------------------------
+  // 0a) Outer building glow — wide, blurred halo around EVERY building
+  //     polygon ring. Same recipe as the landmark outer glow, just
+  //     tuned softer so the whole urban fabric visibly pops against
+  //     the paper / slate background between z13 and the 3D handover
+  //     at z16. Painted UNDER everything so the wash bleeds outward
+  //     onto the surrounding fabric without softening building edges.
+  // ---------------------------------------------------------------------
+  layers.push({
+    id: 'building_glow_outer',
+    type: 'line',
+    source: SOURCE,
+    'source-layer': LAYER,
+    minzoom: 13,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': t.buildingGlowOuter,
+      'line-width': linZoom([
+        [13, 1.4],
+        [15, 3.2],
+        [16, 2.0],
+      ]),
+      'line-blur': 3.0,
+      'line-opacity': linZoom([
+        [13, 0.0],
+        [14, 1.0],
+        [16, threeD ? 0.0 : 0.6],
+      ]),
+    },
+  });
+
+  // ---------------------------------------------------------------------
+  // 0b) Inner building glow — narrower, less blurred, more saturated.
+  //     The pair of glows reads as a soft amber halo with a brighter
+  //     rim at the building's silhouette. Visible across the whole z13
+  //     fabric so the user always sees buildings as accent-coloured,
+  //     not as flat polygons.
+  // ---------------------------------------------------------------------
+  layers.push({
+    id: 'building_glow_inner',
+    type: 'line',
+    source: SOURCE,
+    'source-layer': LAYER,
+    minzoom: 13,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': t.buildingGlowInner,
+      'line-width': linZoom([
+        [13, 0.6],
+        [15, 1.6],
+        [16, 1.0],
+      ]),
+      'line-blur': 1.0,
+      'line-opacity': linZoom([
+        [13, 0.0],
+        [14, 1.0],
+        [16, threeD ? 0.0 : 0.7],
+      ]),
+    },
+  });
+
+  // ---------------------------------------------------------------------
   // 1) Outer glow — wide, very blurred, low-opacity halo around the
   //    landmark polygon ring. Painted UNDER the regular building fill
   //    so the wash bleeds outward onto the surrounding fabric without
@@ -189,11 +250,11 @@ export function buildingLayers(t, { threeD = true } = {}) {
       'fill-color': t.building,
       'fill-outline-color': t.buildingOutline,
       'fill-opacity': linZoom([
-        [13, 0.2],
-        [14, 0.7],
-        [15, 0.9],
+        [13, 0.55],
+        [14, 0.9],
+        [15, 1.0],
         // Below 0 means: hand off to the 3D layer once it can express depth.
-        [16, threeD ? 0 : 0.95],
+        [16, threeD ? 0 : 1.0],
       ]),
       'fill-antialias': true,
     },
