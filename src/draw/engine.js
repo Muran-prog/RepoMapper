@@ -999,9 +999,38 @@ export function createDrawEngine(map) {
     return findMarkerNearPoint(point) != null;
   };
 
+  /**
+   * Detect a tap on a committed line feature. If hit, emit `lineAction`
+   * so the UI can show a "detach" tooltip. Returns true when a line was
+   * hit (suppresses further tool dispatch). Skipped when a draft is
+   * in-flight so drawing isn't interrupted.
+   */
+  const LINE_HIT_LAYERS = [LAYERS.line];
+  const detectLineHit = (e) => {
+    if (state.draft) return false;
+    let hits;
+    try {
+      hits = map.queryRenderedFeatures(e.point, { layers: LINE_HIT_LAYERS });
+    } catch { return false; }
+    if (!hits || hits.length === 0) return false;
+    const hit = hits[0];
+    const id = hit.id;
+    if (!id || !state.features.has(id)) return false;
+    const f = state.features.get(id);
+    if (f.geometry?.type !== 'LineString') return false;
+    emit('lineAction', {
+      lineId: id,
+      pointPx: { x: e.point.x, y: e.point.y },
+      properties: f.properties,
+    });
+    return true;
+  };
+
   const onClick = (e) => {
     if (!state.enabled) return;
     if (measureClickHitsMarker(e.point)) return;
+    // Line action: tap on any line shows detach tooltip (works in all modes).
+    if (detectLineHit(e)) return;
     runTool('click', ctx, e);
   };
   const onDblClick = (e) => { if (state.enabled) runTool('dblclick', ctx, e); };

@@ -36,6 +36,7 @@ import { createDrawEngine } from '../draw/index.js';
 import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
 import { DRAW_ICONS } from './draw/icons.js';
 import { mountMeasureTooltip } from './draw/tooltip.js';
+import { mountLineActionTooltip } from './draw/line-action.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -1234,6 +1235,9 @@ function installDrawingUI(map, panelsHost, controller) {
   // without re-projection. Independent of the panel so the tap
   // affordance keeps working with the panel closed.
   const unmountTooltip = mountMeasureTooltip({ engine, map });
+
+  // Line-action tooltip — tap any line to see a "detach" button.
+  const unmountLineAction = mountLineActionTooltip({ engine, map });
 
   // Single observer drives BOTH (a) the cosmetic drawing-mode flag on
   // <html> for any CSS hooks that want to react to "panel visible",

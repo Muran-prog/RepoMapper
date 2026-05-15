@@ -642,3 +642,70 @@
     transition: none;
   }
 }
+
+/* ---- Line action tooltip (detach button) ---- */
+.cart-line-action-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 6px;
+  pointer-events: none;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.cart-line-action-tooltip[data-state="hidden"] {
+  opacity: 0;
+  pointer-events: none;
+}
+.cart-line-action-tooltip[data-state="visible"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cart-line-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: color-mix(in srgb, #d32f2f 88%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  backdrop-filter: blur(8px) saturate(1.1);
+  border: 1px solid rgba(211, 47, 47, 0.4);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease-out);
+}
+.cart-line-action-btn:active {
+  background: #b71c1c;
+}
+
+@media (forced-colors: active) {
+  .cart-line-action-tooltip {
+    background: Canvas;
+    color: CanvasText;
+  }
+  .cart-line-action-btn {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cart-line-action-tooltip {
+    transition: none;
+  }
+}
