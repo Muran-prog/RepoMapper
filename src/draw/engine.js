@@ -918,6 +918,18 @@ export function createDrawEngine(map) {
     }
   };
 
+  // Tools that finish on dblclick need doubleClickZoom disabled so the
+  // gesture reaches the tool instead of zooming the map (critical on
+  // mobile where double-tap is the only way to fire dblclick).
+  const DBLCLICK_TOOLS = new Set(['line', 'polygon']);
+  const syncDoubleClickZoom = () => {
+    if (state.enabled && DBLCLICK_TOOLS.has(state.tool)) {
+      map.doubleClickZoom?.disable?.();
+    } else {
+      map.doubleClickZoom?.enable?.();
+    }
+  };
+
   // -------------------------------------------------------------------
   // Map event wiring. One listener per map event; the tool dispatcher
   // (`runTool`) reads `state.tool` and routes to the right handler.
@@ -1089,6 +1101,7 @@ export function createDrawEngine(map) {
     setLayerCursor();
     syncPencilLifecycle();
     syncEraserLifecycle();
+    syncDoubleClickZoom();
     return true;
   };
 
@@ -1139,6 +1152,7 @@ export function createDrawEngine(map) {
     rerender();
     syncPencilLifecycle();
     syncEraserLifecycle();
+    syncDoubleClickZoom();
   });
   window.addEventListener('keydown', onKeyDown);
 
@@ -1281,6 +1295,7 @@ export function createDrawEngine(map) {
     state.enabled = true;
     syncPencilLifecycle();
     syncEraserLifecycle();
+    syncDoubleClickZoom();
     setLayerCursor();
     emit('enabled', true);
   };
@@ -1292,6 +1307,7 @@ export function createDrawEngine(map) {
     clearHover();
     syncPencilLifecycle();
     syncEraserLifecycle();
+    syncDoubleClickZoom();
     setLayerCursor();
     rerender();
     emit('enabled', false);
@@ -1354,6 +1370,7 @@ export function createDrawEngine(map) {
     prefs.tool = tool;
     syncPencilLifecycle();
     syncEraserLifecycle();
+    syncDoubleClickZoom();
     setLayerCursor();
     rerender();
     emit('tool', tool);
