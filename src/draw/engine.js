@@ -56,8 +56,11 @@ import {
   LAYERS,
   HIT_LAYERS,
   SOURCE_ID,
+  MEASURE_SOURCE_ID,
   makeSource,
   makeLayers,
+  makeMeasureSource,
+  makeMeasureLayers,
   findInsertBeforeLayer,
 } from './layers.js';
 import {
@@ -76,6 +79,7 @@ import {
 import { runTool } from './tools.js';
 import { createFreeDrawRecorder } from './freedraw.js';
 import { createEraserRecorder, eraseFeatureInRadius } from './eraser.js';
+import { buildMeasureFeatures, distanceForMarker } from './measure.js';
 
 const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
@@ -278,6 +282,13 @@ export function createDrawEngine(map) {
         return false;
       }
     }
+    if (!map.getSource(MEASURE_SOURCE_ID)) {
+      try {
+        map.addSource(MEASURE_SOURCE_ID, makeMeasureSource());
+      } catch {
+        return false;
+      }
+    }
     const before = findInsertBeforeLayer(map);
     let allLayersPresent = true;
     for (const spec of makeLayers({
@@ -296,7 +307,25 @@ export function createDrawEngine(map) {
         }
       }
     }
-    return allLayersPresent && !!map.getSource(SOURCE_ID);
+    // Measure overlay layers — added AFTER the editing stack so the
+    // ruler line + badge always sit on top of the drawings (a
+    // measurement should never be obscured by a freshly-drawn
+    // polygon). Same install-before anchor so they still stay below
+    // basemap labels / MapLibre overlays.
+    for (const spec of makeMeasureLayers()) {
+      if (!map.getLayer(spec.id)) {
+        try { map.addLayer(spec, before); }
+        catch {
+          try { map.addLayer(spec); }
+          catch {
+            allLayersPresent = false;
+          }
+        }
+      }
+    }
+    return allLayersPresent
+      && !!map.getSource(SOURCE_ID)
+      && !!map.getSource(MEASURE_SOURCE_ID);
   };
 
   const setLayerCursor = () => {
@@ -439,6 +468,35 @@ export function createDrawEngine(map) {
     });
     return { type: 'FeatureCollection', features: out };
   };
+
+  /**
+   * Build the FeatureCollection driving the measure (ruler) source.
+   * Empty when the toggle is off OR when there are fewer than two
+   * markers — both edge cases the brief calls out explicitly. When
+   * empty we still push an empty collection through `setData` so a
+   * mid-flight toggle clears the overlay immediately.
+   */
+  const buildMeasureCollection = () => {
+    if (!prefs.measure || state.markerOrder.length < 2) {
+      return { type: 'FeatureCollection', features: [] };
+    }
+    const markers = state.markerOrder
+      .map((mid) => state.features.get(mid))
+      .filter((f) => f
+        && f.geometry?.type === 'Point'
+        && f.properties?.kind === 'marker')
+      .map((f) => ({ id: f.id, coordinates: f.geometry.coordinates }));
+    const { features } = buildMeasureFeatures(markers);
+    return { type: 'FeatureCollection', features };
+  };
+
+  /** Snapshot of the current marker list in the shape `measure.js` expects. */
+  const currentMeasureMarkers = () => state.markerOrder
+    .map((mid) => state.features.get(mid))
+    .filter((f) => f
+      && f.geometry?.type === 'Point'
+      && f.properties?.kind === 'marker')
+    .map((f) => ({ id: f.id, coordinates: f.geometry.coordinates }));
 
   const rerender = () => {
     if (!tryInstallAndRender()) {
@@ -880,9 +938,67 @@ export function createDrawEngine(map) {
     nextId,
   };
 
-  const onClick = (e) => { if (state.enabled) runTool('click', ctx, e); };
+  /**
+   * When measure mode is enabled, tapping a marker is reserved for the
+   * pairwise-distance readout — no tool may also act on the same
+   * click. Otherwise the marker tool would drop a new dot beside the
+   * one the user just tried to query (the bug users hit when querying
+   * distances with the marker tool armed), and the line/polygon tools
+   * would push a vertex on top of the marker.
+   *
+   * Hit detection is deliberately coordinate-based rather than going
+   * through `queryRenderedFeatures`. The marker layer's hit-test
+   * sometimes doesn't return matches (e.g. when style validation
+   * keeps the `cart-draw-point` layer out of the live style on edge
+   * configurations), and we still need the suppression to work on
+   * those paths — otherwise the user taps the dot they just placed
+   * to read its distance and ends up with a duplicate marker.
+   *
+   * The hit radius is generous (16 px) so a slightly-off finger tap
+   * still counts as "on the marker": the marker dot is only ~8 px
+   * in radius, which is too tight for touch targets.
+   *
+   * @param {{x: number, y: number}} point Canvas-relative pixels.
+   * @returns {string|null} Hit marker id, or null when nothing's near.
+   */
+  const HIT_RADIUS_PX = 16;
+  const findMarkerNearPoint = (point) => {
+    let bestId = null;
+    let bestDist = HIT_RADIUS_PX * HIT_RADIUS_PX;
+    for (const mid of state.markerOrder) {
+      const f = state.features.get(mid);
+      if (!f || f.geometry?.type !== 'Point') continue;
+      let projected;
+      try { projected = map.project(f.geometry.coordinates); }
+      catch { continue; }
+      const dx = projected.x - point.x;
+      const dy = projected.y - point.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= bestDist) {
+        bestDist = d2;
+        bestId = mid;
+      }
+    }
+    return bestId;
+  };
+  const measureClickHitsMarker = (point) => {
+    if (!prefs.measure) return false;
+    return findMarkerNearPoint(point) != null;
+  };
+
+  const onClick = (e) => {
+    if (!state.enabled) return;
+    if (measureClickHitsMarker(e.point)) return;
+    runTool('click', ctx, e);
+  };
   const onDblClick = (e) => { if (state.enabled) runTool('dblclick', ctx, e); };
-  const onMouseDown = (e) => { if (state.enabled) runTool('mousedown', ctx, e); };
+  const onMouseDown = (e) => {
+    if (!state.enabled) return;
+    // Same suppression on mousedown so the select tool's translate-
+    // drag doesn't kick in on a measure tap either.
+    if (measureClickHitsMarker(e.point)) return;
+    runTool('mousedown', ctx, e);
+  };
   const onMouseMove = (e) => { if (state.enabled) runTool('mousemove', ctx, e); };
   const onMouseUp = (e) => { if (state.enabled) runTool('mouseup', ctx, e); };
   const onContextMenu = (e) => { if (state.enabled) runTool('contextmenu', ctx, e); };
@@ -955,6 +1071,15 @@ export function createDrawEngine(map) {
       src.setData(buildCollection());
     } catch {
       return false;
+    }
+    // Push the measure overlay separately. A failure here shouldn't
+    // unwind the main render — the editing stack has already updated
+    // and we'd rather show drawings without ruler than nothing at
+    // all. The overlay will reconverge on the next render tick.
+    const measureSrc = map.getSource(MEASURE_SOURCE_ID);
+    if (measureSrc) {
+      try { measureSrc.setData(buildMeasureCollection()); }
+      catch { /* style mid-swap — measure will retry next tick */ }
     }
     if (state.selectedId) {
       try {
@@ -1043,6 +1168,61 @@ export function createDrawEngine(map) {
     map.on('mouseenter', layerId, onLayerEnter);
     map.on('mouseleave', layerId, onLayerLeave);
   }
+
+  // -------------------------------------------------------------------
+  // Marker tap → measure tooltip.
+  //
+  // A click/tap on ANY marker (regardless of the active tool) emits
+  // a `markerTooltip` event carrying the formatted distance to the
+  // marker's neighbour:
+  //
+  //   • non-last marker → distance to the NEXT marker
+  //   • last marker     → distance to the PREVIOUS marker
+  //
+  // The UI layer (the dock controller in `controls.js`) listens and
+  // renders the floating tooltip. We never compute or expose the
+  // total length from first to last — that's deliberate: this is a
+  // pairwise ruler, not a route summary.
+  //
+  // Hit-testing uses the same `findMarkerNearPoint` helper as the
+  // tool-suppression path. Going through `state.features` rather
+  // than `queryRenderedFeatures({ layers: [LAYERS.point] })` keeps
+  // the readout working even on the codepaths where the marker
+  // layer didn't make it into the live style (the engine has a
+  // pre-existing layer-spec validation issue that occasionally
+  // leaves cart-draw-point unregistered). The user gets the same
+  // reliable tap-to-read behaviour either way.
+  // -------------------------------------------------------------------
+  const onMeasureClick = (e) => {
+    if (!state.enabled) return;
+    if (!prefs.measure) return;
+    const id = findMarkerNearPoint(e.point);
+    if (!id) {
+      // Empty space tap — close any open tooltip. Doing this in the
+      // same handler (instead of a separate "empty click" listener)
+      // keeps the open/close logic on a single decision point and
+      // removes the ordering problem between two click handlers.
+      emit('markerTooltip', { hide: true });
+      return;
+    }
+    const dist = distanceForMarker(currentMeasureMarkers(), id);
+    if (!dist) {
+      // Fewer than two markers — emit a hide event so any open
+      // tooltip from a previous state goes away.
+      emit('markerTooltip', { hide: true });
+      return;
+    }
+    emit('markerTooltip', {
+      hide: false,
+      markerId: id,
+      pointPx: { x: e.point.x, y: e.point.y },
+      meters: dist.meters,
+      label: dist.label,
+      fromId: dist.fromId,
+      toId: dist.toId,
+    });
+  };
+  map.on('click', onMeasureClick);
 
   // Restore persisted features.
   //
@@ -1266,6 +1446,12 @@ export function createDrawEngine(map) {
     // Resize the eraser cursor immediately so the user sees their
     // slider adjustment without having to nudge the pointer.
     if ('eraserSize' in patch) eraserRecorder.syncRadius();
+    // Toggling the measure overlay off should also dismiss any
+    // currently-visible floating tooltip — otherwise the readout
+    // would survive the master switch and confuse the user.
+    if ('measure' in patch && !patch.measure) {
+      emit('markerTooltip', { hide: true });
+    }
     rerender();
     emit('prefs', { ...prefs });
   };
@@ -1322,6 +1508,7 @@ export function createDrawEngine(map) {
     map.off('mouseup', onMouseUp);
     map.off('contextmenu', onContextMenu);
     map.off('styledata', onStyleData);
+    map.off('click', onMeasureClick);
     for (const layerId of HIT_LAYERS) {
       map.off('mouseenter', layerId, onLayerEnter);
       map.off('mouseleave', layerId, onLayerLeave);
@@ -1331,6 +1518,7 @@ export function createDrawEngine(map) {
       if (map.getLayer(layer)) map.removeLayer(layer);
     }
     if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
+    if (map.getSource(MEASURE_SOURCE_ID)) map.removeSource(MEASURE_SOURCE_ID);
     if (saveTimer) clearTimeout(saveTimer);
     delete map.__cartDraw;
   };

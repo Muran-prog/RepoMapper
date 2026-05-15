@@ -163,6 +163,10 @@ export function renderDrawPanelBody() {
           <span>Нумерація міток</span>
           <input type="checkbox" data-ctl="draw-labels" checked>
         </label>
+        <label class="row">
+          <span>Показувати відстані</span>
+          <input type="checkbox" data-ctl="draw-measure">
+        </label>
       </div>
     </div>
 
@@ -341,6 +345,11 @@ export function mountDrawPanel({ engine, host }) {
     document.documentElement.dataset.drawLabels = labels.checked ? '1' : '0';
   });
 
+  const measure = $('[data-ctl="draw-measure"]');
+  measure?.addEventListener('change', () => {
+    engine.setPrefs({ measure: measure.checked });
+  });
+
   // -------------------------------------------------------------------
   // Style
   // -------------------------------------------------------------------
@@ -430,6 +439,7 @@ export function mountDrawPanel({ engine, host }) {
   refreshEraserGroup(prefs.tool);
   if (geodesic) geodesic.checked = !!prefs.geodesic;
   if (labels) labels.checked = !!prefs.labels;
+  if (measure) measure.checked = !!prefs.measure;
   if (color) color.value = prefs.color;
   if (fill) fill.value = prefs.fill;
   if (weight) {

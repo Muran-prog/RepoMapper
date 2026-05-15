@@ -570,3 +570,75 @@
     transition: none;
   }
 }
+
+
+/* ---------------------------------------------------------------------
+ * Measure (ruler) — floating distance tooltip
+ *
+ * Sits above the map canvas inside the MapLibre container. The
+ * `data-state` attribute switches between visible / hidden; pointer
+ * events stay off in both states so the tooltip never blocks
+ * interaction with the underlying map.
+ *
+ * Reduce-motion: drops the cross-fade for an instant attribute swap
+ * — same final state, no animation.
+ * ------------------------------------------------------------------- */
+
+.cart-measure-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  color: var(--fg);
+  background: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  backdrop-filter: blur(10px) saturate(1.1);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+  /* Subtle text shadow so the readout stays legible if the backdrop-
+   * filter falls back on a basemap with extreme contrast. */
+  text-shadow: 0 1px 2px rgba(20, 24, 30, 0.18);
+}
+
+.cart-measure-tooltip[data-state="hidden"] {
+  opacity: 0;
+}
+.cart-measure-tooltip[data-state="visible"] {
+  opacity: 1;
+}
+
+/* Forced-colors — preserve readability under Windows High Contrast. */
+@media (forced-colors: active) {
+  .cart-measure-tooltip {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Reduce-motion — instant fade per the brief. The element keeps its
+ * opacity contract (0 ↔ 1) but loses the transition, so the swap
+ * happens in a single frame. */
+@media (prefers-reduced-motion: reduce) {
+  .cart-measure-tooltip {
+    transition: none;
+  }
+}

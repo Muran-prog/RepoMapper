@@ -44,6 +44,10 @@
  * @property {boolean} geodesic            Render connections as geodesics.
  * @property {boolean} labels              Show marker number labels.
  * @property {boolean} snap                Snap-to-vertex when placing.
+ * @property {boolean} measure              Show pairwise distances between
+ *                                          neighbouring markers (the ruler).
+ *                                          Derived overlay only — never
+ *                                          mutates persisted features.
  */
 
 const FEATURES_KEY = 'cart:draw:features:v1';
@@ -85,6 +89,7 @@ export function defaultPrefs() {
     geodesic: true,
     labels: true,
     snap: true,
+    measure: false,
   };
 }
 

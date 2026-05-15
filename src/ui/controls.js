@@ -35,6 +35,7 @@ import { mountModeSwitcher } from './mode-switcher.js';
 import { createDrawEngine } from '../draw/index.js';
 import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
 import { DRAW_ICONS } from './draw/icons.js';
+import { mountMeasureTooltip } from './draw/tooltip.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -1170,6 +1171,13 @@ function installDrawingUI(map, panelsHost, controller) {
   // normal operation since the panel persists for the page lifetime.
   const unmountPanel = mountDrawPanel({ engine, host: body });
 
+  // Floating distance tooltip — appears on marker click when the
+  // measure overlay is enabled. Mounts inside the map container so
+  // it overlays the canvas and inherits map-relative coordinates
+  // without re-projection. Independent of the panel so the tap
+  // affordance keeps working with the panel closed.
+  const unmountTooltip = mountMeasureTooltip({ engine, map });
+
   // Single observer drives BOTH (a) the cosmetic drawing-mode flag on
   // <html> for any CSS hooks that want to react to "panel visible",
   // and (b) the cancel-draft-on-close affordance — so the user
@@ -1188,5 +1196,6 @@ function installDrawingUI(map, panelsHost, controller) {
   if (typeof window !== 'undefined') {
     window.__cart_draw = engine;
     window.__cart_draw_panel = { unmount: unmountPanel, observer };
+    window.__cart_draw_tooltip = { unmount: unmountTooltip };
   }
 }

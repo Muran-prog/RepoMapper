@@ -24,6 +24,16 @@
 
 export const SOURCE_ID = 'cart-draw';
 
+/**
+ * Separate source for the pairwise marker measure overlay (ruler).
+ * Kept distinct from the main `cart-draw` source so the measure
+ * features (which are derived from markers, never persisted) cannot
+ * pollute the persistent feature collection on save and so the
+ * measure layers can be added/removed independently of the editing
+ * stack. See `measure.js` for the pure-function feature builder.
+ */
+export const MEASURE_SOURCE_ID = 'cart-draw-measure';
+
 /** Layer ids — exported so the engine can hit-test against them. */
 export const LAYERS = Object.freeze({
   fill: 'cart-draw-fill',
@@ -35,6 +45,8 @@ export const LAYERS = Object.freeze({
   pointLabel: 'cart-draw-point-label',
   vertexMid: 'cart-draw-vertex-mid',
   vertex: 'cart-draw-vertex',
+  measureLine: 'cart-draw-measure-line',
+  measureBadge: 'cart-draw-measure-badge',
 });
 
 /** Layer ids that should respond to feature hit-testing for selection. */
@@ -60,6 +72,22 @@ export function makeSource() {
     // Drawing features are small and update frequently — disable
     // clustering and keep `tolerance` tight so editing handles snap
     // exactly where the user clicked.
+    tolerance: 0.0,
+    buffer: 64,
+  };
+}
+
+/**
+ * Build the source descriptor for the pairwise measure overlay. Same
+ * tolerance/buffer profile as the main draw source — the features
+ * come from the same kind of authoring flow and benefit from identical
+ * picking accuracy, even though the measure overlay itself is not
+ * directly hit-tested.
+ */
+export function makeMeasureSource() {
+  return {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
     tolerance: 0.0,
     buffer: 64,
   };
@@ -339,6 +367,74 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
         'circle-stroke-width': 2,
         'circle-stroke-opacity': 1,
         'circle-opacity': 1,
+      },
+    },
+  ];
+}
+
+/**
+ * Compose the measure overlay layer stack. Returns `[line, badge]` —
+ * a thin neutral line under each pairwise segment plus a glass-style
+ * badge centred on its midpoint with the formatted distance.
+ *
+ * Both layers read everything they need from the feature properties
+ * the `buildMeasureFeatures` helper stamps, so the renderer is fully
+ * data-driven and the engine can swap the source contents on every
+ * render without rebuilding the layer specs.
+ *
+ * The line is intentionally thin (1.5 px) and slightly translucent so
+ * it never competes with the user's drawn lines. The badge uses a
+ * white fill with a strong dark halo and a subtle accent halo on
+ * top of that — readable on both bright satellite imagery and dark
+ * cartographic basemaps without theming gymnastics.
+ */
+export function makeMeasureLayers() {
+  return [
+    {
+      id: LAYERS.measureLine,
+      type: 'line',
+      source: MEASURE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'measure-line'],
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        // Neutral mid-grey reads on both light and dark basemaps; a
+        // very short dash pattern signals "this is a measurement, not
+        // a route" so users don't confuse it with auto-connections.
+        'line-color': 'rgba(34, 38, 46, 0.85)',
+        'line-width': 1.5,
+        'line-opacity': 0.85,
+        'line-dasharray': ['literal', [2, 2]],
+      },
+    },
+    {
+      id: LAYERS.measureBadge,
+      type: 'symbol',
+      source: MEASURE_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'measure-badge'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 11,
+        'text-font': ['Noto Sans Bold', 'Noto Sans Regular'],
+        'text-anchor': 'center',
+        'text-justify': 'center',
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-padding': 4,
+        'symbol-z-order': 'source',
+      },
+      paint: {
+        // White glyph with a thick dark halo gives the "halo on text"
+        // legibility the brief asks for. The pure-symbol approach
+        // avoids the tile-rasterised badge backgrounds MapLibre lacks
+        // a native primitive for and keeps the layer stack flat
+        // (one symbol = one DOM allocation per render).
+        'text-color': '#ffffff',
+        'text-halo-color': 'rgba(20, 24, 30, 0.92)',
+        'text-halo-width': 2.2,
+        'text-halo-blur': 0.6,
       },
     },
   ];
