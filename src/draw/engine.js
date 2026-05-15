@@ -1010,13 +1010,44 @@ export function createDrawEngine(map) {
    * Skipped when a draft is in-flight so drawing isn't interrupted.
    */
   const LINE_HIT_TOLERANCE = 14;
-  const ENDPOINT_TOLERANCE = 20;
+  const ENDPOINT_TOLERANCE = 22;
   const detectLineHit = (e) => {
     if (state.draft) return false;
     const px = e.point;
+
+    // Pass 1: check endpoints first (larger tolerance).
+    for (const [id, f] of state.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const coords = f.geometry.coordinates;
+      if (!coords || coords.length < 2) continue;
+      let startPx, endPx;
+      try {
+        startPx = map.project(coords[0]);
+        endPx = map.project(coords[coords.length - 1]);
+      } catch { continue; }
+      const distToStart = Math.sqrt((px.x - startPx.x) ** 2 + (px.y - startPx.y) ** 2);
+      const distToEnd = Math.sqrt((px.x - endPx.x) ** 2 + (px.y - endPx.y) ** 2);
+      if (distToStart <= ENDPOINT_TOLERANCE || distToEnd <= ENDPOINT_TOLERANCE) {
+        let totalMeters = 0;
+        for (let i = 0; i < coords.length - 1; i++) {
+          totalMeters += haversine(coords[i], coords[i + 1]);
+        }
+        emit('markerTooltip', {
+          hide: false,
+          markerId: id,
+          pointPx: { x: px.x, y: px.y },
+          meters: totalMeters,
+          label: formatDistance(totalMeters),
+          fromId: id,
+          toId: id,
+        });
+        return true;
+      }
+    }
+
+    // Pass 2: check line body (segment proximity).
     let bestId = null;
     let bestDist = LINE_HIT_TOLERANCE;
-
     for (const [id, f] of state.features) {
       if (f.geometry?.type !== 'LineString') continue;
       const coords = f.geometry.coordinates;
@@ -1036,42 +1067,10 @@ export function createDrawEngine(map) {
     }
     if (!bestId) return false;
 
-    const f = state.features.get(bestId);
-    const coords = f.geometry.coordinates;
-    // Check if tap is near an endpoint — show distance instead of detach.
-    let startPx, endPx;
-    try {
-      startPx = map.project(coords[0]);
-      endPx = map.project(coords[coords.length - 1]);
-    } catch {
-      startPx = null;
-      endPx = null;
-    }
-    const distToStart = startPx ? Math.sqrt((px.x - startPx.x) ** 2 + (px.y - startPx.y) ** 2) : Infinity;
-    const distToEnd = endPx ? Math.sqrt((px.x - endPx.x) ** 2 + (px.y - endPx.y) ** 2) : Infinity;
-
-    if (distToStart <= ENDPOINT_TOLERANCE || distToEnd <= ENDPOINT_TOLERANCE) {
-      // Compute total line length.
-      let totalMeters = 0;
-      for (let i = 0; i < coords.length - 1; i++) {
-        totalMeters += haversine(coords[i], coords[i + 1]);
-      }
-      emit('markerTooltip', {
-        hide: false,
-        markerId: bestId,
-        pointPx: { x: px.x, y: px.y },
-        meters: totalMeters,
-        label: formatDistance(totalMeters),
-        fromId: bestId,
-        toId: bestId,
-      });
-      return true;
-    }
-
     emit('lineAction', {
       lineId: bestId,
       pointPx: { x: px.x, y: px.y },
-      properties: f.properties,
+      properties: state.features.get(bestId).properties,
     });
     return true;
   };
