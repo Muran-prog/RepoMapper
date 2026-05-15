@@ -95,9 +95,9 @@ function showFatal(root, err) {
   const fatal = document.createElement('div');
   fatal.className = 'fatal';
   fatal.innerHTML = `
-    <h1>Map failed to initialise</h1>
+    <h1>Не удалось инициализировать карту</h1>
     <pre>${msg}</pre>
-    <p>Check the network: tile/source/glyph requests must reach
+    <p>Проверьте сеть: запросы к тайлам/источникам/глифам должны достигать
        <code>tiles.openfreemap.org</code>.</p>
   `;
   root.appendChild(fatal);

@@ -75,10 +75,10 @@ export function mountHypsoEditor(opts) {
   let isCustom = !RAMPS[rampId];
 
   host.innerHTML = `
-    <div class="hypso-editor" role="dialog" aria-label="Ramp editor">
+    <div class="hypso-editor" role="dialog" aria-label="Редактор шкалы">
       <header class="hypso-editor-head">
-        <h3>Ramp editor</h3>
-        <button data-ctl="close" type="button" aria-label="Close">×</button>
+        <h3>Редактор шкалы</h3>
+        <button data-ctl="close" type="button" aria-label="Закрыть">×</button>
       </header>
 
       <div class="hypso-editor-body">
@@ -95,37 +95,37 @@ export function mountHypsoEditor(opts) {
         </div>
 
         <div class="hypso-editor-fields">
-          <label class="field"><span>Name</span><input data-ctl="name" type="text"></label>
-          <label class="field"><span>Summary</span><input data-ctl="summary" type="text"></label>
-          <label class="field"><span>Region</span>
+          <label class="field"><span>Название</span><input data-ctl="name" type="text"></label>
+          <label class="field"><span>Описание</span><input data-ctl="summary" type="text"></label>
+          <label class="field"><span>Регион</span>
             <select data-ctl="region">
-              <option value="global">Global</option>
-              <option value="alpine">Alpine</option>
-              <option value="carpathian">Carpathian</option>
-              <option value="steppe">Steppe</option>
-              <option value="sea">Sea</option>
+              <option value="global">Глобальный</option>
+              <option value="alpine">Альпийский</option>
+              <option value="carpathian">Карпатский</option>
+              <option value="steppe">Степной</option>
+              <option value="sea">Море</option>
             </select>
           </label>
-          <label class="row hypso-row"><input type="checkbox" data-ctl="cb"> <span>Colourblind-safe</span></label>
+          <label class="row hypso-row"><input type="checkbox" data-ctl="cb"> <span>Безопасно для дальтоников</span></label>
         </div>
 
         <div class="hypso-stop-list" data-ctl="stop-list"></div>
 
         <div class="hypso-editor-actions">
-          <button data-ctl="add" type="button">+ Add stop</button>
-          <button data-ctl="reset" type="button">Reset</button>
-          <button data-ctl="export" type="button">Export</button>
+          <button data-ctl="add" type="button">+ Добавить точку</button>
+          <button data-ctl="reset" type="button">Сброс</button>
+          <button data-ctl="export" type="button">Экспорт</button>
           <label class="hypso-import">
-            Import
+            Импорт
             <input type="file" accept=".json,application/json" data-ctl="import-file" hidden>
           </label>
           ${
             isCustom
-              ? `<button data-ctl="delete" type="button" class="hypso-danger">Delete</button>`
+              ? `<button data-ctl="delete" type="button" class="hypso-danger">Удалить</button>`
               : ''
           }
-          <button data-ctl="save" type="button" class="hypso-primary">Save as new</button>
-          ${isCustom ? `<button data-ctl="update" type="button" class="hypso-primary">Update</button>` : ''}
+          <button data-ctl="save" type="button" class="hypso-primary">Сохранить как новую</button>
+          ${isCustom ? `<button data-ctl="update" type="button" class="hypso-primary">Обновить</button>` : ''}
         </div>
       </div>
     </div>
@@ -173,7 +173,7 @@ export function mountHypsoEditor(opts) {
             type="button"
             data-i="${i}"
             style="top:${elevToPct(elev).toFixed(2)}%; --c:${escAttr(color)};"
-            aria-label="Stop at ${elev} m, ${color}"
+            aria-label="Точка на ${elev} м, ${color}"
           ></button>`,
       )
       .join('');
@@ -183,7 +183,7 @@ export function mountHypsoEditor(opts) {
           <div class="hypso-stop-row" data-i="${i}">
             <input class="hypso-elev" data-i="${i}" type="number" min="${ELEV_MIN}" max="${ELEV_MAX}" step="10" value="${elev}">
             <input class="hypso-color" data-i="${i}" type="color" value="${escAttr(color)}">
-            <button data-ctl="del-stop" data-i="${i}" type="button" class="hypso-icon" aria-label="Remove stop">×</button>
+            <button data-ctl="del-stop" data-i="${i}" type="button" class="hypso-icon" aria-label="Удалить точку">×</button>
           </div>`,
       )
       .join('');
@@ -289,7 +289,7 @@ export function mountHypsoEditor(opts) {
       const parsed = JSON.parse(text);
       const err = validateCustomRamp(parsed);
       if (err) {
-        alert(`Import failed: ${err}`);
+        alert(`Не удалось импортировать: ${err}`);
         return;
       }
       stops = cloneStops(parsed.light);
@@ -300,13 +300,13 @@ export function mountHypsoEditor(opts) {
       render();
       applyLive();
     } catch {
-      alert('Import failed: invalid JSON');
+      alert('Не удалось импортировать: некорректный JSON');
     }
     refs.import.value = '';
   });
 
   refs.delete?.addEventListener('click', () => {
-    if (!confirm(`Delete ramp "${rampId}"?`)) return;
+    if (!confirm(`Удалить шкалу «${rampId}»?`)) return;
     deleteCustomRamp(rampId);
     registerCustomRamps(loadCustomRamps());
     opts.onSaved?.(null);

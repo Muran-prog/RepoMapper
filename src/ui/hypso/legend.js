@@ -84,12 +84,12 @@ export function mountHypsoLegend(opts) {
       class="hypso-legend"
       data-collapsed="${initiallyCollapsed ? 'true' : 'false'}"
       role="region"
-      aria-label="Легенда висот"
+      aria-label="Легенда высот"
     >
       <div class="hypso-legend-panel" id="${PANEL_ID}" data-ctl="panel"
            aria-hidden="${initiallyCollapsed ? 'true' : 'false'}">
         <header class="hypso-legend-head">
-          <span class="hypso-legend-title">Висота</span>
+          <span class="hypso-legend-title">Высота</span>
           <span class="hypso-legend-unit">м</span>
         </header>
         <div class="hypso-legend-track">
@@ -109,8 +109,8 @@ export function mountHypsoLegend(opts) {
         type="button"
         aria-controls="${PANEL_ID}"
         aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
-        aria-label="Висота — легенда"
-        title="Висота"
+        aria-label="Высота — легенда"
+        title="Высота"
       >
         <span class="hypso-legend-glyph" aria-hidden="true" data-ctl="glyph"></span>
       </button>

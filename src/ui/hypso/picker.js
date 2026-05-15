@@ -79,24 +79,24 @@ export function mountHypsoPicker(opts) {
 
   host.innerHTML = `
     <div class="panel-group hypso-picker" data-ctl="hypso">
-      <h4 class="panel-group-title">Active ramp</h4>
-      <ul class="hypso-list" data-ctl="hypso-list" role="radiogroup" aria-label="Active hypsometric ramp"></ul>
+      <h4 class="panel-group-title">Активная шкала</h4>
+      <ul class="hypso-list" data-ctl="hypso-list" role="radiogroup" aria-label="Активная гипсометрическая шкала"></ul>
     </div>
     <div class="panel-group">
-      <h4 class="panel-group-title">Tint options</h4>
+      <h4 class="panel-group-title">Параметры тонирования</h4>
       <div class="rows">
         ${
           showBathymetry
-            ? `<label class="row hypso-row"><span>Bathymetry (Black + Azov)</span><input type="checkbox" data-ctl="hypso-bathymetry"></label>`
+            ? `<label class="row hypso-row"><span>Батиметрия (Чёрное и Азовское)</span><input type="checkbox" data-ctl="hypso-bathymetry"></label>`
             : ''
         }
-        <label class="row hypso-row"><span>High contrast</span><input type="checkbox" data-ctl="hypso-contrast"></label>
+        <label class="row hypso-row"><span>Высокая контрастность</span><input type="checkbox" data-ctl="hypso-contrast"></label>
       </div>
       ${
         showStrength
           ? `<div class="slider-row">
               <label class="slider-label" for="hypso-strength">
-                <span>Strength</span>
+                <span>Интенсивность</span>
                 <span data-ctl="hypso-strength-readout">1.0×</span>
               </label>
               <input id="hypso-strength" type="range" min="0" max="1.5" step="0.05" value="1" data-ctl="hypso-strength">
@@ -218,10 +218,10 @@ function renderRampRow(rampId, activeId) {
   const gradient = rampToCssGradient(rampId, 'light');
   const checked = rampId === activeId ? 'checked' : '';
   const cbBadge = r.colorblindSafe
-    ? `<span class="hypso-badge" aria-label="Colourblind-safe palette">CB-safe</span>`
+    ? `<span class="hypso-badge" aria-label="Палитра, безопасная для дальтоников">CB-safe</span>`
     : '';
   const editBtn = !isBuiltIn
-    ? `<button class="hypso-edit" data-ctl="hypso-edit" data-ramp-id="${escAttr(rampId)}" type="button" aria-label="Edit ramp">✎</button>`
+    ? `<button class="hypso-edit" data-ctl="hypso-edit" data-ramp-id="${escAttr(rampId)}" type="button" aria-label="Редактировать шкалу">✎</button>`
     : '';
   return `
     <li class="hypso-item" data-active="${checked ? '1' : '0'}">

@@ -63,7 +63,7 @@ export function mountModeSwitcher({ host, activeMode, onChange }) {
   const group = document.createElement('div');
   group.className = 'mode-switcher seg seg-3';
   group.setAttribute('role', 'radiogroup');
-  group.setAttribute('aria-label', 'Режим карти');
+  group.setAttribute('aria-label', 'Режим карты');
 
   /** @type {Map<string, HTMLButtonElement>} */
   const buttons = new Map();

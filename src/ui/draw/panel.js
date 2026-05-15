@@ -23,21 +23,21 @@
 import { DRAW_ICONS as I } from './icons.js';
 
 const TOOL_DEFS = [
-  { id: 'select',  label: 'Вибір',      tip: 'Виділити та редагувати', icon: I.select },
-  { id: 'marker',  label: 'Мітка',      tip: 'Поставити мітку',         icon: I.marker },
-  { id: 'line',    label: 'Лінія',      tip: 'Накреслити лінію',        icon: I.line },
-  { id: 'polygon', label: 'Полігон',    tip: 'Накреслити багатокутник', icon: I.polygon },
-  { id: 'pencil',  label: 'Олівець',    tip: 'Вільне малювання',        icon: I.pencil },
-  { id: 'shape',   label: 'Фігура',     tip: 'Готова фігура',            icon: I.shapeHex },
-  { id: 'eraser',  label: 'Гумка',      tip: 'Стерти намальоване',       icon: I.eraser },
+  { id: 'select',  label: 'Выбор',     tip: 'Выделить и редактировать', icon: I.select },
+  { id: 'marker',  label: 'Метка',     tip: 'Поставить метку',           icon: I.marker },
+  { id: 'line',    label: 'Линия',     tip: 'Начертить линию',           icon: I.line },
+  { id: 'polygon', label: 'Полигон',   tip: 'Начертить многоугольник',   icon: I.polygon },
+  { id: 'pencil',  label: 'Карандаш',  tip: 'Свободное рисование',       icon: I.pencil },
+  { id: 'shape',   label: 'Фигура',    tip: 'Готовая фигура',             icon: I.shapeHex },
+  { id: 'eraser',  label: 'Ластик',    tip: 'Стереть нарисованное',       icon: I.eraser },
 ];
 
 const SHAPE_DEFS = [
-  { id: 'circle',     label: 'Коло',         icon: I.shapeCircle },
-  { id: 'rectangle',  label: 'Прямокутник',  icon: I.shapeRect },
-  { id: 'regular',    label: 'N-кутник',     icon: I.shapeHex },
-  { id: 'star',       label: 'Зірка',        icon: I.shapeStar },
-  { id: 'arrow',      label: 'Стрілка',      icon: I.shapeArrow },
+  { id: 'circle',     label: 'Круг',          icon: I.shapeCircle },
+  { id: 'rectangle',  label: 'Прямоугольник', icon: I.shapeRect },
+  { id: 'regular',    label: 'N-угольник',    icon: I.shapeHex },
+  { id: 'star',       label: 'Звезда',        icon: I.shapeStar },
+  { id: 'arrow',      label: 'Стрелка',       icon: I.shapeArrow },
 ];
 
 /**
@@ -49,11 +49,11 @@ const SHAPE_DEFS = [
  * global recompute.
  */
 const CONN_DEFS = [
-  { id: 'none',     label: 'Без зʼєднань', tip: 'Нові мітки не зʼєднуються автоматично', icon: I.connectionNone },
-  { id: 'sequence', label: 'Послідовно',    tip: 'Кожну нову мітку зʼєднувати з попередньою', icon: I.connectionSequence },
-  { id: 'mesh',     label: 'Усі з усіма',   tip: 'Кожну нову мітку зʼєднувати з усіма попередніми', icon: I.connectionMesh },
-  { id: 'hub',      label: 'Зірка',         tip: 'Кожну нову мітку зʼєднувати з першою (центром)', icon: I.connectionHub },
-  { id: 'optimal',  label: 'Короткий маршрут', tip: 'Нові мітки оптимізуються в найкоротший маршрут між собою. Існуючі лінії не змінюються.', icon: I.connectionOptimal },
+  { id: 'none',     label: 'Без соединений', tip: 'Новые метки не соединяются автоматически', icon: I.connectionNone },
+  { id: 'sequence', label: 'Последовательно', tip: 'Каждую новую метку соединять с предыдущей', icon: I.connectionSequence },
+  { id: 'mesh',     label: 'Все со всеми',    tip: 'Каждую новую метку соединять со всеми предыдущими', icon: I.connectionMesh },
+  { id: 'hub',      label: 'Звезда',          tip: 'Каждую новую метку соединять с первой (центром)', icon: I.connectionHub },
+  { id: 'optimal',  label: 'Кратчайший маршрут', tip: 'Новые метки оптимизируются в кратчайший маршрут между собой. Существующие линии не меняются.', icon: I.connectionOptimal },
 ];
 
 /**
@@ -63,8 +63,8 @@ const CONN_DEFS = [
 export function renderDrawPanelBody() {
   return `
     <div class="panel-group draw-tools-group">
-      <h4 class="panel-group-title">Інструмент</h4>
-      <div class="draw-tool-grid" data-ctl="draw-tools" role="radiogroup" aria-label="Активний інструмент малювання">
+      <h4 class="panel-group-title">Инструмент</h4>
+      <div class="draw-tool-grid" data-ctl="draw-tools" role="radiogroup" aria-label="Активный инструмент рисования">
         ${TOOL_DEFS
           .map((t) => `
             <button
@@ -84,8 +84,8 @@ export function renderDrawPanelBody() {
     </div>
 
     <div class="panel-group draw-shape-group" data-ctl="draw-shape-group" hidden>
-      <h4 class="panel-group-title">Фігура</h4>
-      <div class="draw-shape-grid" data-ctl="draw-shapes" role="radiogroup" aria-label="Тип фігури">
+      <h4 class="panel-group-title">Фигура</h4>
+      <div class="draw-shape-grid" data-ctl="draw-shapes" role="radiogroup" aria-label="Тип фигуры">
         ${SHAPE_DEFS
           .map((s) => `
             <button
@@ -104,7 +104,7 @@ export function renderDrawPanelBody() {
       <div class="draw-shape-size">
         <div class="slider-row">
           <label class="slider-label" for="draw-shape-size">
-            <span>Розмір</span>
+            <span>Размер</span>
             <span data-ctl="draw-shape-size-readout">100 px</span>
           </label>
           <input id="draw-shape-size" type="range" min="20" max="220" step="5" value="100" data-ctl="draw-shape-size">
@@ -113,7 +113,7 @@ export function renderDrawPanelBody() {
       <div class="draw-shape-sides" data-ctl="draw-shape-sides-row" hidden>
         <div class="slider-row">
           <label class="slider-label" for="draw-shape-sides">
-            <span>Сторони</span>
+            <span>Стороны</span>
             <span data-ctl="draw-shape-sides-readout">6</span>
           </label>
           <input id="draw-shape-sides" type="range" min="3" max="12" step="1" value="6" data-ctl="draw-shape-sides">
@@ -122,10 +122,10 @@ export function renderDrawPanelBody() {
     </div>
 
     <div class="panel-group draw-eraser-group" data-ctl="draw-eraser-group" hidden>
-      <h4 class="panel-group-title">Гумка</h4>
+      <h4 class="panel-group-title">Ластик</h4>
       <div class="slider-row">
         <label class="slider-label" for="draw-eraser-size">
-          <span>Розмір гумки</span>
+          <span>Размер ластика</span>
           <span data-ctl="draw-eraser-size-readout">30 px</span>
         </label>
         <input id="draw-eraser-size" type="range" min="5" max="120" step="5" value="30" data-ctl="draw-eraser-size">
@@ -133,8 +133,8 @@ export function renderDrawPanelBody() {
     </div>
 
     <div class="panel-group">
-      <h4 class="panel-group-title">Зʼєднання міток</h4>
-      <div class="draw-conn-list" data-ctl="draw-connections" role="radiogroup" aria-label="Режим зʼєднання міток">
+      <h4 class="panel-group-title">Соединение меток</h4>
+      <div class="draw-conn-list" data-ctl="draw-connections" role="radiogroup" aria-label="Режим соединения меток">
         ${CONN_DEFS
           .map((c) => `
             <button
@@ -156,15 +156,15 @@ export function renderDrawPanelBody() {
       </div>
       <div class="rows">
         <label class="row">
-          <span>Геодезичні (з кривиною Землі)</span>
+          <span>Геодезические (с кривизной Земли)</span>
           <input type="checkbox" data-ctl="draw-geodesic" checked>
         </label>
         <label class="row">
-          <span>Нумерація міток</span>
+          <span>Нумерация меток</span>
           <input type="checkbox" data-ctl="draw-labels" checked>
         </label>
         <label class="row">
-          <span>Показувати відстані</span>
+          <span>Показывать расстояния</span>
           <input type="checkbox" data-ctl="draw-measure">
         </label>
       </div>
@@ -184,14 +184,14 @@ export function renderDrawPanelBody() {
       </div>
       <div class="slider-row">
         <label class="slider-label" for="draw-weight">
-          <span>Товщина</span>
+          <span>Толщина</span>
           <span data-ctl="draw-weight-readout">3 px</span>
         </label>
         <input id="draw-weight" type="range" min="1" max="10" step="0.5" value="3" data-ctl="draw-weight">
       </div>
       <div class="slider-row">
         <label class="slider-label" for="draw-opacity">
-          <span>Прозорість</span>
+          <span>Прозрачность</span>
           <span data-ctl="draw-opacity-readout">95 %</span>
         </label>
         <input id="draw-opacity" type="range" min="0.1" max="1" step="0.05" value="0.95" data-ctl="draw-opacity">
@@ -200,7 +200,7 @@ export function renderDrawPanelBody() {
 
     <div class="panel-group draw-stats" data-ctl="draw-stats">
       <div class="draw-stat">
-        <span class="draw-stat-label">Мітки</span>
+        <span class="draw-stat-label">Метки</span>
         <span class="draw-stat-value" data-ctl="draw-stat-markers">0</span>
       </div>
       <div class="draw-stat">
@@ -208,21 +208,21 @@ export function renderDrawPanelBody() {
         <span class="draw-stat-value" data-ctl="draw-stat-distance">—</span>
       </div>
       <div class="draw-stat">
-        <span class="draw-stat-label">Об'єкти</span>
+        <span class="draw-stat-label">Объекты</span>
         <span class="draw-stat-value" data-ctl="draw-stat-features">0</span>
       </div>
     </div>
 
     <div class="panel-group draw-actions">
       <div class="draw-action-row">
-        <button type="button" class="draw-action" data-ctl="draw-undo"   title="Скасувати (Ctrl+Z)" aria-label="Скасувати">${I.undo}</button>
-        <button type="button" class="draw-action" data-ctl="draw-redo"   title="Повернути (Ctrl+Shift+Z)" aria-label="Повернути">${I.redo}</button>
-        <button type="button" class="draw-action" data-ctl="draw-delete" title="Видалити обраний (Del)" aria-label="Видалити обраний">${I.trash}</button>
-        <button type="button" class="draw-action draw-danger" data-ctl="draw-clear" title="Очистити все" aria-label="Очистити все">${I.broom}</button>
+        <button type="button" class="draw-action" data-ctl="draw-undo"   title="Отменить (Ctrl+Z)" aria-label="Отменить">${I.undo}</button>
+        <button type="button" class="draw-action" data-ctl="draw-redo"   title="Вернуть (Ctrl+Shift+Z)" aria-label="Вернуть">${I.redo}</button>
+        <button type="button" class="draw-action" data-ctl="draw-delete" title="Удалить выбранный (Del)" aria-label="Удалить выбранный">${I.trash}</button>
+        <button type="button" class="draw-action draw-danger" data-ctl="draw-clear" title="Очистить всё" aria-label="Очистить всё">${I.broom}</button>
       </div>
       <div class="draw-action-row">
-        <button type="button" class="draw-action draw-io" data-ctl="draw-export" title="Експорт GeoJSON" aria-label="Експорт GeoJSON">${I.download}<span>Експорт</span></button>
-        <label class="draw-action draw-io" title="Імпорт GeoJSON" aria-label="Імпорт GeoJSON">${I.upload}<span>Імпорт</span>
+        <button type="button" class="draw-action draw-io" data-ctl="draw-export" title="Экспорт GeoJSON" aria-label="Экспорт GeoJSON">${I.download}<span>Экспорт</span></button>
+        <label class="draw-action draw-io" title="Импорт GeoJSON" aria-label="Импорт GeoJSON">${I.upload}<span>Импорт</span>
           <input type="file" accept=".json,.geojson,application/json,application/geo+json" data-ctl="draw-import-file" hidden>
         </label>
       </div>
@@ -389,7 +389,7 @@ export function mountDrawPanel({ engine, host }) {
   $('[data-ctl="draw-redo"]')?.addEventListener('click', () => engine.redo());
   $('[data-ctl="draw-delete"]')?.addEventListener('click', () => engine.deleteSelected());
   $('[data-ctl="draw-clear"]')?.addEventListener('click', () => {
-    if (window.confirm('Очистити всі намальовані об\'єкти? Цю дію неможливо скасувати після перезавантаження.')) {
+    if (window.confirm('Очистить все нарисованные объекты? Это действие нельзя отменить после перезагрузки.')) {
       engine.clearAll();
     }
   });
@@ -418,10 +418,10 @@ export function mountDrawPanel({ engine, host }) {
       const parsed = JSON.parse(text);
       const n = engine.importGeoJSON(parsed);
       if (n === 0) {
-        window.alert('У файлі не знайдено валідних об\'єктів GeoJSON.');
+        window.alert('В файле не найдено валидных объектов GeoJSON.');
       }
     } catch (err) {
-      window.alert(`Неможливо прочитати файл: ${err?.message ?? err}`);
+      window.alert(`Не удалось прочитать файл: ${err?.message ?? err}`);
     } finally {
       importInput.value = '';
     }

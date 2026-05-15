@@ -58,11 +58,11 @@ export function mountHypsoProfile(opts) {
   let drawing = true;
 
   host.innerHTML = `
-    <div class="hypso-profile" role="dialog" aria-label="Elevation profile">
+    <div class="hypso-profile" role="dialog" aria-label="Профиль высот">
       <header class="hypso-profile-head">
-        <h3>Elevation profile</h3>
-        <span class="hypso-profile-hint">Click the map to add points · Enter to finish · Esc to exit</span>
-        <button data-ctl="exit" type="button" aria-label="Close">×</button>
+        <h3>Профиль высот</h3>
+        <span class="hypso-profile-hint">Кликайте по карте, чтобы добавить точки · Enter — завершить · Esc — выйти</span>
+        <button data-ctl="exit" type="button" aria-label="Закрыть">×</button>
       </header>
       <div class="hypso-profile-chart" data-ctl="chart" data-state="empty"></div>
       <div class="hypso-profile-stats">
@@ -72,8 +72,8 @@ export function mountHypsoProfile(opts) {
         <span data-ctl="stat-gain">↑ — м</span>
       </div>
       <div class="hypso-profile-actions">
-        <button data-ctl="clear" type="button">Clear</button>
-        <button data-ctl="csv" type="button" disabled>Export CSV</button>
+        <button data-ctl="clear" type="button">Очистить</button>
+        <button data-ctl="csv" type="button" disabled>Экспорт CSV</button>
       </div>
     </div>
   `;
@@ -153,7 +153,7 @@ export function mountHypsoProfile(opts) {
     const elevs = samples.map((s) => s.elevation_m).filter((e) => e != null);
     if (elevs.length < 2) {
       refs.chart.dataset.state = 'noelev';
-      refs.chart.innerHTML = `<div class="hypso-profile-msg">DEM not available for this region.</div>`;
+      refs.chart.innerHTML = `<div class="hypso-profile-msg">Для этого региона DEM недоступен.</div>`;
       refs.csv.disabled = true;
       return;
     }

@@ -137,8 +137,8 @@ function installControlsToggle(map, { caps } = {}) {
             data-ctl="controls-toggle"
             aria-controls="maplibregl-ctrl-top-right"
             aria-expanded="${collapsed ? 'false' : 'true'}"
-            aria-label="${collapsed ? 'Розгорнути контролі' : 'Згорнути контролі'}"
-            title="${collapsed ? 'Розгорнути' : 'Згорнути'}">
+            aria-label="${collapsed ? 'Развернуть элементы управления' : 'Свернуть элементы управления'}"
+            title="${collapsed ? 'Развернуть' : 'Свернуть'}">
       ${ICONS.controlsChev}
     </button>
   `;
@@ -152,9 +152,9 @@ function installControlsToggle(map, { caps } = {}) {
       btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       btn.setAttribute(
         'aria-label',
-        collapsed ? 'Розгорнути контролі' : 'Згорнути контролі',
+        collapsed ? 'Развернуть элементы управления' : 'Свернуть элементы управления',
       );
-      btn.setAttribute('title', collapsed ? 'Розгорнути' : 'Згорнути');
+      btn.setAttribute('title', collapsed ? 'Развернуть' : 'Свернуть');
     }
     if (persist) saveUiPrefs({ controlsCollapsed: collapsed });
   };
@@ -193,12 +193,12 @@ function installVerticalScale(map, scaleHost, { caps } = {}) {
     <div class="cart-scale"
          data-collapsed="${initiallyCollapsed ? 'true' : 'false'}"
          role="img"
-         aria-label="Масштаб карти">
+         aria-label="Масштаб карты">
       <button class="cart-scale-toggle"
               type="button"
               data-ctl="scale-toggle"
               aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
-              aria-label="${initiallyCollapsed ? 'Розгорнути масштаб' : 'Згорнути масштаб'}"
+              aria-label="${initiallyCollapsed ? 'Развернуть масштаб' : 'Свернуть масштаб'}"
               title="Масштаб">
         <span class="cart-scale-toggle-dot" aria-hidden="true"></span>
         <svg class="cart-scale-chev" viewBox="0 0 16 16" aria-hidden="true">
@@ -289,7 +289,7 @@ function installVerticalScale(map, scaleHost, { caps } = {}) {
       toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       toggle.setAttribute(
         'aria-label',
-        collapsed ? 'Розгорнути масштаб' : 'Згорнути масштаб',
+        collapsed ? 'Развернуть масштаб' : 'Свернуть масштаб',
       );
     }
     if (panel) panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
@@ -327,7 +327,7 @@ function renderChip(host) {
     <div class="chip" role="presentation">
       <span class="chip-logo">${ICONS.brand}</span>
       <span><strong>Cart</strong></span>
-      <span class="chip-sub">· Україна</span>
+      <span class="chip-sub">· Украина</span>
     </div>
   `;
 }
@@ -335,21 +335,21 @@ function renderChip(host) {
 function renderDock(host) {
   host.classList.add('dock');
   host.setAttribute('role', 'toolbar');
-  host.setAttribute('aria-label', 'Інструменти карти');
+  host.setAttribute('aria-label', 'Инструменты карты');
   host.innerHTML = `
     <header class="dock-brand">
-      <button class="dock-logo" type="button" data-ctl="home" title="До центру України" aria-label="Fly to centre of Ukraine">${ICONS.home}</button>
+      <button class="dock-logo" type="button" data-ctl="home" title="К центру Украины" aria-label="Перелететь к центру Украины">${ICONS.home}</button>
     </header>
-    <nav class="dock-nav" aria-label="Панелі">
-      <button class="dock-btn" type="button" data-panel="layers"   data-tip="Шари"        aria-label="Шари"        aria-expanded="false">${ICONS.layers}</button>
-      <button class="dock-btn" type="button" data-panel="relief"   data-tip="Рельєф"      aria-label="Рельєф"      aria-expanded="false">${ICONS.mountain}</button>
-      <button class="dock-btn" type="button" data-panel="hypso"    data-tip="Гіпсометрія" aria-label="Гіпсометрія" aria-expanded="false">${ICONS.waves}</button>
-      <button class="dock-btn" type="button" data-panel="places"   data-tip="Місця"       aria-label="Місця"       aria-expanded="false">${ICONS.pin}</button>
-      <button class="dock-btn" type="button" data-panel="draw"     data-tip="Малювання"   aria-label="Малювання"   aria-expanded="false">${ICONS.draw}</button>
-      <button class="dock-btn" type="button" data-panel="settings" data-tip="Налаштування" aria-label="Налаштування" aria-expanded="false">${ICONS.sliders}</button>
+    <nav class="dock-nav" aria-label="Панели">
+      <button class="dock-btn" type="button" data-panel="layers"   data-tip="Слои"          aria-label="Слои"          aria-expanded="false">${ICONS.layers}</button>
+      <button class="dock-btn" type="button" data-panel="relief"   data-tip="Рельеф"        aria-label="Рельеф"        aria-expanded="false">${ICONS.mountain}</button>
+      <button class="dock-btn" type="button" data-panel="hypso"    data-tip="Гипсометрия"   aria-label="Гипсометрия"   aria-expanded="false">${ICONS.waves}</button>
+      <button class="dock-btn" type="button" data-panel="places"   data-tip="Места"         aria-label="Места"         aria-expanded="false">${ICONS.pin}</button>
+      <button class="dock-btn" type="button" data-panel="draw"     data-tip="Рисование"     aria-label="Рисование"     aria-expanded="false">${ICONS.draw}</button>
+      <button class="dock-btn" type="button" data-panel="settings" data-tip="Настройки"     aria-label="Настройки"     aria-expanded="false">${ICONS.sliders}</button>
     </nav>
     <footer class="dock-foot">
-      <button class="dock-btn theme-toggle" type="button" data-ctl="theme-toggle" data-tip="Тема" aria-label="Перемкнути тему">${ICONS.moon}</button>
+      <button class="dock-btn theme-toggle" type="button" data-ctl="theme-toggle" data-tip="Тема" aria-label="Переключить тему">${ICONS.moon}</button>
     </footer>
   `;
 }
@@ -374,7 +374,7 @@ function panelShell(id, title, iconKey, body, opts = {}) {
     >
       <header class="panel-head">
         <div class="panel-title">${ICONS[iconKey]}<span>${title}</span></div>
-        <button class="panel-close" type="button" aria-label="Закрити панель" data-ctl="close-panel">${ICONS.close}</button>
+        <button class="panel-close" type="button" aria-label="Закрыть панель" data-ctl="close-panel">${ICONS.close}</button>
       </header>
       <div class="panel-body">${body}</div>
     </section>
@@ -384,15 +384,15 @@ function panelShell(id, title, iconKey, body, opts = {}) {
 function renderLayersPanelBody() {
   return `
     <div class="panel-group">
-      <h4 class="panel-group-title">Display</h4>
+      <h4 class="panel-group-title">Отображение</h4>
       <div class="rows">
-        <label class="row"><span>Labels</span><input type="checkbox" data-ctl="labels" checked></label>
-        <label class="row"><span>Points of interest</span><input type="checkbox" data-ctl="pois" checked></label>
-        <label class="row"><span>3D buildings</span><input type="checkbox" data-ctl="b3d" checked></label>
+        <label class="row"><span>Подписи</span><input type="checkbox" data-ctl="labels" checked></label>
+        <label class="row"><span>Точки интереса</span><input type="checkbox" data-ctl="pois" checked></label>
+        <label class="row"><span>3D-здания</span><input type="checkbox" data-ctl="b3d" checked></label>
       </div>
     </div>
-    <p class="panel-meta">Toggle the visual layers rendered on top of the base map. Changes
-    apply instantly without re-fetching tiles.</p>
+    <p class="panel-meta">Включайте визуальные слои поверх базовой карты. Изменения
+    применяются мгновенно без повторной загрузки тайлов.</p>
   `;
 }
 
@@ -401,27 +401,27 @@ function renderReliefPanelBody() {
     <div class="panel-group preset-row-group" data-ctl="flat-hypso-group">
       <label class="row preset-row">
         <span class="preset-row-text">
-          <strong>Flat hypsometric</strong>
-          <small>Колір висот без затінення, нахилу та ізоліній</small>
+          <strong>Плоская гипсометрия</strong>
+          <small>Цвет высот без затенения, уклона и изолиний</small>
         </span>
         <input type="checkbox" data-ctl="flatHypso" aria-describedby="flat-hypso-desc">
       </label>
     </div>
     <div class="panel-group">
-      <h4 class="panel-group-title">Layers</h4>
+      <h4 class="panel-group-title">Слои</h4>
       <div class="rows">
-        <label class="row"><span>Hillshade</span><input type="checkbox" data-ctl="hillshade" checked></label>
-        <label class="row"><span>3D terrain</span><input type="checkbox" data-ctl="terrain3D" checked></label>
-        <label class="row"><span>Contours</span><input type="checkbox" data-ctl="contours" checked></label>
-        <label class="row"><span>Hypsometric tint</span><input type="checkbox" data-ctl="hypsometricTint"></label>
-        <label class="row"><span>Bathymetry</span><input type="checkbox" data-ctl="bathymetry"></label>
-        <label class="row"><span>Texture shading</span><input type="checkbox" data-ctl="textureShading"></label>
-        <label class="row"><span>Ridge overlay</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
-        <label class="row"><span>Carpathian detail</span><input type="checkbox" data-ctl="carpathian"></label>
+        <label class="row"><span>Отмывка</span><input type="checkbox" data-ctl="hillshade" checked></label>
+        <label class="row"><span>3D-рельеф</span><input type="checkbox" data-ctl="terrain3D" checked></label>
+        <label class="row"><span>Изолинии</span><input type="checkbox" data-ctl="contours" checked></label>
+        <label class="row"><span>Гипсометрический тон</span><input type="checkbox" data-ctl="hypsometricTint"></label>
+        <label class="row"><span>Батиметрия</span><input type="checkbox" data-ctl="bathymetry"></label>
+        <label class="row"><span>Текстурное затенение</span><input type="checkbox" data-ctl="textureShading"></label>
+        <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
+        <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
       </div>
     </div>
     <div class="panel-group">
-      <h4 class="panel-group-title">Vertical exaggeration</h4>
+      <h4 class="panel-group-title">Вертикальное преувеличение</h4>
       <div class="slider-row">
         <label class="slider-label" for="exaggeration">
           <span>0.5× – 2×</span>
@@ -435,7 +435,7 @@ function renderReliefPanelBody() {
           step="0.1"
           value="1"
           data-ctl="exaggeration"
-          aria-label="Vertical exaggeration"
+          aria-label="Вертикальное преувеличение"
         />
       </div>
     </div>
@@ -451,15 +451,15 @@ function renderHypsoPanelBody() {
 
     <div class="panel-group" data-ctl="hypso-profile-launcher" hidden>
       <button class="btn-block" type="button" data-ctl="open-profile">
-        <span>Намалювати профіль висот</span>
+        <span>Нарисовать профиль высот</span>
       </button>
     </div>
 
     <div class="panel-group hypso-stats" data-ctl="hypso-stats" hidden>
-      <span><span class="hypso-stat-label">min</span><span data-ctl="hypso-stat-min">— м</span></span>
-      <span><span class="hypso-stat-label">mean</span><span data-ctl="hypso-stat-mean">— м</span></span>
-      <span><span class="hypso-stat-label">max</span><span data-ctl="hypso-stat-max">— м</span></span>
-      <span><span class="hypso-stat-label">region</span><span data-ctl="hypso-stat-region">—</span></span>
+      <span><span class="hypso-stat-label">мин</span><span data-ctl="hypso-stat-min">— м</span></span>
+      <span><span class="hypso-stat-label">средн.</span><span data-ctl="hypso-stat-mean">— м</span></span>
+      <span><span class="hypso-stat-label">макс</span><span data-ctl="hypso-stat-max">— м</span></span>
+      <span><span class="hypso-stat-label">регион</span><span data-ctl="hypso-stat-region">—</span></span>
     </div>
   `;
 }
@@ -476,24 +476,24 @@ function renderPlacesPanelBody() {
   `;
   return `
     <div class="panel-group">
-      <h4 class="panel-group-title">Україна</h4>
+      <h4 class="panel-group-title">Украина</h4>
       <div class="presets" data-ctl="presets">
-        ${city('ukraine',     'Україна',  'overview')}
-        ${city('kyiv',        'Київ',     'столиця')}
-        ${city('lviv',        'Львів',    '')}
-        ${city('odesa',       'Одеса',    '')}
-        ${city('kharkiv',     'Харків',   '')}
-        ${city('carpathians', 'Карпати',  'регіон')}
+        ${city('ukraine',     'Украина',  'обзор')}
+        ${city('kyiv',        'Киев',     'столица')}
+        ${city('lviv',        'Львов',    '')}
+        ${city('odesa',       'Одесса',   '')}
+        ${city('kharkiv',     'Харьков',  '')}
+        ${city('carpathians', 'Карпаты',  'регион')}
       </div>
     </div>
     <div class="panel-group">
-      <h4 class="panel-group-title">Carpathian peaks</h4>
+      <h4 class="panel-group-title">Карпатские вершины</h4>
       <div class="presets" data-ctl="presets">
         ${city('hoverla',    'Говерла',   '2061 м')}
-        ${city('pip_ivan',   'Піп Іван',  '2028 м')}
+        ${city('pip_ivan',   'Поп Иван',  '2028 м')}
         ${city('petros',     'Петрос',    '2020 м')}
-        ${city('svydovets',  'Свидовець', 'хребет')}
-        ${city('chornohora', 'Чорногора', 'хребет')}
+        ${city('svydovets',  'Свидовец',  'хребет')}
+        ${city('chornohora', 'Черногора', 'хребет')}
       </div>
     </div>
   `;
@@ -502,42 +502,42 @@ function renderPlacesPanelBody() {
 function renderSettingsPanelBody() {
   return `
     <div class="panel-group">
-      <h4 class="panel-group-title">Quality</h4>
+      <h4 class="panel-group-title">Качество</h4>
       <div class="seg seg-3" role="tablist" data-ctl="quality">
-        <button data-value="auto" role="tab" type="button">Auto</button>
-        <button data-value="high" role="tab" type="button">High</button>
-        <button data-value="low"  role="tab" type="button">Eco</button>
+        <button data-value="auto" role="tab" type="button">Авто</button>
+        <button data-value="high" role="tab" type="button">Высокое</button>
+        <button data-value="low"  role="tab" type="button">Эконом</button>
       </div>
-      <p class="panel-meta">Auto reads device memory, CPU and connection to balance fidelity with frame rate. Switch to Eco on slower devices, High for the full visual treatment.</p>
+      <p class="panel-meta">Авто учитывает память устройства, процессор и соединение, чтобы балансировать качество и частоту кадров. Используйте «Эконом» на слабых устройствах, «Высокое» — для полного визуального оформления.</p>
     </div>
     <div class="panel-group">
-      <h4 class="panel-group-title">Shortcuts</h4>
+      <h4 class="panel-group-title">Горячие клавиши</h4>
       <ul class="tips" data-pointer="fine">
-        <li><kbd>Scroll</kbd> Zoom in / out</li>
-        <li><kbd>Drag</kbd> Pan the map</li>
-        <li><kbd>Shift</kbd>+<kbd>Drag</kbd> Rotate &amp; tilt</li>
-        <li><kbd>Ctrl</kbd>+<kbd>Click</kbd> Fly to point</li>
-        <li><kbd>Esc</kbd> Close active panel</li>
+        <li><kbd>Колесо</kbd> Приближение / отдаление</li>
+        <li><kbd>Перетаскивание</kbd> Перемещение карты</li>
+        <li><kbd>Shift</kbd>+<kbd>Перетаскивание</kbd> Поворот и наклон</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Клик</kbd> Перелёт к точке</li>
+        <li><kbd>Esc</kbd> Закрыть активную панель</li>
       </ul>
       <ul class="tips" data-pointer="coarse">
-        <li><kbd>Pinch</kbd> Zoom</li>
-        <li><kbd>2 fingers</kbd> Tilt &amp; rotate</li>
-        <li><kbd>Double-tap</kbd> Zoom in</li>
-        <li><kbd>Tap outside</kbd> Close panel</li>
+        <li><kbd>Щипок</kbd> Масштаб</li>
+        <li><kbd>2 пальца</kbd> Наклон и поворот</li>
+        <li><kbd>Двойной тап</kbd> Приближение</li>
+        <li><kbd>Тап вне</kbd> Закрыть панель</li>
       </ul>
     </div>
-    <p class="panel-meta">Cart — vector cartography on MapLibre GL JS. Tile data © OpenMapTiles + OpenStreetMap contributors.</p>
+    <p class="panel-meta">Cart — векторная картография на MapLibre GL JS. Данные тайлов © OpenMapTiles + участники OpenStreetMap.</p>
   `;
 }
 
 function renderPanels(host) {
   host.innerHTML = `
-    ${panelShell('layers',   'Шари',         'layers',   renderLayersPanelBody())}
-    ${panelShell('relief',   'Рельєф',       'mountain', renderReliefPanelBody())}
-    ${panelShell('hypso',    'Гіпсометрія',  'waves',    renderHypsoPanelBody())}
-    ${panelShell('places',   'Місця',        'pin',      renderPlacesPanelBody())}
-    ${panelShell('draw',     'Малювання',    'draw',     renderDrawPanelBody(),     { persistent: true })}
-    ${panelShell('settings', 'Налаштування', 'sliders',  renderSettingsPanelBody())}
+    ${panelShell('layers',   'Слои',        'layers',   renderLayersPanelBody())}
+    ${panelShell('relief',   'Рельеф',      'mountain', renderReliefPanelBody())}
+    ${panelShell('hypso',    'Гипсометрия', 'waves',    renderHypsoPanelBody())}
+    ${panelShell('places',   'Места',       'pin',      renderPlacesPanelBody())}
+    ${panelShell('draw',     'Рисование',   'draw',     renderDrawPanelBody(),     { persistent: true })}
+    ${panelShell('settings', 'Настройки',   'sliders',  renderSettingsPanelBody())}
   `;
 }
 
@@ -914,11 +914,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       themeBtn.innerHTML = state.theme === 'dark' ? ICONS.sun : ICONS.moon;
       themeBtn.setAttribute(
         'data-tip',
-        state.theme === 'dark' ? 'Світла тема' : 'Темна тема',
+        state.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема',
       );
       themeBtn.setAttribute(
         'aria-label',
-        state.theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
+        state.theme === 'dark' ? 'Переключить на светлую тему' : 'Переключить на тёмную тему',
       );
     }
   };

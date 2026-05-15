@@ -74,9 +74,9 @@ export function mountHUD(map, perf, root, { caps } = {}) {
   const cursorCells = showCursor
     ? `
       <div class="hud-stat-group" data-hud-group="cursor" data-state="idle">
-        ${statHTML('lat', 'LAT', '—')}
-        ${statHTML('lon', 'LON', '—')}
-        ${statHTML('elev', 'ELEV', '—')}
+        ${statHTML('lat', 'ШИР', '—')}
+        ${statHTML('lon', 'ДОЛ', '—')}
+        ${statHTML('elev', 'ВЫС', '—')}
       </div>
     `
     : '';
@@ -92,7 +92,7 @@ export function mountHUD(map, perf, root, { caps } = {}) {
               data-ctl="hud-toggle"
               aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
               aria-controls="hud-panel"
-              aria-label="${initiallyCollapsed ? 'Розгорнути HUD' : 'Згорнути HUD'}"
+              aria-label="${initiallyCollapsed ? 'Развернуть HUD' : 'Свернуть HUD'}"
               title="FPS">
         <span class="hud-toggle-dot" data-hud="fps-dot" aria-hidden="true"></span>
         ${CHEV_SVG}
@@ -100,8 +100,8 @@ export function mountHUD(map, perf, root, { caps } = {}) {
       <div class="hud-panel" id="hud-panel" aria-hidden="${initiallyCollapsed ? 'true' : 'false'}">
         <div class="hud-stat-group hud-stat-group-primary">
           ${statHTML('fps', 'FPS', '—')}
-          ${statHTML('zoom', 'ZOOM', '—')}
-          ${statHTML('tiles', 'TILES', '0')}
+          ${statHTML('zoom', 'МАСШТ', '—')}
+          ${statHTML('tiles', 'ТАЙЛЫ', '0')}
         </div>
         ${cursorCells}
       </div>
@@ -133,7 +133,7 @@ export function mountHUD(map, perf, root, { caps } = {}) {
       refs.toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
       refs.toggle.setAttribute(
         'aria-label',
-        collapsed ? 'Розгорнути HUD' : 'Згорнути HUD',
+        collapsed ? 'Развернуть HUD' : 'Свернуть HUD',
       );
     }
     if (refs.panel) refs.panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');

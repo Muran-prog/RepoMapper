@@ -86,8 +86,8 @@ export const RAMPS = Object.freeze({
   // when they hear "hypsometric tint" without further qualifiers.
   touristAtlas: Object.freeze({
     id: 'touristAtlas',
-    name: 'Tourist atlas',
-    summary: 'Vivid rainbow — green lowland → yellow → orange → red → pink alpine.',
+    name: 'Туристический атлас',
+    summary: 'Яркая радуга — зелёная низменность → жёлтый → оранжевый → красный → розовый альпийский.',
     region: 'global',
     colorblindSafe: false,
     light: Object.freeze([
@@ -158,7 +158,7 @@ export const RAMPS = Object.freeze({
   patterson: Object.freeze({
     id: 'patterson',
     name: 'Patterson',
-    summary: 'Modern atlas crossblend — green lowlands, ochre mid, snowy peaks.',
+    summary: 'Современный атласный кросс-блендинг — зелёные низины, охра, заснеженные вершины.',
     region: 'global',
     colorblindSafe: false,
     light: Object.freeze([
@@ -196,7 +196,7 @@ export const RAMPS = Object.freeze({
   raiszHenry: Object.freeze({
     id: 'raiszHenry',
     name: 'Raisz–Henry',
-    summary: 'Paper-atlas sepia & sage — restrained saturation, etched feel.',
+    summary: 'Бумажный атлас — сепия и шалфей, сдержанная насыщенность, гравюрный вид.',
     region: 'global',
     colorblindSafe: false,
     light: Object.freeze([
@@ -233,8 +233,8 @@ export const RAMPS = Object.freeze({
   // bright snow. Designed to pair with a multi-direction hillshade.
   swissAlpine: Object.freeze({
     id: 'swissAlpine',
-    name: 'Swiss alpine',
-    summary: 'Imhof pastel — green base, grey peaks, gleaming snow.',
+    name: 'Швейцарские Альпы',
+    summary: 'Пастель Имхофа — зелёная база, серые вершины, сияющий снег.',
     region: 'alpine',
     colorblindSafe: false,
     light: Object.freeze([
@@ -272,7 +272,7 @@ export const RAMPS = Object.freeze({
   osmPhysical: Object.freeze({
     id: 'osmPhysical',
     name: 'OSM physical',
-    summary: 'Open-source physical — flat greens, tan slopes, slate peaks.',
+    summary: 'Открытая физическая — ровная зелень, охристые склоны, сланцевые вершины.',
     region: 'global',
     colorblindSafe: false,
     light: Object.freeze([
@@ -310,8 +310,8 @@ export const RAMPS = Object.freeze({
   // Pip Ivan, Petros visually distinct from each other.
   carpathianFocus: Object.freeze({
     id: 'carpathianFocus',
-    name: 'Carpathian focus',
-    summary: 'High dynamic range in the 800–1800 m subalpine band.',
+    name: 'Карпатский фокус',
+    summary: 'Высокий динамический диапазон в субальпийском поясе 800–1800 м.',
     region: 'carpathian',
     colorblindSafe: false,
     light: Object.freeze([
@@ -351,8 +351,8 @@ export const RAMPS = Object.freeze({
   // the Donbas / Polissia plateaus.
   steppeFlat: Object.freeze({
     id: 'steppeFlat',
-    name: 'Steppe flat',
-    summary: 'Dense gradient 0–400 m — for plateau & lowland clarity.',
+    name: 'Степной плоский',
+    summary: 'Плотный градиент 0–400 м — для чёткости плато и низменностей.',
     region: 'steppe',
     colorblindSafe: false,
     light: Object.freeze([
@@ -395,8 +395,8 @@ export const RAMPS = Object.freeze({
   // simulation.
   colorblindSafe: Object.freeze({
     id: 'colorblindSafe',
-    name: 'Colourblind-safe',
-    summary: 'Luminance-led viridis-ish — deuteran/protan/tritan tested.',
+    name: 'Безопасно для дальтоников',
+    summary: 'Виридис с ведущей яркостью — проверено на дейтер-/прот-/тританопии.',
     region: 'global',
     colorblindSafe: true,
     light: Object.freeze([

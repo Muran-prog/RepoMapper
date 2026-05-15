@@ -552,16 +552,16 @@ export const SATELLITE_TILES = Object.freeze({
  * controls.js can mount them without an i18n bundle.
  */
 export const MAP_MODE_LABELS = Object.freeze({
-  cart: 'Cart',
-  standard: 'Standard',
-  satellite: 'Satellite',
+  cart: 'Карта',
+  standard: 'Стандарт',
+  satellite: 'Спутник',
 });
 
 /**
  * Tooltip / aria-description for each mode.
  */
 export const MAP_MODE_HINTS = Object.freeze({
-  cart: 'Преміумна Cart-карта зі свіченням та акцентами',
-  standard: 'Стандартна карта (OpenFreeMap Liberty)',
-  satellite: 'Супутникові знімки (Esri World Imagery)',
+  cart: 'Премиум-карта Cart со свечением и акцентами',
+  standard: 'Стандартная карта (OpenFreeMap Liberty)',
+  satellite: 'Спутниковые снимки (Esri World Imagery)',
 });
