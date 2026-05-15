@@ -1000,39 +1000,62 @@ export function createDrawEngine(map) {
   };
 
   /**
-   * Detect a tap on a committed line feature. If hit, emit `lineAction`
-   * so the UI can show a "detach" tooltip. Returns true when a line was
-   * hit (suppresses further tool dispatch). Skipped when a draft is
+   * Detect a tap on a committed line feature via manual proximity check.
+   * Projects line segments to screen space and checks pixel distance
+   * from the tap point. More reliable than queryRenderedFeatures which
+   * has issues with GeoJSON source IDs. Skipped when a draft is
    * in-flight so drawing isn't interrupted.
    */
-  const LINE_HIT_TOLERANCE = 10;
+  const LINE_HIT_TOLERANCE = 14;
   const detectLineHit = (e) => {
     if (state.draft) return false;
-    const bbox = [
-      [e.point.x - LINE_HIT_TOLERANCE, e.point.y - LINE_HIT_TOLERANCE],
-      [e.point.x + LINE_HIT_TOLERANCE, e.point.y + LINE_HIT_TOLERANCE],
-    ];
-    let hits;
-    try {
-      hits = map.queryRenderedFeatures(bbox, { layers: [LAYERS.line] });
-    } catch { return false; }
-    if (!hits || hits.length === 0) return false;
-    for (const hit of hits) {
-      // MapLibre may return the id as a numeric index or as the string
-      // we set. Also check properties._fid which we stamp below.
-      const id = hit.properties?._fid || hit.id;
-      if (!id || !state.features.has(id)) continue;
-      const f = state.features.get(id);
+    const px = e.point;
+    let bestId = null;
+    let bestDist = LINE_HIT_TOLERANCE;
+
+    for (const [id, f] of state.features) {
       if (f.geometry?.type !== 'LineString') continue;
-      emit('lineAction', {
-        lineId: id,
-        pointPx: { x: e.point.x, y: e.point.y },
-        properties: f.properties,
-      });
-      return true;
+      const coords = f.geometry.coordinates;
+      if (!coords || coords.length < 2) continue;
+      for (let i = 0; i < coords.length - 1; i++) {
+        let a, b;
+        try {
+          a = map.project(coords[i]);
+          b = map.project(coords[i + 1]);
+        } catch { continue; }
+        const d = pointToSegmentDist(px, a, b);
+        if (d < bestDist) {
+          bestDist = d;
+          bestId = id;
+        }
+      }
     }
-    return false;
+    if (!bestId) return false;
+    emit('lineAction', {
+      lineId: bestId,
+      pointPx: { x: px.x, y: px.y },
+      properties: state.features.get(bestId).properties,
+    });
+    return true;
   };
+
+  function pointToSegmentDist(p, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) {
+      const ex = p.x - a.x;
+      const ey = p.y - a.y;
+      return Math.sqrt(ex * ex + ey * ey);
+    }
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const projX = a.x + t * dx;
+    const projY = a.y + t * dy;
+    const ex = p.x - projX;
+    const ey = p.y - projY;
+    return Math.sqrt(ex * ex + ey * ey);
+  }
 
   const onClick = (e) => {
     if (!state.enabled) return;
