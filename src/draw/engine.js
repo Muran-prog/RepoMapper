@@ -1011,7 +1011,9 @@ export function createDrawEngine(map) {
    */
   const LINE_HIT_TOLERANCE = 14;
   const ENDPOINT_TOLERANCE = 22;
+  let _lineHitConsumed = false;
   const detectLineHit = (e) => {
+    _lineHitConsumed = false;
     if (state.draft) return false;
     const px = e.point;
 
@@ -1041,6 +1043,7 @@ export function createDrawEngine(map) {
           fromId: id,
           toId: id,
         });
+        _lineHitConsumed = true;
         return true;
       }
     }
@@ -1307,12 +1310,11 @@ export function createDrawEngine(map) {
   const onMeasureClick = (e) => {
     if (!state.enabled) return;
     if (!prefs.measure) return;
+    // If detectLineHit already emitted a markerTooltip for a line
+    // endpoint, don't overwrite it with a hide event.
+    if (_lineHitConsumed) return;
     const id = findMarkerNearPoint(e.point);
     if (!id) {
-      // Empty space tap — close any open tooltip. Doing this in the
-      // same handler (instead of a separate "empty click" listener)
-      // keeps the open/close logic on a single decision point and
-      // removes the ordering problem between two click handlers.
       emit('markerTooltip', { hide: true });
       return;
     }
