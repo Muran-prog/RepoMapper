@@ -717,6 +717,45 @@ export function createDrawEngine(map) {
     rerender();
   };
 
+  const removeLineSegment = (id, segIdx) => {
+    const f = state.features.get(id);
+    if (!f || f.geometry?.type !== 'LineString') {
+      removeFeature(id);
+      return;
+    }
+    const coords = f.geometry.coordinates;
+    if (!coords || coords.length <= 2 || segIdx == null) {
+      removeFeature(id);
+      return;
+    }
+    pushHistory();
+    // Split: coords before the segment and coords after the segment.
+    const before = coords.slice(0, segIdx + 1); // up to segment start
+    const after = coords.slice(segIdx + 1);     // from segment end onward
+    state.features.delete(id);
+    if (state.selectedId === id) state.selectedId = null;
+    const props = { ...f.properties };
+    if (before.length >= 2) {
+      addFeature({
+        type: 'Feature',
+        id: nextId('line'),
+        geometry: { type: 'LineString', coordinates: before },
+        properties: { ...props },
+      });
+    }
+    if (after.length >= 2) {
+      addFeature({
+        type: 'Feature',
+        id: nextId('line'),
+        geometry: { type: 'LineString', coordinates: after },
+        properties: { ...props },
+      });
+    }
+    schedulePersist();
+    emit('change');
+    rerender();
+  };
+
   const selectFeature = (id, { silent = false } = {}) => {
     if (state.selectedId === id) return;
     const prev = state.selectedId;
@@ -1037,7 +1076,7 @@ export function createDrawEngine(map) {
         }
       } catch { /* skip */ }
 
-      // Check body segments.
+      // Check body segments — track which segment index was hit.
       for (let i = 0; i < coords.length - 1; i++) {
         let a, b;
         try {
@@ -1046,7 +1085,7 @@ export function createDrawEngine(map) {
         } catch { continue; }
         const d = pointToSegmentDist(px, a, b);
         if (d <= HIT_TOLERANCE && (!closestBody || d < closestBody.dist)) {
-          closestBody = { id, dist: d };
+          closestBody = { id, dist: d, segIdx: i };
         }
       }
     }
@@ -1078,6 +1117,7 @@ export function createDrawEngine(map) {
 
     emit('lineAction', {
       lineId: closestBody.id,
+      segIdx: closestBody.segIdx,
       pointPx: { x: px.x, y: px.y },
       properties: state.features.get(closestBody.id).properties,
     });
@@ -1725,6 +1765,7 @@ export function createDrawEngine(map) {
     _addFeature: addFeature,
     _updateFeature: updateFeature,
     _removeFeature: removeFeature,
+    _removeLineSegment: removeLineSegment,
     _selectFeature: selectFeature,
     _clearSelection: clearSelection,
     _pushHistory: pushHistory,

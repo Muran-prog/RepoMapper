@@ -36,6 +36,7 @@ export function mountLineActionTooltip({ engine, map }) {
 
   const btn = el.querySelector('[data-ctl="detach"]');
   let activeLineId = null;
+  let activeSegIdx = null;
   let hideTimer = 0;
   let showTimestamp = 0;
 
@@ -76,13 +77,14 @@ export function mountLineActionTooltip({ engine, map }) {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (activeLineId) {
-      engine._removeFeature(activeLineId);
+      engine._removeLineSegment(activeLineId, activeSegIdx);
     }
     hide();
   });
 
   const offLineAction = engine.on('lineAction', (payload) => {
     if (!payload || !payload.lineId) { hide(); return; }
+    activeSegIdx = payload.segIdx ?? null;
     show(payload);
   });
 
