@@ -34,28 +34,16 @@
      * (--float-card = the OUTER footprint of a single-button group). */
     max-width: calc(100vw - var(--dock-w) - var(--float-card) - var(--edge-inset) * 4 - var(--panel-gap));
   }
-  /* The vertical scale stays under the dock on tablets, just nudged a
-   * bit closer to the dock since the viewport is shorter. */
-  .cart-scale-host {
-    top: calc(50% + 200px);
-  }
+  /* The scale pill is anchored to the bottom-left next to the HUD
+   * chip, so tablets don't need a separate offset — the bottom
+   * inset already adapts to the safe-area. */
 }
 
 /* =====================================================================
- *  SHORT VIEWPORT — laptops and windowed desktops. The same scale
- *  nudge the tablet rule applies, but driven by viewport HEIGHT rather
- *  than width. The 5-button dock occupies ~365 px centred at 50 %, so
- *  its bottom edge sits at ~50 % + 182. With the scale anchored at the
- *  default 50 % + 220 + ~88 px tall, its lower edge lands at 50 % + 308
- *  from the top — close enough to collide with the bottom-left HUD on
- *  any viewport under ~724 px tall (the typical 1366×768 laptop after
- *  browser chrome). Pulling the scale to 50 % + 200 reclaims 20 px and
- *  restores a clean separation between the scale and the HUD chip. */
-@media (max-height: 800px) {
-  .cart-scale-host {
-    top: calc(50% + 200px);
-  }
-}
+ *  SHORT VIEWPORT — laptops and windowed desktops. The horizontal
+ *  scale pill is short enough that the desktop default already clears
+ *  the HUD chip on every realistic viewport. No nudge needed.
+ * ===================================================================== */
 
 /* =====================================================================
  *  MOBILE — dock relocates to the bottom edge, panels slide up from the
@@ -332,11 +320,9 @@
   .panel {
     max-height: 88dvh;
   }
-  /* Short viewports: tighten the scale's offset from the dock centre
-   * so it doesn't run off the bottom edge. */
-  .cart-scale-host {
-    top: calc(50% + 160px);
-  }
+  /* Short viewports: nothing to do — the scale is anchored to the
+   * bottom-left right above the HUD chip, which already adapts via
+   * `bottom: env(safe-area-inset-bottom)`. */
 }
 
 /* =====================================================================

@@ -12,7 +12,8 @@
  *
  *   {
  *     "hudCollapsed":      boolean,   // bottom-left telemetry pill
- *     "controlsCollapsed": boolean    // top-right MapLibre cluster
+ *     "controlsCollapsed": boolean,   // top-right MapLibre cluster
+ *     "scaleCollapsed":    boolean    // left-edge map-scale control
  *   }
  *
  * The map-mode preference (`cart` | `standard` | `satellite`) lives in
@@ -28,6 +29,7 @@
  * @typedef {object} UiPrefs
  * @property {boolean} hudCollapsed
  * @property {boolean} controlsCollapsed
+ * @property {boolean} scaleCollapsed
  */
 
 import {
@@ -62,6 +64,7 @@ export function loadUiPrefs(defaults = {}) {
   const fallback = {
     hudCollapsed: false,
     controlsCollapsed: false,
+    scaleCollapsed: false,
     ...defaults,
   };
   const storage = ls();
@@ -78,6 +81,10 @@ export function loadUiPrefs(defaults = {}) {
         typeof parsed.controlsCollapsed === 'boolean'
           ? parsed.controlsCollapsed
           : fallback.controlsCollapsed,
+      scaleCollapsed:
+        typeof parsed.scaleCollapsed === 'boolean'
+          ? parsed.scaleCollapsed
+          : fallback.scaleCollapsed,
     };
   } catch {
     return fallback;

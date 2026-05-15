@@ -166,32 +166,66 @@ function installControlsToggle(map, { caps } = {}) {
 }
 
 /**
- * Custom vertical scale — a thin glass card with a small bar, mono-spaced
- * label and live MapLibre updates. Anchored under the dock so the
- * left-edge stays a single visual stripe (dock → scale) instead of two
- * unrelated islands like the MapLibre default.
+ * Custom scale control — a glass card with a small bar, mono-spaced
+ * label, integrated collapse toggle, and live MapLibre updates. The
+ * bar is HORIZONTAL (it grows left-to-right) so the card sits as a
+ * compact pill below the dock without ever stretching past the dock's
+ * own footprint vertically. The collapse toggle mirrors the HUD's
+ * pattern: a small chevron button that folds the bar + label into a
+ * single anchor square (centred in the dock column so the pill
+ * remains visually aligned with the dock above and the HUD below).
  *
- * The bar uses MapLibre's "nice number" rounding so the label reads as a
- * clean 1/2/3/5/10×10ⁿ distance even as the user zooms.
+ * The bar uses MapLibre's "nice number" rounding so the label reads as
+ * a clean 1/2/3/5/10×10ⁿ distance even as the user zooms.
  */
-function installVerticalScale(map, scaleHost) {
+function installVerticalScale(map, scaleHost, { caps } = {}) {
   if (!scaleHost) return () => {};
   scaleHost.classList.add('cart-scale-host');
+
+  // Initial collapsed state — defaults to expanded on roomy desktops,
+  // collapsed on touch / narrow viewports where the canvas is the
+  // priority. Persists across reloads via the shared UI prefs blob.
+  const defaultCollapsed = !!(caps?.narrow || caps?.isCoarse);
+  const initialPrefs = loadUiPrefs({ scaleCollapsed: defaultCollapsed });
+  const initiallyCollapsed = !!initialPrefs.scaleCollapsed;
+
   scaleHost.innerHTML = `
-    <div class="cart-scale" role="img" aria-label="Масштаб карти">
-      <span class="cart-scale-label" data-ctl="scale-label">—</span>
-      <div class="cart-scale-bar" aria-hidden="true">
-        <span class="cart-scale-fill" data-ctl="scale-fill"></span>
-        <span class="cart-scale-tick" data-pos="0"></span>
-        <span class="cart-scale-tick" data-pos="100"></span>
+    <div class="cart-scale"
+         data-collapsed="${initiallyCollapsed ? 'true' : 'false'}"
+         role="img"
+         aria-label="Масштаб карти">
+      <button class="cart-scale-toggle"
+              type="button"
+              data-ctl="scale-toggle"
+              aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
+              aria-label="${initiallyCollapsed ? 'Розгорнути масштаб' : 'Згорнути масштаб'}"
+              title="Масштаб">
+        <span class="cart-scale-toggle-dot" aria-hidden="true"></span>
+        <svg class="cart-scale-chev" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M6 4 L10 8 L6 12" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <div class="cart-scale-panel" aria-hidden="${initiallyCollapsed ? 'true' : 'false'}">
+        <div class="cart-scale-bar" aria-hidden="true">
+          <span class="cart-scale-fill" data-ctl="scale-fill"></span>
+          <span class="cart-scale-tick" data-pos="0"></span>
+          <span class="cart-scale-tick" data-pos="100"></span>
+        </div>
+        <span class="cart-scale-label" data-ctl="scale-label">—</span>
       </div>
     </div>
   `;
+  const scale = scaleHost.querySelector('.cart-scale');
+  const toggle = scaleHost.querySelector('[data-ctl="scale-toggle"]');
+  const panel = scaleHost.querySelector('.cart-scale-panel');
   const label = scaleHost.querySelector('[data-ctl="scale-label"]');
   const fill = scaleHost.querySelector('[data-ctl="scale-fill"]');
 
-  // Bar height in CSS pixels. Anything below ~36 px would feel meagre;
-  // anything above ~80 px starts fighting the dock for vertical space.
+  // Bar length in CSS pixels. The horizontal bar uses the same scale
+  // unit as the old vertical one — picking the length first, then
+  // letting MapLibre's "nice number" rounding pick the corresponding
+  // distance is the canonical pattern that keeps the label clean.
   const BAR_PX = 56;
 
   /** Round a metres value to the nearest "map-friendly" number. Mirrors
@@ -220,27 +254,50 @@ function installVerticalScale(map, scaleHost) {
 
   const update = () => {
     const canvas = map.getCanvas();
+    const w = canvas?.clientWidth ?? 0;
     const h = canvas?.clientHeight ?? 0;
-    if (h <= 0) return;
-    const cx = (canvas?.clientWidth ?? 0) / 2;
+    if (w <= 0 || h <= 0) return;
+    const cy = h / 2;
     let metresPerBar;
     try {
-      const top = map.unproject([cx, Math.max(0, h - BAR_PX)]);
-      const bottom = map.unproject([cx, h]);
-      metresPerBar = bottom.distanceTo(top);
+      // Sample the projection across `BAR_PX` horizontal pixels at the
+      // canvas's vertical centre — same metric the bar visualises, so
+      // the label can never disagree with what the bar shows.
+      const left = map.unproject([Math.max(0, w / 2 - BAR_PX / 2), cy]);
+      const right = map.unproject([Math.min(w, w / 2 + BAR_PX / 2), cy]);
+      metresPerBar = left.distanceTo(right);
     } catch {
       metresPerBar = 0;
     }
     if (!Number.isFinite(metresPerBar) || metresPerBar <= 0) {
       label.textContent = '—';
-      if (fill) fill.style.height = '0px';
+      if (fill) fill.style.width = '0px';
       return;
     }
     const round = getRoundNum(metresPerBar);
     const ratio = Math.min(1, round / metresPerBar);
     label.textContent = formatDistance(round);
-    if (fill) fill.style.height = `${(BAR_PX * ratio).toFixed(1)}px`;
+    if (fill) fill.style.width = `${(BAR_PX * ratio).toFixed(1)}px`;
   };
+
+  // Collapse / expand wiring — mirrors the HUD pattern so the two
+  // bottom-left controls feel like one family. Persists through the
+  // same `cart:ui:prefs:v1` blob the HUD writes into.
+  const setCollapsed = (collapsed, { persist = true } = {}) => {
+    scale.dataset.collapsed = collapsed ? 'true' : 'false';
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      toggle.setAttribute(
+        'aria-label',
+        collapsed ? 'Розгорнути масштаб' : 'Згорнути масштаб',
+      );
+    }
+    if (panel) panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+    if (persist) saveUiPrefs({ scaleCollapsed: collapsed });
+  };
+  toggle?.addEventListener('click', () => {
+    setCollapsed(scale.dataset.collapsed !== 'true');
+  });
 
   map.on('move', update);
   map.on('zoom', update);
@@ -769,7 +826,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
 
   renderDock(dockHost);
   renderPanels(panelsHost);
-  installVerticalScale(map, scaleHost);
+  installVerticalScale(map, scaleHost, { caps });
 
   // ----- State the user can toggle -------------------------------------
   const state = {
