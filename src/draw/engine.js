@@ -407,11 +407,11 @@ export function createDrawEngine(map) {
       if (f.properties?.kind === 'marker') {
         const display = markerIndex.get(f.id);
         if (display != null) {
-          out.push({ ...f, properties: { ...f.properties, displayOrder: display } });
+          out.push({ ...f, properties: { ...f.properties, displayOrder: display, _fid: f.id } });
           continue;
         }
       }
-      out.push(f);
+      out.push({ ...f, properties: { ...f.properties, _fid: f.id } });
     }
 
     // 2. In-progress draft (line being authored, shape preview, …).
@@ -1005,25 +1005,33 @@ export function createDrawEngine(map) {
    * hit (suppresses further tool dispatch). Skipped when a draft is
    * in-flight so drawing isn't interrupted.
    */
-  const LINE_HIT_LAYERS = [LAYERS.line];
+  const LINE_HIT_TOLERANCE = 10;
   const detectLineHit = (e) => {
     if (state.draft) return false;
+    const bbox = [
+      [e.point.x - LINE_HIT_TOLERANCE, e.point.y - LINE_HIT_TOLERANCE],
+      [e.point.x + LINE_HIT_TOLERANCE, e.point.y + LINE_HIT_TOLERANCE],
+    ];
     let hits;
     try {
-      hits = map.queryRenderedFeatures(e.point, { layers: LINE_HIT_LAYERS });
+      hits = map.queryRenderedFeatures(bbox, { layers: [LAYERS.line] });
     } catch { return false; }
     if (!hits || hits.length === 0) return false;
-    const hit = hits[0];
-    const id = hit.id;
-    if (!id || !state.features.has(id)) return false;
-    const f = state.features.get(id);
-    if (f.geometry?.type !== 'LineString') return false;
-    emit('lineAction', {
-      lineId: id,
-      pointPx: { x: e.point.x, y: e.point.y },
-      properties: f.properties,
-    });
-    return true;
+    for (const hit of hits) {
+      // MapLibre may return the id as a numeric index or as the string
+      // we set. Also check properties._fid which we stamp below.
+      const id = hit.properties?._fid || hit.id;
+      if (!id || !state.features.has(id)) continue;
+      const f = state.features.get(id);
+      if (f.geometry?.type !== 'LineString') continue;
+      emit('lineAction', {
+        lineId: id,
+        pointPx: { x: e.point.x, y: e.point.y },
+        properties: f.properties,
+      });
+      return true;
+    }
+    return false;
   };
 
   const onClick = (e) => {
