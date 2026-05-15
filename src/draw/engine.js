@@ -1002,11 +1002,15 @@ export function createDrawEngine(map) {
   /**
    * Detect a tap on a committed line feature via manual proximity check.
    * Projects line segments to screen space and checks pixel distance
-   * from the tap point. More reliable than queryRenderedFeatures which
-   * has issues with GeoJSON source IDs. Skipped when a draft is
-   * in-flight so drawing isn't interrupted.
+   * from the tap point.
+   *
+   * - Tap near an endpoint (start/end) → emit markerTooltip with line length
+   * - Tap on the body → emit lineAction (detach button)
+   *
+   * Skipped when a draft is in-flight so drawing isn't interrupted.
    */
   const LINE_HIT_TOLERANCE = 14;
+  const ENDPOINT_TOLERANCE = 20;
   const detectLineHit = (e) => {
     if (state.draft) return false;
     const px = e.point;
@@ -1031,10 +1035,43 @@ export function createDrawEngine(map) {
       }
     }
     if (!bestId) return false;
+
+    const f = state.features.get(bestId);
+    const coords = f.geometry.coordinates;
+    // Check if tap is near an endpoint — show distance instead of detach.
+    let startPx, endPx;
+    try {
+      startPx = map.project(coords[0]);
+      endPx = map.project(coords[coords.length - 1]);
+    } catch {
+      startPx = null;
+      endPx = null;
+    }
+    const distToStart = startPx ? Math.sqrt((px.x - startPx.x) ** 2 + (px.y - startPx.y) ** 2) : Infinity;
+    const distToEnd = endPx ? Math.sqrt((px.x - endPx.x) ** 2 + (px.y - endPx.y) ** 2) : Infinity;
+
+    if (distToStart <= ENDPOINT_TOLERANCE || distToEnd <= ENDPOINT_TOLERANCE) {
+      // Compute total line length.
+      let totalMeters = 0;
+      for (let i = 0; i < coords.length - 1; i++) {
+        totalMeters += haversine(coords[i], coords[i + 1]);
+      }
+      emit('markerTooltip', {
+        hide: false,
+        markerId: bestId,
+        pointPx: { x: px.x, y: px.y },
+        meters: totalMeters,
+        label: formatDistance(totalMeters),
+        fromId: bestId,
+        toId: bestId,
+      });
+      return true;
+    }
+
     emit('lineAction', {
       lineId: bestId,
       pointPx: { x: px.x, y: px.y },
-      properties: state.features.get(bestId).properties,
+      properties: f.properties,
     });
     return true;
   };
