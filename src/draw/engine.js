@@ -1010,7 +1010,7 @@ export function createDrawEngine(map) {
    * Skipped when a draft is in-flight so drawing isn't interrupted.
    */
   const LINE_HIT_TOLERANCE = 14;
-  const ENDPOINT_TOLERANCE = 22;
+  const ENDPOINT_TOLERANCE = 40;
   let _lineHitConsumed = false;
   const detectLineHit = (e) => {
     _lineHitConsumed = false;
@@ -1048,9 +1048,12 @@ export function createDrawEngine(map) {
       }
     }
 
-    // Pass 2: check line body (segment proximity).
+    // Pass 2: check line body (segment proximity), but track which
+    // segment index was hit so we can detect endpoint-adjacent taps.
     let bestId = null;
     let bestDist = LINE_HIT_TOLERANCE;
+    let bestSegIdx = -1;
+    let bestSegCount = 0;
     for (const [id, f] of state.features) {
       if (f.geometry?.type !== 'LineString') continue;
       const coords = f.geometry.coordinates;
@@ -1065,10 +1068,57 @@ export function createDrawEngine(map) {
         if (d < bestDist) {
           bestDist = d;
           bestId = id;
+          bestSegIdx = i;
+          bestSegCount = coords.length - 1;
         }
       }
     }
     if (!bestId) return false;
+
+    // If the body hit is on the first or last segment of any line,
+    // the tap is likely near an endpoint junction. Check all endpoints
+    // with a generous tolerance — always prefer distance over detach.
+    const isTerminalSeg = (bestSegIdx === 0 || bestSegIdx === bestSegCount - 1);
+    const JUNCTION_TOLERANCE = isTerminalSeg ? 50 : 36;
+    let nearestEndpointLine = null;
+    let nearestEndpointDist = JUNCTION_TOLERANCE;
+    for (const [id, f] of state.features) {
+      if (f.geometry?.type !== 'LineString') continue;
+      const coords = f.geometry.coordinates;
+      if (!coords || coords.length < 2) continue;
+      let startPx2, endPx2;
+      try {
+        startPx2 = map.project(coords[0]);
+        endPx2 = map.project(coords[coords.length - 1]);
+      } catch { continue; }
+      const ds = Math.sqrt((px.x - startPx2.x) ** 2 + (px.y - startPx2.y) ** 2);
+      const de = Math.sqrt((px.x - endPx2.x) ** 2 + (px.y - endPx2.y) ** 2);
+      const dMin = Math.min(ds, de);
+      if (dMin < nearestEndpointDist) {
+        nearestEndpointDist = dMin;
+        nearestEndpointLine = id;
+      }
+    }
+
+    if (nearestEndpointLine) {
+      const f = state.features.get(nearestEndpointLine);
+      const coords = f.geometry.coordinates;
+      let totalMeters = 0;
+      for (let i = 0; i < coords.length - 1; i++) {
+        totalMeters += haversine(coords[i], coords[i + 1]);
+      }
+      emit('markerTooltip', {
+        hide: false,
+        markerId: nearestEndpointLine,
+        pointPx: { x: px.x, y: px.y },
+        meters: totalMeters,
+        label: formatDistance(totalMeters),
+        fromId: nearestEndpointLine,
+        toId: nearestEndpointLine,
+      });
+      _lineHitConsumed = true;
+      return true;
+    }
 
     emit('lineAction', {
       lineId: bestId,
