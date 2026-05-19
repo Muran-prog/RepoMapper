@@ -449,20 +449,25 @@ export const CARPATHIAN = Object.freeze({
   /**
    * Zoom at which a feature tier first becomes visible. Drives minzoom on
    * Carpathian-specific layers so low zooms stay uncluttered.
+   *
+   * Lowered relative to the original schedule so the trail+road web
+   * lights up earlier on overview shots — the brief asks for a network
+   * that reads "without zoom". Trails now enter at z9 (was z11),
+   * forest roads at z9 (was z11), informal social paths at z12.
    */
   zoomRules: Object.freeze({
     ridges: 8,
-    trails: 11,
-    informalTrails: 13,
-    viaFerrata: 13,
-    trailLabels: 13,
-    mountainPoi: 12,
-    forestRoads: 11,
-    peaks: 8,
-    passes: 11,
-    saddles: 11,
-    cableways: 12,
-    skiPistes: 12,
+    trails: 9,
+    informalTrails: 12,
+    viaFerrata: 12,
+    trailLabels: 12,
+    mountainPoi: 11,
+    forestRoads: 9,
+    peaks: 7,
+    passes: 10,
+    saddles: 10,
+    cableways: 11,
+    skiPistes: 11,
     /**
      * Slope-warning overlay — only meaningful at hiking/alpinism
      * zooms where the user is reading individual slopes; below this

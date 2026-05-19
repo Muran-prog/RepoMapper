@@ -218,12 +218,14 @@ function sacScaledExpZoom(stops, base = 1.4) {
  * Per-grade visibility opacity. Returns an `interpolate(zoom, …)`
  * where each stop's value is a `match(sac_scale, …)` that gates
  * per-grade fade-ins:
- *   T1 / T2 / unknown  → in by z11
- *   T3                 → in by z12
- *   T4 / T5 / T6       → in by z13
+ *   T1 / T2 / unknown  → in by z9
+ *   T3                 → in by z10
+ *   T4 / T5 / T6       → in by z11
  *
- * Multiplying by a constant is folded into each stop value so the
- * top-level operator stays `interpolate`.
+ * Anchors shifted down ~2 zooms relative to the original schedule
+ * so the trail web is unambiguously present from the regional
+ * overview onward. Multiplying by a constant is folded into each
+ * stop value so the top-level operator stays `interpolate`.
  *
  * @param {number} peak  Final opacity at fully-faded-in zooms.
  */
@@ -243,10 +245,10 @@ function sacVisibilityOpacity(peak = 1.0) {
   ];
   return [
     'interpolate', ['linear'], ['zoom'],
-    10.5, at({ t1: 0, t2: 0, t3: 0, t4: 0, t5: 0, t6: 0 }),
-    11.0, at({ t1: peak, t2: peak, t3: 0, t4: 0, t5: 0, t6: 0 }),
-    12.0, at({ t1: peak, t2: peak, t3: peak, t4: 0, t5: 0, t6: 0 }),
-    13.0, at({ t1: peak, t2: peak, t3: peak, t4: peak, t5: peak, t6: peak }),
+    8.5,  at({ t1: 0,    t2: 0,    t3: 0,    t4: 0,    t5: 0,    t6: 0    }),
+    9.0,  at({ t1: peak, t2: peak, t3: 0,    t4: 0,    t5: 0,    t6: 0    }),
+    10.0, at({ t1: peak, t2: peak, t3: peak, t4: 0,    t5: 0,    t6: 0    }),
+    11.0, at({ t1: peak, t2: peak, t3: peak, t4: peak, t5: peak, t6: peak }),
   ];
 }
 
@@ -293,14 +295,18 @@ export function forestRoadLayers(t) {
   const z = CARPATHIAN.zoomRules.forestRoads;
   const opacity = linZoom([
     [z, 0],
-    [z + 0.5, 0.85],
+    [z + 0.5, 0.8],
   ]);
+  // Curve starts at z9 — at country overview the forestry web reads
+  // as a soft brown lacework over the relief, then thickens into
+  // crisp tracks at hiking zooms.
   const width = expZoom([
-    [z, 0.4],
-    [13, 0.9],
-    [15, 2.0],
-    [18, 4.5],
-    [22, 9],
+    [z, 0.45],
+    [11, 0.7],
+    [13, 1.1],
+    [15, 2.2],
+    [18, 4.8],
+    [22, 9.5],
   ]);
   return [
     // 4wd-only / restricted forestry roads — dashed brown.
@@ -391,22 +397,28 @@ export function trailLayers(t) {
   const z = CARPATHIAN.zoomRules.trails;
 
   // Each curve folds the per-feature SAC factor into every stop so
-  // `['zoom']` stays the top-level `interpolate` input.
+  // `['zoom']` stays the top-level `interpolate` input. Curves
+  // anchored at `z` (zoomRules.trails = 9) so the trail web reads as
+  // a recognizable mesh well before the user crosses into the alpine
+  // detail band.
   const inlineWidth = sacScaledExpZoom([
-    [z, 0.6],
-    [13, 1.4],
-    [16, 2.8],
-    [20, 6.2],
+    [z, 0.55],
+    [11, 0.95],
+    [13, 1.7],
+    [16, 3.0],
+    [20, 6.4],
   ]);
   const casingWidth = sacScaledExpZoom([
-    [z, 1.4],
-    [13, 3.0],
-    [16, 5.6],
+    [z, 1.2],
+    [11, 2.1],
+    [13, 3.4],
+    [16, 5.8],
     [20, 11.5],
   ]);
   const glowWidth = sacScaledExpZoom([
-    [z, 3.0],
-    [13, 6.5],
+    [z, 2.4],
+    [11, 4.5],
+    [13, 7.0],
     [16, 11.5],
     [20, 22.0],
   ]);

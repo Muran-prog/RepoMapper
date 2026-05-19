@@ -215,15 +215,20 @@ const ROAD_CLASSES = [
   {
     id: 'minor',
     match: 'minor',
-    minZoom: 12,
+    minZoom: 10,
     inlineKey: 'minor',
     casingKey: 'minorCasing',
     widths: [
-      [12, 0.4],
-      [13, 0.9],
-      [14, 1.6],
-      [16, 4.0],
-      [18, 7.5],
+      // Minor streets enter at z10 so urban grids are readable in the
+      // mid-zoom band rather than popping in at z12. Low-zoom stops
+      // are deliberately thin — the whole grid would otherwise flood
+      // the canvas at country overview.
+      [10, 0.28],
+      [12, 0.5],
+      [13, 0.95],
+      [14, 1.7],
+      [16, 4.1],
+      [18, 7.6],
       [20, 15],
       [22, 28],
     ],
@@ -240,20 +245,23 @@ const ROAD_CLASSES = [
   {
     id: 'tertiary',
     match: 'tertiary',
-    minZoom: 10,
+    minZoom: 8,
     inlineKey: 'tertiary',
     casingKey: 'tertiaryCasing',
     widths: [
-      // +25% over the original baseline — tertiary is the visible
-      // backbone of villages, especially in the Carpathians where
-      // it's often the only sealed street through the settlement.
-      [10, 0.38],
-      [12, 1.25],
-      [14, 3.25],
-      [16, 6.9],
-      [18, 12.5],
-      [20, 22.5],
-      [22, 42.5],
+      // Visible web from z8 — tertiary now reads on the country
+      // overview as the regional connective tissue. Stops below z10
+      // are deliberately thin so the network builds gradually as the
+      // user approaches detail zooms.
+      [8, 0.28],
+      [9, 0.42],
+      [10, 0.62],
+      [12, 1.85],
+      [14, 4.2],
+      [16, 8.0],
+      [18, 13.5],
+      [20, 23.5],
+      [22, 43.5],
     ],
     casingExtra: 2.6,
     surfaceAware: true,
@@ -263,19 +271,21 @@ const ROAD_CLASSES = [
   {
     id: 'secondary',
     match: 'secondary',
-    minZoom: 9,
+    minZoom: 7,
     inlineKey: 'secondary',
     casingKey: 'secondaryCasing',
     widths: [
-      // +30% over the original baseline — secondary is the regional
-      // spine and now reads with the same gravity as primary, no
-      // matter the zoom.
-      [9, 0.39],
-      [11, 1.17],
-      [12, 2.08],
-      [14, 4.7],
-      [16, 9.1],
-      [18, 16.25],
+      // Pulled to z7 so secondary roads read at country overview;
+      // low-zoom stops bumped ~50% over the previous curve so the
+      // arterial web is unmistakable even at the default boot zoom.
+      [7, 0.32],
+      [8, 0.5],
+      [9, 0.66],
+      [11, 1.85],
+      [12, 2.6],
+      [14, 5.4],
+      [16, 9.8],
+      [18, 16.5],
       [20, 30.0],
       [22, 54.5],
     ],
@@ -286,20 +296,22 @@ const ROAD_CLASSES = [
   {
     id: 'primary',
     match: 'primary',
-    minZoom: 7,
+    minZoom: 6,
     inlineKey: 'primary',
     casingKey: 'primaryCasing',
     widths: [
-      // +20% over the previous curve — primaries are the visual spine of
-      // regional travel and now read distinctly heavier than secondary.
-      [7, 0.36],
-      [9, 0.84],
-      [11, 1.7],
-      [12, 2.65],
-      [14, 5.6],
-      [16, 10.2],
-      [18, 17.5],
-      [20, 32],
+      // Now appears at z6 (was z7). Stops at z6-z9 bumped so the
+      // national primary network is the visual spine of every overview
+      // shot, distinctly heavier than secondary at every zoom.
+      [6, 0.42],
+      [7, 0.6],
+      [9, 1.35],
+      [11, 2.25],
+      [12, 3.1],
+      [14, 6.2],
+      [16, 11.0],
+      [18, 18.5],
+      [20, 33],
       [22, 60],
     ],
     casingExtra: 2.8,
@@ -310,18 +322,21 @@ const ROAD_CLASSES = [
   {
     id: 'trunk',
     match: 'trunk',
-    minZoom: 6,
+    minZoom: 5,
     inlineKey: 'trunk',
     casingKey: 'trunkCasing',
     widths: [
-      // +20% over the previous curve.
-      [6, 0.36],
-      [9, 1.08],
-      [11, 1.92],
-      [12, 3.12],
-      [14, 6.6],
-      [16, 11.4],
-      [18, 20.5],
+      // Pulled to z5 so trunk routes show up alongside motorways at
+      // the country overview; low-zoom widths boosted ~40% for clear
+      // readability without zoom.
+      [5, 0.42],
+      [6, 0.55],
+      [9, 1.5],
+      [11, 2.5],
+      [12, 3.6],
+      [14, 7.2],
+      [16, 12.0],
+      [18, 21.0],
       [20, 36],
       [22, 70],
     ],
@@ -332,20 +347,23 @@ const ROAD_CLASSES = [
   {
     id: 'motorway',
     match: 'motorway',
-    minZoom: 5,
+    minZoom: 4,
     inlineKey: 'motorway',
     casingKey: 'motorwayCasing',
     widths: [
-      // +22% over the previous curve — the spine of inter-city
-      // movement, deserves the heaviest visual weight.
-      [5, 0.36],
-      [7, 0.74],
-      [9, 1.46],
-      [11, 2.2],
-      [12, 3.66],
-      [14, 7.6],
-      [16, 12.8],
-      [18, 22.5],
+      // Motorways now anchor at z4 so the country overview reads as
+      // a true backbone diagram. Low-zoom stops boosted ~50% over the
+      // previous curve — the heaviest visual weight, even on a
+      // pull-back to the whole nation.
+      [4, 0.42],
+      [5, 0.55],
+      [7, 1.05],
+      [9, 2.0],
+      [11, 2.9],
+      [12, 4.0],
+      [14, 8.0],
+      [16, 13.2],
+      [18, 23.0],
       [20, 40],
       [22, 78],
     ],
