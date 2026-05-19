@@ -183,7 +183,7 @@ async function resolveVectorTriple() {
 // and produces a full spec-valid style object ready for `map.setStyle`.
 // ---------------------------------------------------------------------------
 
-async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState }) {
+async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState, map }) {
   const { vectorSource, glyphs, sprite } = await resolveVectorTriple();
 
   // hypso ramp id is forwarded to composeSources so it pre-adds the
@@ -228,6 +228,16 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
     hasHypsoRasterRamp: has.hypsoRasterRampId === hypsoRampId,
     hasBathymetrySource: has.bathymetry,
     hasTextureSource: has.textureShading,
+    hasSkyViewFactorSource: has.skyViewFactor,
+    // Optimistic: assume the runtime supports `['slope']` in
+    // color-relief expressions on first compose. If the probe later
+    // discovers it doesn't, `detectHypsoCaps` removes the layer
+    // surgically (see hypso/detect.js::demoteSlopeWarningIfPresent).
+    // The cached cap on `_cart.hypsoCaps.slope` overrides this when a
+    // post-probe restyle runs, so steady-state matches reality.
+    hasSlopeExpression: map?._cart?.hypsoCaps
+      ? !!map._cart.hypsoCaps.slope
+      : true,
     hasRidgesSource: has.ridges,
     hasCarpathianOsmSource: has.carpathianOsm,
     hasContoursSource,
@@ -355,6 +365,9 @@ function profileToLayerOpts(profileConfig, features) {
       features.bathymetry && profileConfig.enableHypsoTint,
     textureShading:
       features.textureShading && profileConfig.enableTextureShading,
+    skyViewFactor:
+      features.skyViewFactor && profileConfig.enableTextureShading,
+    slopeWarning: features.slopeWarning,
     contours: features.contours && profileConfig.enableContours,
     ridgeOverlay:
       features.ridgeOverlay && profileConfig.enableRidgeOverlay,
@@ -595,6 +608,7 @@ export async function applyStyle(map, patch = {}) {
     layerOpts,
     caps,
     hypsoState,
+    map,
   });
   map.setStyle(style, { diff: false });
 
@@ -667,7 +681,6 @@ async function buildModeStyle(opts) {
   }
   return buildStyle(opts);
 }
-
 /**
  * Switch the live map to a new visual mode. Camera (centre / zoom /
  * pitch / bearing) is preserved automatically by `setStyle({ diff:

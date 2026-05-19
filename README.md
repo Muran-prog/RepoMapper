@@ -128,21 +128,37 @@ Accessibility hooks:
 
 ### Relief stack
 
-Five layers stack between water and roads to give every map view the
-right level of topographic context:
+Six layers stack between water and roads to give every map view the
+right level of topographic context. Each one is independent and
+URL-gated — turn it on by populating the relevant `TERRAIN.*.url` (or
+`FEATURES.*` flag for runtime overlays).
 
-1. **Hypsometric tint** — Patterson cross-blended elevation→colour ramp
-   (tuned for Ukraine; top stop = Hoverla 2061m). Raster PMTiles, optional.
-2. **Hillshade** — single `hillshade-method: standard` on the low-profile
-   path; three stacked layers (azimuths 315° / 270° / 0°) on the
-   high-profile path for Swiss-style sculpted relief.
-3. **Texture shading** — Leland Brown fractional Laplacian (α=0.8). Raster
-   PMTiles, optional. Pulls ridges and stream networks forward.
-4. **Contours** — generated on-the-fly by `maplibre-contour` from the same
-   DEM source. Major/minor styling, `' м'`-suffixed elevation labels along
-   the line. Static-PMTiles fallback for low-CPU profiles.
-5. **Ridges (Imhof)** — vector PMTiles with double-stroke (dark below,
-   light above) for sculpted highland enhancement. Carpathian-only.
+| Layer            | Source                          | Z-order slot                     | Toggle                          |
+| ---------------- | ------------------------------- | -------------------------------- | ------------------------------- |
+| Hillshade        | DEM (Mapzen / Carpathian)       | 6 — over hypso, under water_fill | `FEATURES.hillshade`            |
+| Sky-View Factor  | WhiteboxTools SkyViewFactor     | 8 — over bathymetry, under texture | `FEATURES.skyViewFactor`        |
+| Texture shading  | Leland Brown α=0.8 raster       | 9 — pulls ridges + drainage forward | `FEATURES.textureShading`       |
+| Hypsometric tint | native color-relief / raster    | 5 — under hillshade (land mask)  | `FEATURES.hypsometricTint`      |
+| Slope-warning    | native color-relief on `['slope']` | 16a — over trails, under buildings | `FEATURES.slopeWarning`         |
+| Ridges (Imhof)   | WhiteboxTools FindRidges vector | 12 — double-stroke enhancement   | `FEATURES.ridgeOverlay`         |
+
+Notes:
+
+- **Hypsometric tint** picks between native `color-relief` (MapLibre
+  ≥ 5.6) and pre-rendered raster PMTiles automatically via
+  `src/style/hypso/detect.js`. Seven ramp presets are bundled.
+- **Sky-View Factor** is rendered as a multiplicative greyscale wash
+  via `raster-saturation: -1`. It darkens narrow valleys, cirque
+  edges and rock terraces hillshade smears out at low azimuths.
+- **Slope-warning** uses the native `color-relief` layer driven by
+  the `['slope']` expression — slopes ≥ 35° render in translucent
+  red (configurable via `tokens.slopeWarning`). Runtimes that don't
+  yet support `['slope']` silently drop the layer (probed in
+  `src/style/hypso/detect.js`).
+- **Texture shading** is built once via Leland Brown's fractional
+  Laplacian (α=0.8); see `tools/build-texture-shading.sh`.
+- **Ridges** are extracted with WhiteboxTools `FindRidges` and
+  rendered as Imhof-style double-strokes (dark below, light above).
 
 3D terrain (`map.setTerrain`) is wired to a `zoomend` lifecycle so it
 fades in past zoom 7 with a profile-aware exaggeration multiplier and
@@ -314,7 +330,11 @@ correctness (`sky`, `terrain`, `projection`).
 
 - Vector tiles © [OpenFreeMap](https://openfreemap.org), © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
 - Terrain (default) © [Mapzen Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (AWS Open Data)
-- Optional Carpathian DEM © [Copernicus GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
+- Optional Carpathian DEM (recommended): [FABDEM v1.2](https://data.bris.ac.uk/data/dataset/25wfy0f9ukoge2gs7a5mqpq2j7) © Fathom (CC BY-NC 4.0, **non-commercial use only**)
+- Optional Carpathian DEM (commercial fallback): © [Copernicus GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
+- Satellite mode (default): Sentinel-2 cloudless 2024 by [EOX IT Services GmbH](https://s2maps.eu) (Contains modified Copernicus Sentinel data 2024)
+- Satellite mode (legacy fallback): © [Esri World Imagery](https://www.esri.com/) — Maxar, Earthstar Geographics, GIS User Community
 - Texture shading: Leland Brown (CC BY)
+- Sky-View Factor: [WhiteboxTools](https://www.whiteboxgeo.com/) (Lindsay)
 - Ridge extraction: [WhiteboxTools](https://www.whiteboxgeo.com/geospatial-software/)
 - Tile pipeline: [Planetiler](https://github.com/onthegomap/planetiler), [tippecanoe](https://github.com/felt/tippecanoe), [maplibre-contour](https://github.com/onthegomap/maplibre-contour)

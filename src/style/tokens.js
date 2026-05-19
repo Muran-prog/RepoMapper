@@ -274,6 +274,17 @@ const LIGHT = {
   peakMarkerGlow: 'rgba(122, 90, 56, 0.45)',
   trailGlow: 'rgba(204, 59, 31, 0.38)',
   textPeakGlow: 'rgba(122, 90, 56, 0.42)',
+
+  // Slope-warning overlay — translucent red gradient for steep terrain
+  // (≥ 35°) painted via the native `color-relief` layer. The three
+  // tokens correspond to the 35°/45°/60° stops in the layer's slope
+  // expression. Light theme uses cooler reds so the overlay reads on
+  // a cream paper underlay without crushing the hypso tint.
+  slopeWarning: {
+    soft:   'rgba(255, 80, 40, 0.25)',
+    mid:    'rgba(255, 40, 20, 0.45)',
+    severe: 'rgba(180, 0, 0, 0.60)',
+  },
 };
 
 const DARK = {
@@ -451,6 +462,16 @@ const DARK = {
   peakMarkerGlow: 'rgba(240, 230, 207, 0.40)',
   trailGlow: 'rgba(255, 91, 61, 0.42)',
   textPeakGlow: 'rgba(240, 230, 207, 0.40)',
+
+  // Slope-warning overlay — dark theme uses slightly hotter reds with
+  // a touch more alpha so the overlay reads against the deep slate
+  // canvas. Same three tokens as light, mapped to the 35°/45°/60°
+  // stops in `composeSlopeWarningLayer`.
+  slopeWarning: {
+    soft:   'rgba(255, 110, 70, 0.30)',
+    mid:    'rgba(255, 70, 40, 0.50)',
+    severe: 'rgba(220, 30, 20, 0.65)',
+  },
 };
 
 export const TOKENS = Object.freeze({ light: LIGHT, dark: DARK });

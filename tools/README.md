@@ -2,7 +2,8 @@
 
 These scripts produce the optional PMTiles archives referenced by
 `src/config.js` (TERRAIN.carpathian, TERRAIN.textureShading, TERRAIN.hypsometric,
-TERRAIN.ridges, TERRAIN.carpathianOsm, CONTOURS.staticPmtilesUrl).
+TERRAIN.skyViewFactor, TERRAIN.ridges, TERRAIN.carpathianOsm,
+CONTOURS.staticPmtilesUrl).
 
 **The map runs perfectly without any of them.** The baseline
 `TERRAIN.primary` points at the AWS Open Data Mapzen terrain tiles, which
@@ -11,8 +12,10 @@ maplibre-contour. The PMTiles archives below add region-specific detail:
 
 | Archive                       | Why you'd build it                                    | Script                          |
 | ----------------------------- | ----------------------------------------------------- | ------------------------------- |
-| `carpathian-glo30.pmtiles`    | 30 m DEM (vs. Mapzen's 90 m there), maxzoom 14        | `build-carpathian-dem.sh`       |
+| `carpathian-fabdem.pmtiles` (recommended) | Bare-earth 30 m DEM (forest canopy + buildings removed). Fixes hillshade noise + contour staircasing in the 700-1500 m forest zone. **CC BY-NC 4.0 — non-commercial only.** | `build-carpathian-fabdem.sh` |
+| `carpathian-glo30.pmtiles`    | 30 m DSM, free for any use including commercial (Copernicus). Includes canopy. | `build-carpathian-dem.sh`       |
 | `ukraine-texture-shading.pmtiles` | Leland Brown α=0.8 ridge/canyon emphasis          | `build-texture-shading.sh`      |
+| `carpathian-svf.pmtiles`      | Sky-View Factor wash — multiplies darkening into canyons / cirques / rock terraces | `build-svf.sh`                  |
 | `<ramp>-<theme>-hypso.pmtiles` | Per-ramp pre-rendered hypsometric tint (raster fallback for the native color-relief layer) | `build-hypso.sh --ramp=<id>` |
 | `black-sea-bathy.pmtiles`     | GEBCO 2024 seabed tint, joins seamlessly at 0 m       | `build-bathymetry.sh`           |
 | `carpathian-contours.pmtiles` | Pre-baked contours (lighter on CPU than dynamic)      | `build-contours.sh`             |
@@ -23,17 +26,81 @@ Hosting: any static HTTPS endpoint with `Range:` support. Cloudflare R2,
 Backblaze B2, Bunny CDN, AWS S3 with the right CORS — all work. PMTiles
 is designed for this.
 
+## FABDEM (recommended)
+
+[FABDEM v1.2](https://data.bris.ac.uk/data/dataset/25wfy0f9ukoge2gs7a5mqpq2j7)
+(Hawker, Uhe, Paulo et al., 2022) is a global 30 m bare-earth DEM derived
+from Copernicus GLO-30 with forest canopy heights and built structures
+removed via deep-learning trained on ICESat-2 returns. In the Ukrainian
+Carpathian forest zone (700-1500 m) GLO-30 inherits 10-25 m of canopy
+noise that produces a "buzzing" hillshade and visible staircasing in
+10 m contour lines; FABDEM replaces those slopes with a clean bare-earth
+surface that hillshade reads smoothly.
+
+### Cost: license
+
+FABDEM is published under **Creative Commons BY-NC 4.0** —
+**non-commercial use only**. If you redistribute the resulting
+PMTiles archive in a commercial context, fall back to
+`build-carpathian-dem.sh` (Copernicus GLO-30, free for any use).
+
+The renderer auto-emits the right attribution string based on
+`TERRAIN.carpathian.demSource` (`'fabdem'` or `'glo30'`); the UI also
+surfaces a small "non-commercial" disclaimer when the FABDEM build
+is active. See `getCarpathianAttribution()` and
+`isCarpathianLicenseNonCommercial()` in `src/config.js`.
+
+### Download
+
+There is no public S3 bucket — you must accept the dataset's ToS on
+the Bristol distribution page once, then download the relevant tiles
+manually:
+
+1. Visit <https://data.bris.ac.uk/data/dataset/25wfy0f9ukoge2gs7a5mqpq2j7>
+2. Accept CC BY-NC 4.0.
+3. Download the `.zip` files covering your bbox and unpack them into
+   one flat directory of GeoTIFFs (`<lat><lon>_FABDEM_V1-2.tif` naming).
+4. Run:
+
+   ```bash
+   FABDEM_DIR=/path/to/fabdem-v1-2/ tools/build-carpathian-fabdem.sh
+   ```
+
+For the Ukrainian Carpathian bbox `[22, 47.6, 27, 49.5]` you need six
+tiles (N47E022 .. N49E026 inclusive) — about 80 MB compressed.
+
+### GLO-30 vs FABDEM
+
+| Property                | GLO-30 (DSM)                | FABDEM v1.2 (bare-earth)        |
+| ----------------------- | --------------------------- | ------------------------------- |
+| Forest cleanup          | None — canopy is in the DEM | Trees removed via ICESat-2 DL   |
+| Hillshade smoothness    | Buzzing in forest zone      | Smooth, follows ground          |
+| 10 m contour staircase  | Visible at z14+ in forest   | Largely gone                    |
+| Building heights        | Roof tops included          | Buildings removed               |
+| Resolution              | 30 m (1 arcsec)             | 30 m (1 arcsec)                 |
+| License                 | Free, including commercial  | CC BY-NC 4.0 (non-commercial)   |
+| Distribution            | s3://copernicus-dem-30m/    | Manual download (Bristol mirror) |
+| Build script            | `build-carpathian-dem.sh`   | `build-carpathian-fabdem.sh`    |
+
+`build-carpathian-dem.sh` stays around as the commercial-friendly
+fallback — both scripts produce the same Terrarium-PMTiles shape, so
+swapping the URL in `TERRAIN.carpathian.url` is the only change
+required to flip between them. Toggle `TERRAIN.carpathian.demSource`
+to match so the attribution and licensing disclaimer track the build.
+
 ## Required tools
 
-| Script                    | Needs                                                                                 |
-| ------------------------- | ------------------------------------------------------------------------------------- |
-| build-carpathian-dem.sh   | `aws` (AWS CLI v2), `gdal` ≥ 3.4, `rio-rgbify`, `pmtiles` (Protomaps CLI)             |
-| build-texture-shading.sh  | `python3`, `numpy`, `scipy`, `rasterio`, `rio-mbtiles`, `pmtiles`                     |
-| build-hypso.sh            | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18 (runs `dump-ramp.mjs`)            |
-| build-bathymetry.sh       | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18, GEBCO 2024 source TIFF (`$GEBCO`) |
-| build-contours.sh         | `gdal`, `tippecanoe` (Felt fork), `pmtiles`                                           |
-| build-ridges.sh           | `whitebox_tools`, `gdal`, `tippecanoe`, `pmtiles`                                     |
-| build-carpathian-osm.sh   | `java` ≥ 17, `planetiler.jar`, `pmtiles`, ~16 GB RAM                                  |
+| Script                         | Needs                                                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| build-carpathian-dem.sh        | `aws` (AWS CLI v2), `gdal` ≥ 3.4, `rio-rgbify`, `pmtiles` (Protomaps CLI)             |
+| build-carpathian-fabdem.sh     | `gdal` ≥ 3.4, `rio-rgbify`, `pmtiles`, manual FABDEM download (`FABDEM_DIR`)          |
+| build-texture-shading.sh       | `python3`, `numpy`, `scipy`, `rasterio`, `rio-mbtiles`, `pmtiles`                     |
+| build-svf.sh                   | `whitebox_tools`, `python3`, `numpy`, `rasterio`, `rio-mbtiles`, `pmtiles`            |
+| build-hypso.sh                 | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18 (runs `dump-ramp.mjs`)            |
+| build-bathymetry.sh            | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18, GEBCO 2024 source TIFF (`$GEBCO`) |
+| build-contours.sh              | `gdal`, `tippecanoe` (Felt fork), `pmtiles`                                           |
+| build-ridges.sh                | `whitebox_tools`, `gdal`, `tippecanoe`, `pmtiles`                                     |
+| build-carpathian-osm.sh        | `java` ≥ 17, `planetiler.jar`, `pmtiles`, ~16 GB RAM                                  |
 
 Install pmtiles CLI: `go install github.com/protomaps/go-pmtiles/cmd/pmtiles@latest`
 (or download a release binary from <https://github.com/protomaps/go-pmtiles/releases>).
@@ -78,6 +145,21 @@ download `planetiler.jar`, drop it next to the scripts (or set `PLANETILER_JAR`)
 - The included Python implementation does a 2-D FFT, applies the
   `|k|^α` operator, and inverse-transforms. For Ukraine + the
   Carpathian bbox the entire DEM fits comfortably in 8 GB RAM.
+
+### Sky-View Factor (WhiteboxTools)
+
+- Lindsay's `SkyViewFactor` tool scores each pixel by the fraction
+  of the upper hemisphere visible from it. Narrow valleys, canyons,
+  cirque rims and rock terraces all read as low SVF (dark) while
+  open ridges and plateaus read as high SVF (light).
+- The build script normalises the raw 0..1 raster to 8-bit grey,
+  then INVERTS it so dark pixels = enclosed terrain. The renderer
+  then layers it as a multiply-style overlay (`raster-saturation: -1`,
+  zoom-aware opacity) above the hillshade so hillshade-shaded
+  ravines pick up an extra darkening pass.
+- Defaults: 16 horizon azimuths, 1 km max search distance — tuned
+  for ~30 m DEM detail. Override via `AZIMUTHS`, `MAX_DIST` env vars.
+- Cost: ~5-10 minutes CPU on the Carpathian bbox.
 
 ### Hypsometric tint
 

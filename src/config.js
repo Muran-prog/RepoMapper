@@ -153,15 +153,32 @@ export const TERRAIN = Object.freeze({
    * Carpathian bbox — functional, just lower-resolution.
    */
   carpathian: Object.freeze({
-    url: null, // e.g. 'pmtiles://https://pub-you.r2.cloudflarestorage.com/carpathian-glo30.pmtiles'
+    url: null, // e.g. 'pmtiles://https://pub-you.r2.cloudflarestorage.com/carpathian-fabdem.pmtiles'
     tiles: null,
     encoding: 'terrarium',
     tileSize: 256,
     minzoom: 5,
     maxzoom: 14,
     bounds: [22.0, 47.6, 27.0, 49.5],
-    attribution:
-      'DEM: <a href="https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model" target="_blank" rel="noopener">Copernicus GLO-30</a>',
+    /**
+     * Which DEM the URL above was generated from.
+     *
+     *   'fabdem' (default) — FABDEM v1.2 (Hawker et al., 2022). Bare-earth,
+     *                        canopy + buildings removed. Built via
+     *                        `tools/build-carpathian-fabdem.sh`. Hillshade
+     *                        and contours read clean inside the forest
+     *                        zone (700-1500 m). LICENSE: CC BY-NC 4.0
+     *                        — non-commercial use only. Operators with
+     *                        commercial deployments must switch to GLO-30.
+     *   'glo30'             — Copernicus GLO-30 (DSM, includes canopy).
+     *                        Built via `tools/build-carpathian-dem.sh`.
+     *                        Free for any use including commercial.
+     *
+     * The `attribution` and `licenseNonCommercial` fields below are derived
+     * from this field; the renderer + UI read the resolved values via
+     * `getCarpathianAttribution()` / `isCarpathianLicenseNonCommercial()`.
+     */
+    demSource: 'fabdem',
   }),
   /**
    * Pre-rendered texture shading (Leland Brown, α=0.8) as a raster PMTiles
@@ -248,7 +265,60 @@ export const TERRAIN = Object.freeze({
   ],
   /** Terrain 3D is suppressed below this zoom — hillshade stays 2D. */
   terrain3DMinZoom: 7,
+
+  /**
+   * Sky-View Factor — Lindsay's whitebox-tools relief layer that scores
+   * each pixel by the fraction of the upper hemisphere that is visible
+   * (0..1). Inverted, it darkens canyons, narrow valleys, cirque edges
+   * and rock terraces — features hillshade smears out at low azimuths.
+   *
+   * Stacks on top of hillshade as a multiply-style overlay. The runtime
+   * uses `raster-saturation: -1` + zoom-aware opacity so it reads as a
+   * grayscale wash on every theme.
+   *
+   * Build: tools/build-svf.sh (consumes the same DEM that backs
+   * `carpathian` above, runs whitebox_tools SkyViewFactor with 16
+   * azimuths and a 1 km horizon, then tiles + PMTiles converts).
+   */
+  skyViewFactor: Object.freeze({
+    url: null, // pmtiles://https://…/carpathian-svf.pmtiles
+    tileSize: 256,
+    minzoom: 7,
+    maxzoom: 14,
+    attribution: 'SVF: <a href="https://www.whiteboxgeo.com/" target="_blank" rel="noopener">WhiteboxTools</a> (Lindsay)',
+  }),
 });
+
+/**
+ * Resolve the human-readable attribution string for the active Carpathian
+ * DEM. Picks GLO-30 vs FABDEM based on TERRAIN.carpathian.demSource so
+ * operators can switch builds without editing two strings.
+ *
+ * @param {object} [terrain=TERRAIN]
+ * @returns {string}
+ */
+export function getCarpathianAttribution(terrain = TERRAIN) {
+  const src = terrain?.carpathian?.demSource;
+  if (src === 'fabdem') {
+    return 'DEM: <a href="https://data.bris.ac.uk/data/dataset/25wfy0f9ukoge2gs7a5mqpq2j7" target="_blank" rel="noopener">FABDEM v1.2</a> © Fathom (CC BY-NC 4.0)';
+  }
+  // 'glo30' (and any unknown value) — fall back to the always-free DEM.
+  return 'DEM: <a href="https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model" target="_blank" rel="noopener">Copernicus GLO-30</a>';
+}
+
+/**
+ * True when the active Carpathian DEM is licensed for non-commercial
+ * use only. The HUD / About panel reads this to surface a small
+ * "non-commercial" disclaimer next to the attribution; the build
+ * tooling reads it to remind the operator about the redistribution
+ * constraint.
+ *
+ * @param {object} [terrain=TERRAIN]
+ * @returns {boolean}
+ */
+export function isCarpathianLicenseNonCommercial(terrain = TERRAIN) {
+  return terrain?.carpathian?.demSource === 'fabdem';
+}
 
 /**
  * Hypsometric subsystem configuration.
@@ -393,6 +463,12 @@ export const CARPATHIAN = Object.freeze({
     saddles: 11,
     cableways: 12,
     skiPistes: 12,
+    /**
+     * Slope-warning overlay — only meaningful at hiking/alpinism
+     * zooms where the user is reading individual slopes; below this
+     * the red wash adds noise without information.
+     */
+    slopeWarning: 11,
   }),
   /** Exaggeration multiplier applied on top of TERRAIN.exaggerationStops. */
   exaggerationMul: 1.15,
@@ -480,6 +556,25 @@ export const FEATURES = Object.freeze({
    * Source missing → silent no-op (graceful fallback).
    */
   bathymetry: false,
+
+  /**
+   * Sky-View Factor overlay. Off by default — turns on automatically
+   * once `TERRAIN.skyViewFactor.url` is wired to a real PMTiles archive.
+   * Source missing → silent no-op (graceful fallback in sources.js).
+   */
+  skyViewFactor: false,
+
+  /**
+   * Slope-warning overlay — paints slopes ≥ 35° in translucent red so
+   * alpinists and winter hikers can read avalanche-prone terrain at a
+   * glance. Renders via the native `color-relief` layer driven by the
+   * `['slope']` expression (MapLibre 5.6+); on runtimes without that
+   * support the layer is silently dropped (see hypso/detect.js).
+   *
+   * Off by default — this is a specialised tactical overlay, not a
+   * general-purpose relief layer.
+   */
+  slopeWarning: false,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */
@@ -542,24 +637,72 @@ export const MAP_MODE_STORAGE_KEY = 'cart:map-mode';
 export const STANDARD_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
 /**
- * Esri World Imagery — public, no API key, served as plain raster
- * `{z}/{y}/{x}` tiles. Subject to Esri's usage limits but they're
- * generous for low-traffic experimental work.
+ * Default satellite tiles — EOX Sentinel-2 cloudless 2024.
  *
- * Note the tile path uses `{z}/{y}/{x}` order (the Esri convention),
- * not the more common `{z}/{x}/{y}`.
+ * EOX publishes a free, key-less, recent cloudless Sentinel-2 mosaic
+ * via WMTS at <https://s2maps.eu>. License: Contains modified
+ * Copernicus Sentinel data 2024. Compared to the previous Esri World
+ * Imagery default this:
+ *
+ *   • Removes the (commercial) Esri attribution.
+ *   • Carries a published vintage (2024) so winter snow / summer
+ *     forest cover are consistent rather than a stitched mosaic of
+ *     years.
+ *   • Has no clouds — Esri imagery occasionally shows them.
+ *
+ * The EOX cloudless mosaic is rendered up to z14. Above that the
+ * imagery silently runs out of detail. Operators who want deep zoom
+ * can flip `SATELLITE_PROVIDER` to `'esri'` (kept around as fallback).
+ *
+ * Note: WMTS path uses `{TileMatrix}/{TileRow}/{TileCol}` order, which
+ * MapLibre's `{z}/{y}/{x}` mapping handles transparently.
  */
 export const SATELLITE_TILES = Object.freeze({
-  /** Esri ArcGIS REST imagery service. */
   url:
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg',
   tileSize: 256,
   minzoom: 0,
-  maxzoom: 19,
+  maxzoom: 14,
   attribution:
-    'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>' +
-    ' — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    'Sentinel-2 cloudless 2024 by <a href="https://s2maps.eu" target="_blank" rel="noopener">EOX IT Services GmbH</a>' +
+    ' (Contains modified Copernicus Sentinel data 2024)',
 });
+
+/**
+ * Available satellite imagery providers. Pick the active one with
+ * `SATELLITE_PROVIDER`. Each entry has the same shape as
+ * `SATELLITE_TILES` so the satellite-mode style composer can swap
+ * sources without branching on provider id.
+ *
+ * Operators selecting `esri` get the legacy World Imagery: deep zoom
+ * (up to z19) with the trade-off of attribution-heavy commercial
+ * imagery and occasional cloud cover.
+ */
+export const SATELLITE_PROVIDERS = Object.freeze({
+  eox: SATELLITE_TILES,
+  esri: Object.freeze({
+    /** Esri ArcGIS REST imagery service. */
+    url:
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    tileSize: 256,
+    minzoom: 0,
+    maxzoom: 19,
+    attribution:
+      'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>' +
+      ' — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+  }),
+});
+
+/** Active satellite provider id. Switch to 'esri' for >z14 detail. */
+export const SATELLITE_PROVIDER = 'eox';
+
+/**
+ * When the active provider's max zoom is exceeded and this flag is
+ * true, the satellite-style composer falls back to the next-best
+ * provider (Esri). Off by default — most users would rather see the
+ * EOX mosaic stop than abruptly switch attribution mid-zoom.
+ */
+export const SATELLITE_FALLBACK = false;
 
 /**
  * Display labels in the user-friendly switcher UI. Plain strings so
@@ -577,5 +720,5 @@ export const MAP_MODE_LABELS = Object.freeze({
 export const MAP_MODE_HINTS = Object.freeze({
   cart: 'Премиум-карта Cart со свечением и акцентами',
   standard: 'Стандартная карта (OpenFreeMap Liberty)',
-  satellite: 'Спутниковые снимки (Esri World Imagery)',
+  satellite: 'Cloudless Sentinel-2 2024 (EOX)',
 });

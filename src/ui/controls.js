@@ -417,6 +417,18 @@ function renderReliefPanelBody() {
         <label class="row"><span>Гипсометрический тон</span><input type="checkbox" data-ctl="hypsometricTint"></label>
         <label class="row"><span>Батиметрия</span><input type="checkbox" data-ctl="bathymetry"></label>
         <label class="row"><span>Текстурное затенение</span><input type="checkbox" data-ctl="textureShading"></label>
+        <label class="row"><span>Sky-View Factor</span><input type="checkbox" data-ctl="skyViewFactor"></label>
+        <label class="row" data-ctl-row="slopeWarning">
+          <span class="slope-warn-label">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3 L22 21 L2 21 Z"/>
+              <line x1="12" y1="10" x2="12" y2="15"/>
+              <circle cx="12" cy="18" r="0.6" fill="currentColor"/>
+            </svg>
+            <span>Крутые склоны (≥35°)</span>
+          </span>
+          <input type="checkbox" data-ctl="slopeWarning">
+        </label>
         <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
         <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
       </div>
@@ -849,6 +861,8 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       hypsometricTint: FEATURES.hypsometricTint,
       bathymetry: FEATURES.bathymetry,
       textureShading: FEATURES.textureShading,
+      skyViewFactor: FEATURES.skyViewFactor,
+      slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
     },
@@ -999,6 +1013,8 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('hypsometricTint');
   wireToggle('bathymetry');
   wireToggle('textureShading');
+  wireToggle('skyViewFactor');
+  wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
 

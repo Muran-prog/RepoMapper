@@ -5,27 +5,30 @@
  * earlier in the array render below layers later in the array. This
  * module owns the canonical z-order for the entire project:
  *
- *    1. background                 — paper colour
- *    2. landcover                  — wood, grass, sand, ice, rock
- *    3. landuse                    — residential, industrial, cemetery, …
- *    4. parks                      — green polygons + outline
- *    5. hypsometric tint           — color-relief or raster, covers all land
- *    6. hillshade stack            — 1× or 3× (Swiss-style) + Carpathian
- *    7. water-fill                 — lake / sea polygons (LAND-ONLY MASK)
- *    7a. bathymetry                — GEBCO raster, replaces water_fill in sea
- *    9. texture-shading            — Leland Brown fractional-Laplacian PNG
- *   10. contours (minor → major)   — topographic isolines
- *   11. contour labels             — line-placed elevation text
- *   12. ridges (dark → light)      — Imhof-style double-stroke
- *   13. waterways                  — rivers / canals / streams (above relief)
- *   14. aeroway                    — runways / taxiways
- *   15. roads                      — tunnel → ground → rail → bridge
- *   16. trail emphasis (Carpathian)— casing + dashed inline
- *   17. buildings                  — 2D + 3D extrusion
- *   18. boundaries                 — country / oblast / raion / city
- *   19. cableway / ski piste       — mountain auxiliaries
- *   20. labels                     — places, roads, water, parks, POIs
- *   21. Carpathian labels          — peaks / passes / saddles (top priority)
+ *   1. background                 — paper colour
+ *   2. landcover                  — wood, grass, sand, ice, rock
+ *   3. landuse                    — residential, industrial, cemetery, …
+ *   4. parks                      — green polygons + outline
+ *   5. hypsometric tint           — color-relief or raster, covers all land
+ *   6. hillshade stack            — 1× or 3× (Swiss-style) + Carpathian
+ *   7. water-fill                 — lake / sea polygons (LAND-ONLY MASK)
+ *   7a. bathymetry                — GEBCO raster, replaces water_fill in sea
+ *   8. sky-view-factor            — multiplicative canyon emphasis
+ *   9. texture-shading            — Leland Brown fractional-Laplacian PNG
+ *  10. contours (minor → major)   — topographic isolines
+ *  11. contour labels             — line-placed elevation text
+ *  12. ridges (dark → light)      — Imhof-style double-stroke
+ *  13. waterways                  — rivers / canals / streams (above relief)
+ *  14. aeroway                    — runways / taxiways
+ *  15. roads                      — tunnel → ground → rail → bridge
+ *  16. trail emphasis (Carpathian)— casing + dashed inline
+ *  16a. slope-warning             — translucent red ≥35° (above trails,
+ *                                   below buildings/symbols)
+ *  17. buildings                  — 2D + 3D extrusion
+ *  18. boundaries                 — country / oblast / raion / city
+ *  19. cableway / ski piste       — mountain auxiliaries
+ *  20. labels                     — places, roads, water, parks, POIs
+ *  21. Carpathian labels          — peaks / passes / saddles (top priority)
  *
  * Land-only mask: layers 5–6 (hypso + hillshade) sit BELOW the water
  * polygons in layer 7, so the colour wash never bleeds into lakes or
@@ -58,6 +61,8 @@ import {
   hypsometricTintLayers,
   bathymetryLayers,
   legacyHypsoTintLayer,
+  skyViewFactorLayers,
+  slopeWarningLayers,
 } from './terrain.js';
 import { DEFAULT_RAMP_ID } from './hypso/ramps.js';
 import { DEFAULT_STRENGTH_STOPS } from './hypso/expression.js';
@@ -113,6 +118,12 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [hasHypsoRasterRamp=false] Active raster ramp source.
  * @property {boolean} [textureShading=false]
  * @property {boolean} [hasTextureSource=false]
+ * @property {boolean} [skyViewFactor=false]
+ * @property {boolean} [hasSkyViewFactorSource=false]
+ * @property {boolean} [slopeWarning=false]
+ *           Slope-warning overlay (color-relief on ['slope']).
+ * @property {boolean} [hasSlopeExpression=false]
+ *           Runtime supports `['slope']` in color-relief expressions.
  *
  * Contours:
  * @property {boolean} [contours=false]
@@ -171,6 +182,10 @@ export function composeLayers(opts = {}) {
     hasHypsoRasterRamp = false,
     textureShading = false,
     hasTextureSource = false,
+    skyViewFactor = false,
+    hasSkyViewFactorSource = false,
+    slopeWarning = false,
+    hasSlopeExpression = false,
 
     contours = false,
     contoursSourceId = 'contours-dynamic',
@@ -256,6 +271,14 @@ export function composeLayers(opts = {}) {
     stack.push(...bathymetryLayers(t));
   }
 
+  // 8: Sky-View Factor multiplicative overlay. Emitted between
+  //    bathymetry and texture-shading so it darkens hillshade-shaded
+  //    canyons before the fractional-Laplacian texture stamp goes on
+  //    top. Source-gated; minzoom 9 inside the layer itself.
+  if (skyViewFactor && hasSkyViewFactorSource) {
+    stack.push(...skyViewFactorLayers(t, { reduceMotion }));
+  }
+
   // 9: Texture shading overlay (pre-rendered PNG).
   if (textureShading && hasTextureSource) {
     stack.push(...textureShadingLayers(t, { reduceMotion }));
@@ -308,6 +331,22 @@ export function composeLayers(opts = {}) {
     stack.push(...steepStepsLayers(t));
     stack.push(...trailFurnitureLayers(t));
     stack.push(...trailLabels(t));
+  }
+
+  // 16a: Slope-warning overlay. Sits ABOVE the Carpathian trails so
+  //      the steep-zone wash is visible THROUGH the stitched dashes
+  //      (which is the point — the user must see which trail
+  //      segments cross avalanche-prone terrain). Stays BELOW
+  //      buildings + symbols so the red wash never obscures icons,
+  //      summit labels or bridge/ladder markers. Native color-relief
+  //      with `['slope']` expression — graceful fallback when the
+  //      runtime doesn't support either capability.
+  if (slopeWarning && hasPrimaryDem && hasSlopeExpression) {
+    stack.push(
+      ...slopeWarningLayers(t, {
+        hasCarpathianSource: hasCarpathianDem,
+      }),
+    );
   }
 
   // 17: Buildings.

@@ -86,6 +86,8 @@ async function main() {
       hillshade: features.hillshade,
       terrain3D: features.terrain3D && cfg.enableTerrain3D,
       textureShading: features.textureShading && cfg.enableTextureShading,
+      skyViewFactor: features.skyViewFactor && cfg.enableTextureShading,
+      slopeWarning: features.slopeWarning,
       hypsometricTint: features.hypsometricTint && cfg.enableHypsoTint,
       bathymetry: features.bathymetry && cfg.enableHypsoTint,
       contours: features.contours && cfg.enableContours,
@@ -144,6 +146,19 @@ async function main() {
       hasBathymetrySource: has.bathymetry,
       textureShading: effectiveFeatures.textureShading,
       hasTextureSource: has.textureShading,
+      skyViewFactor: effectiveFeatures.skyViewFactor,
+      hasSkyViewFactorSource: has.skyViewFactor,
+      slopeWarning: effectiveFeatures.slopeWarning,
+      // The style-spec validator we ship for CI doesn't yet recognise
+      // the `['slope']` expression input (added to MapLibre 5.6 after
+      // the spec package's last npm publish). The runtime probes for
+      // it via `hypso/detect.js::probeColorReliefSlope` and prunes the
+      // layer if missing — exactly the same graceful fallback the
+      // validator triggers here. New CI matrix entries that exercise
+      // slopeWarning still verify the rest of the layer stack stays
+      // valid; the slope-warning layer itself becomes a no-op in this
+      // environment.
+      hasSlopeExpression: false,
       colorRelief: features.colorRelief && has.primaryDem,
 
       // Contours: validator can't actually register the worker source, but
@@ -246,6 +261,35 @@ async function main() {
       name: 'carpathian-trails-with-source',
       flags: { carpathian: true },
       stubCarpathianOsmUrl: true,
+    },
+    // Sky-View Factor overlay — multiplicative wash of canyon detail.
+    // Without a source, the layer must NOT emit (graceful fallback);
+    // with the stub source it emits a single raster layer above the
+    // hillshade stack.
+    {
+      name: 'svf-no-source',
+      flags: { skyViewFactor: true },
+    },
+    {
+      name: 'svf-with-source',
+      flags: { skyViewFactor: true },
+      stubSkyViewFactorUrl: true,
+    },
+    // Slope-warning overlay — native color-relief on the slope
+    // expression. Always emits when the feature flag is on AND the
+    // primary DEM is available; the runtime probe in hypso/detect.js
+    // demotes it if the live MapLibre build doesn't accept the slope
+    // expression. The validator only checks structural shape, which
+    // is identical between supported and unsupported runtimes.
+    {
+      name: 'slope-warning-on',
+      flags: { slopeWarning: true },
+    },
+    {
+      name: 'slope-warning-with-carpathian-dem',
+      flags: { slopeWarning: true, carpathian: true },
+      stubCarpathianOsmUrl: true,
+      stubCarpathianDemUrl: true,
     },
     // Hypso-specific feature packs — every mode the renderer can pick.
     {
@@ -479,6 +523,25 @@ async function main() {
       sourceStubs['carpathian-osm'] = {
         type: 'vector',
         url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      };
+    }
+    if (pack.stubSkyViewFactorUrl) {
+      sourceStubs['sky-view-factor'] = {
+        type: 'raster',
+        url: 'pmtiles://https://example.com/svf.pmtiles',
+        tileSize: 256,
+        minzoom: 7,
+        maxzoom: 14,
+      };
+    }
+    if (pack.stubCarpathianDemUrl) {
+      sourceStubs['terrain-dem-carpathian'] = {
+        type: 'raster-dem',
+        url: 'pmtiles://https://example.com/carpathian-dem.pmtiles',
+        encoding: 'terrarium',
+        tileSize: 256,
+        minzoom: 5,
+        maxzoom: 14,
       };
     }
     return buildStyle({ theme, profile, features, hypso, sourceStubs });

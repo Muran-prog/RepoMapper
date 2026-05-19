@@ -20,7 +20,7 @@
  * `src/map/createMap.js` (browser) and `validate.cjs` (Node).
  */
 
-import { OPENFREEMAP, SATELLITE_TILES } from '../config.js';
+import { OPENFREEMAP, SATELLITE_TILES, SATELLITE_PROVIDERS, SATELLITE_PROVIDER, SATELLITE_FALLBACK } from '../config.js';
 import { labelLayers } from './labels.js';
 import { boundaryLayers } from './boundaries.js';
 import { getTokens } from './tokens.js';
@@ -186,6 +186,20 @@ function buildSatelliteBoundaries() {
 }
 
 /**
+ * Resolve the active provider tile spec. Picks `SATELLITE_PROVIDERS[
+ * SATELLITE_PROVIDER]` and falls back to the legacy `SATELLITE_TILES`
+ * constant if the dispatch is somehow unconfigured (mostly to keep
+ * older test harnesses working).
+ *
+ * @returns {{ url: string, tileSize: number, minzoom: number, maxzoom: number, attribution: string }}
+ */
+function resolveProvider() {
+  const id = SATELLITE_PROVIDER;
+  const spec = SATELLITE_PROVIDERS?.[id];
+  return spec ?? SATELLITE_TILES;
+}
+
+/**
  * Compose the full Satellite-mode style JSON.
  *
  * @param {object} [opts]
@@ -194,22 +208,27 @@ function buildSatelliteBoundaries() {
  * @param {string} [opts.vectorTilejsonUrl]
  *     Override the OpenMapTiles vector TileJSON endpoint. Useful for
  *     the validator, which stubs sources to keep tests offline.
+ * @param {string} [opts.providerId]
+ *     Override the active satellite provider ('eox' | 'esri' | …).
+ *     Defaults to `SATELLITE_PROVIDER`.
  * @returns {object} A spec-valid MapLibre style.
  */
 export function composeSatelliteStyle(opts = {}) {
   const glyphs = opts.glyphs ?? OPENFREEMAP.glyphs;
   const sprite = opts.sprite ?? OPENFREEMAP.sprite;
   const vectorTilejsonUrl = opts.vectorTilejsonUrl ?? OPENFREEMAP.tilejson;
+  const providerId = opts.providerId ?? SATELLITE_PROVIDER;
+  const provider = SATELLITE_PROVIDERS?.[providerId] ?? resolveProvider();
 
   const sources = {
     // Raster imagery — single source, single layer.
     [RASTER_SOURCE_ID]: {
       type: 'raster',
-      tiles: [SATELLITE_TILES.url],
-      tileSize: SATELLITE_TILES.tileSize,
-      minzoom: SATELLITE_TILES.minzoom,
-      maxzoom: SATELLITE_TILES.maxzoom,
-      attribution: SATELLITE_TILES.attribution,
+      tiles: [provider.url],
+      tileSize: provider.tileSize,
+      minzoom: provider.minzoom,
+      maxzoom: provider.maxzoom,
+      attribution: provider.attribution,
     },
     // Vector — labels overlay only. Same source-layer ids the rest of
     // the project consumes (place / transportation_name).
@@ -219,6 +238,28 @@ export function composeSatelliteStyle(opts = {}) {
       attribution: OPENFREEMAP.attribution,
     },
   };
+
+  // Optional Esri fallback overlay. Only emitted when (a) the active
+  // provider has a maxzoom strictly less than 19 (i.e. it really is
+  // the EOX cloudless mosaic, not Esri itself) and (b) the operator
+  // opted in via SATELLITE_FALLBACK. The fallback layer kicks in past
+  // the active provider's maxzoom so the user transitions to Esri
+  // imagery instead of seeing a blank pane at z15+.
+  const wantFallback =
+    SATELLITE_FALLBACK &&
+    providerId !== 'esri' &&
+    SATELLITE_PROVIDERS?.esri &&
+    provider.maxzoom < SATELLITE_PROVIDERS.esri.maxzoom;
+  if (wantFallback) {
+    sources['satellite-imagery-fallback'] = {
+      type: 'raster',
+      tiles: [SATELLITE_PROVIDERS.esri.url],
+      tileSize: SATELLITE_PROVIDERS.esri.tileSize,
+      minzoom: provider.maxzoom,
+      maxzoom: SATELLITE_PROVIDERS.esri.maxzoom,
+      attribution: SATELLITE_PROVIDERS.esri.attribution,
+    };
+  }
 
   const layers = [
     {
@@ -233,6 +274,25 @@ export function composeSatelliteStyle(opts = {}) {
         'raster-fade-duration': 220,
       },
     },
+    ...(wantFallback
+      ? [
+          {
+            id: 'satellite_imagery_fallback',
+            type: 'raster',
+            source: 'satellite-imagery-fallback',
+            // Same paint as the primary so the user can't tell the
+            // exact zoom where the swap happens — only the
+            // attribution control hints at it.
+            paint: {
+              'raster-resampling': 'linear',
+              'raster-fade-duration': 220,
+            },
+            // Activate one zoom past the primary provider's max so
+            // tile boundaries line up cleanly.
+            minzoom: provider.maxzoom,
+          },
+        ]
+      : []),
     // Admin boundaries painted ON TOP of imagery and BELOW labels so
     // they read as cartographic chrome, not part of the photograph.
     ...buildSatelliteBoundaries(),
@@ -242,7 +302,7 @@ export function composeSatelliteStyle(opts = {}) {
   return {
     version: 8,
     name: 'Cart · Satellite',
-    metadata: { mode: 'satellite', schema: 'openmaptiles' },
+    metadata: { mode: 'satellite', schema: 'openmaptiles', provider: providerId },
     sources,
     glyphs,
     sprite,

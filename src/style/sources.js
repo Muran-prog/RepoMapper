@@ -125,6 +125,12 @@ export function composeSources({
     const tex = toRasterPmtilesSource(terrain.textureShading);
     if (tex) sources['texture-shading'] = tex;
   }
+  // Sky-View Factor — sits between hillshade and texture-shading,
+  // multiplies darkening into canyons / cirques / rock terraces.
+  if (features.skyViewFactor) {
+    const svf = toRasterPmtilesSource(terrain.skyViewFactor);
+    if (svf) sources['sky-view-factor'] = svf;
+  }
   if (features.hypsometricTint) {
     // The hypso subsystem has two paths. When the native color-relief
     // layer is available we don't need ANY raster source — the DEM
@@ -206,6 +212,7 @@ export function sourceAvailability(sources) {
     primaryDem: 'terrain-dem' in sources,
     carpathianDem: 'terrain-dem-carpathian' in sources,
     textureShading: 'texture-shading' in sources,
+    skyViewFactor: 'sky-view-factor' in sources,
     hypsometricTint: 'hypso-tint' in sources,
     hypsoRasterRampId: rasterRampId,
     bathymetry: 'bathymetry' in sources,

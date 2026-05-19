@@ -365,6 +365,145 @@ export function textureShadingLayers(t, { reduceMotion = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Sky-View Factor overlay.
+//
+// SVF is a pre-rendered greyscale raster whose pixel values encode the
+// fraction of the upper hemisphere visible from each ground point —
+// dark = enclosed (canyon, cirque, narrow valley), light = open. We
+// stack it ABOVE the hillshade so it darkens the same pixels that
+// hillshade leaves flat (low azimuth coverage), surfacing detail that
+// single-direction illumination smears out.
+//
+// MapLibre doesn't expose a per-layer blend mode, so we approximate
+// "multiply" with `raster-saturation: -1` (force greyscale) +
+// zoom-aware `raster-opacity` + a small negative `raster-brightness-min`
+// so light SVF pixels (open ridges) leave the underlying hillshade
+// untouched while dark SVF pixels (canyons) darken it.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {object} SkyViewFactorOpts
+ * @property {boolean} [reduceMotion=false]
+ */
+
+/**
+ * @param {object} _t
+ * @param {SkyViewFactorOpts} [opts]
+ * @returns {Array<object>}
+ */
+export function skyViewFactorLayers(_t, opts = {}) {
+  const { reduceMotion = false } = opts;
+  // Mute below z9: at overview zooms the canyon detail isn't readable
+  // and the layer just darkens the hillshade. Peak strength lands near
+  // z12-z14 where the user can resolve individual ravines.
+  const opacity = reduceMotion
+    ? 0.35
+    : linZoom([
+        [8, 0.0],
+        [9, 0.25],
+        [11, 0.45],
+        [13, 0.5],
+        [16, 0.45],
+      ]);
+  return [
+    {
+      id: 'sky_view_factor',
+      type: 'raster',
+      source: 'sky-view-factor',
+      // SVF gets useful only inside the alpine detail zooms.
+      minzoom: 9,
+      paint: {
+        'raster-opacity': opacity,
+        // Force greyscale — even if the source PNG had any chroma
+        // (it shouldn't), the multiply effect must read as a pure
+        // luminance modulation.
+        'raster-saturation': -1,
+        // Push the bright end down a touch so high-SVF (open) pixels
+        // don't lighten the underlying hillshade.
+        'raster-contrast': 0.1,
+        'raster-resampling': 'linear',
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Slope-warning overlay.
+//
+// Native `color-relief` layer driven by the `['slope']` expression
+// (MapLibre 5.6+). Reads the carpathian high-resolution DEM when
+// available, otherwise the primary DEM. Renders steep slopes
+// (>= 35°) in a translucent red wash whose intensity grows with
+// slope angle. Tokens for the three intensity stops live in
+// `tokens.slopeWarning` so the overlay re-themes between light and
+// dark without code changes.
+//
+// Graceful fallback: when the runtime doesn't support color-relief or
+// the slope expression, the layer is dropped by hypso/detect.js — see
+// `detectColorReliefCaps`.
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {object} SlopeWarningOpts
+ * @property {boolean} [hasCarpathianSource=false]
+ *           When true, prefer the high-resolution DEM source.
+ * @property {string} [theme='light']
+ */
+
+/**
+ * Build the slope-warning color-relief layer. Always returns a single
+ * layer spec — the caller is responsible for skipping it when the
+ * runtime can't render it.
+ *
+ * @param {object} t
+ * @param {SlopeWarningOpts} [opts]
+ * @returns {Array<object>}
+ */
+export function slopeWarningLayers(t, opts = {}) {
+  const { hasCarpathianSource = false } = opts;
+  const tokens = t?.slopeWarning ?? {};
+  // Sensible fallbacks if the theme is missing the tokens (shouldn't
+  // happen post-install but keeps the layer alive during a partial
+  // tokens.js edit).
+  const soft = tokens.soft ?? 'rgba(255, 80, 40, 0.25)';
+  const mid = tokens.mid ?? 'rgba(255, 40, 20, 0.45)';
+  const severe = tokens.severe ?? 'rgba(180, 0, 0, 0.6)';
+  const transparent = 'rgba(0, 0, 0, 0)';
+  const source = hasCarpathianSource ? SOURCE_CARPATHIAN : SOURCE_PRIMARY;
+  return [
+    {
+      id: 'slope_warning',
+      type: 'color-relief',
+      source,
+      minzoom: 11,
+      maxzoom: 22,
+      metadata: { 'cart:slopeWarning': true },
+      paint: {
+        // Slope values are in degrees, 0..90. We hold transparent up
+        // to 30°, fade in soft at 35°, mid at 45°, severe at 60°+.
+        'color-relief-color': [
+          'interpolate',
+          ['linear'],
+          ['slope'],
+          0,
+          transparent,
+          30,
+          transparent,
+          35,
+          soft,
+          45,
+          mid,
+          60,
+          severe,
+        ],
+        'color-relief-opacity': 1,
+        'color-relief-opacity-transition': { duration: 0, delay: 0 },
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Hypsometric tint — delegated to the dedicated hypso subsystem so the
 // renderer can pick between native MapLibre `color-relief`, pre-rendered
 // raster PMTiles, or simply "off". See `src/style/hypso/` for the ramp

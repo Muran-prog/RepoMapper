@@ -22,14 +22,26 @@
  * the result memoised on the map's `_cart` namespace so repeated style
  * rebuilds don't keep probing.
  *
+ * Two capability flags are exposed:
+ *
+ *   • nativeColorRelief — the `color-relief` layer type is accepted at
+ *                         all (i.e. used by the hypsometric tint).
+ *   • slope             — the `['slope']` expression is accepted by
+ *                         `color-relief-color`. Required by the slope-
+ *                         warning overlay; older builds had elevation
+ *                         but not slope as an expression input.
+ *
  * @typedef {object} HypsoCaps
  * @property {boolean} nativeColorRelief
+ * @property {boolean} slope            True when ['slope'] expressions
+ *                                       work in color-relief layers.
  * @property {boolean} rasterColor      Reserved — raster-color paint
  *                                       property (separate spec from
  *                                       color-relief; not used yet).
  */
 
 const PROBE_LAYER_ID = '__cart_native_color_relief_probe__';
+const PROBE_SLOPE_LAYER_ID = '__cart_color_relief_slope_probe__';
 
 /**
  * Detect native color-relief support. Idempotent + cached on the map
@@ -49,15 +61,17 @@ const PROBE_LAYER_ID = '__cart_native_color_relief_probe__';
  */
 export function detectHypsoCaps(map) {
   if (!map || typeof map.addLayer !== 'function') {
-    return { nativeColorRelief: false, rasterColor: false };
+    return { nativeColorRelief: false, slope: false, rasterColor: false };
   }
   const cart = map._cart ?? (map._cart = {});
   if (cart.hypsoCaps) return cart.hypsoCaps;
 
   const supported = probeColorRelief(map);
-  cart.hypsoCaps = { nativeColorRelief: supported, rasterColor: false };
+  const slope = supported ? probeColorReliefSlope(map) : false;
+  cart.hypsoCaps = { nativeColorRelief: supported, slope, rasterColor: false };
 
   if (!supported) demoteColorReliefIfPresent(map);
+  if (!slope) demoteSlopeWarningIfPresent(map);
 
   return cart.hypsoCaps;
 }
@@ -191,6 +205,73 @@ function probeColorRelief(map) {
 }
 
 /**
+ * Probe whether the runtime accepts the `['slope']` expression input
+ * inside a `color-relief-color` paint property. Slope landed in
+ * MapLibre after elevation; some 5.x builds have elevation but not
+ * slope. Same idempotent add-then-remove pattern as the elevation
+ * probe — runs only when the elevation probe already succeeded.
+ *
+ * @param {maplibregl.Map} map
+ * @returns {boolean}
+ */
+function probeColorReliefSlope(map) {
+  const hasDem = typeof map.getSource === 'function' && !!map.getSource('terrain-dem');
+  if (!hasDem) return false;
+  try {
+    map.addLayer({
+      id: PROBE_SLOPE_LAYER_ID,
+      type: 'color-relief',
+      source: 'terrain-dem',
+      paint: {
+        'color-relief-color': [
+          'interpolate',
+          ['linear'],
+          ['slope'],
+          0,
+          'rgba(0,0,0,0)',
+          90,
+          'rgba(0,0,0,0)',
+        ],
+        'color-relief-opacity': 0,
+      },
+    });
+  } catch {
+    return false;
+  }
+  const attached = typeof map.getLayer === 'function' && !!map.getLayer(PROBE_SLOPE_LAYER_ID);
+  if (attached) {
+    try {
+      map.removeLayer(PROBE_SLOPE_LAYER_ID);
+    } catch {
+      /* same rationale as the elevation probe */
+    }
+  }
+  return attached;
+}
+
+/**
+ * Drop the slope_warning layer if the runtime can't render its
+ * `['slope']` expression. Symmetric to `demoteColorReliefIfPresent`
+ * but without a raster fallback — slope warning has no pre-rendered
+ * archive in this project, so the only safe behaviour is to remove
+ * the layer outright.
+ *
+ * @param {maplibregl.Map} map
+ */
+function demoteSlopeWarningIfPresent(map) {
+  if (typeof map.getStyle !== 'function') return;
+  const style = map.getStyle();
+  if (!style?.layers) return;
+  const layer = style.layers.find((l) => l?.metadata?.['cart:slopeWarning'] === true);
+  if (!layer) return;
+  try {
+    if (map.getLayer(layer.id)) map.removeLayer(layer.id);
+  } catch {
+    /* swallow — slot stays free until a future rebuild */
+  }
+}
+
+/**
  * Force-clear the memoised probe result. Used by the test harness and
  * by `applyStyle` when the DEM source could have changed since the
  * previous probe.
@@ -201,4 +282,20 @@ export function clearHypsoCaps(map) {
   if (map?._cart?.hypsoCaps) {
     delete map._cart.hypsoCaps;
   }
+}
+
+/**
+ * Public alias of `detectHypsoCaps` under a name that better reflects
+ * the broadened scope: the probe now reports both elevation- and
+ * slope-driven `color-relief` capabilities so the renderer can
+ * gate the slope-warning overlay on the same single capability check.
+ *
+ * Returns the same shape as `detectHypsoCaps`. Kept as a thin wrapper
+ * so existing callers continue to work under the historical name.
+ *
+ * @param {maplibregl.Map|null} map
+ * @returns {HypsoCaps}
+ */
+export function detectColorReliefCaps(map) {
+  return detectHypsoCaps(map);
 }

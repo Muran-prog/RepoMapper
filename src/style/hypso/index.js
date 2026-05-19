@@ -66,6 +66,7 @@ export {
 
 export {
   detectHypsoCaps,
+  detectColorReliefCaps,
   clearHypsoCaps,
 } from './detect.js';
 
