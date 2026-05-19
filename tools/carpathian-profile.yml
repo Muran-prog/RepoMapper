@@ -154,7 +154,7 @@ layers:
           - key: prominence
             tag_value: prominence
           - key: rank
-            value: '${-feature.tags.get("ele", 0)}'
+            value: '${ -feature.tags.ele }'
       - source: osm
         geometry: point
         min_zoom: 11
@@ -172,7 +172,7 @@ layers:
           - key: ele
             tag_value: ele
           - key: rank
-            value: '${-feature.tags.get("ele", 0)}'
+            value: '${ -feature.tags.ele }'
       # Hydrographic + geomorphologic POIs.
       - source: osm
         geometry: point

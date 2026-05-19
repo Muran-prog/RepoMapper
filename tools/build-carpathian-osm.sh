@@ -15,7 +15,18 @@
 # modern laptop: ~5-10 minutes.
 
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
-need java curl pmtiles
+
+# Allow overriding the Java + pmtiles binaries (e.g. when using a portable
+# JRE in tools/.work/jre and the pmtiles binary in tools/.work/bin) and
+# the Planetiler heap size for low-RAM hosts. Defaults match a system
+# install with 12 GB free RAM.
+JAVA_BIN="${JAVA_BIN:-java}"
+PMTILES_BIN="${PMTILES_BIN:-pmtiles}"
+PLANETILER_XMX="${PLANETILER_XMX:-12g}"
+NEED_CMDS=(curl)
+[ "$JAVA_BIN" = "java" ] && NEED_CMDS+=(java)
+[ "$PMTILES_BIN" = "pmtiles" ] && NEED_CMDS+=(pmtiles)
+need "${NEED_CMDS[@]}"
 
 WORK="$(work_dir carpathian-osm)"
 cd "$WORK"
@@ -37,15 +48,14 @@ fi
 # Bbox to clip to the Carpathian extent (saves output size on a Ukraine-wide build).
 read -r W S E N <<<"$(carpathian_bbox)"
 
-java -Xmx12g -jar "$PLANETILER_JAR" \
+"$JAVA_BIN" "-Xmx$PLANETILER_XMX" -jar "$PLANETILER_JAR" \
   generate-custom \
   --schema="$TOOLS_DIR/carpathian-profile.yml" \
-  --osm_path="$EXTRACT_PBF" \
+  --osm-path="$EXTRACT_PBF" \
   --bounds="$W,$S,$E,$N" \
   --output="$WORK/carpathian-osm.mbtiles" \
-  --force \
-  --download
+  --force
 
 ARCHIVE="$WORK/carpathian-osm.pmtiles"
-pmtiles convert "$WORK/carpathian-osm.mbtiles" "$ARCHIVE"
+"$PMTILES_BIN" convert "$WORK/carpathian-osm.mbtiles" "$ARCHIVE"
 final_url_hint "$ARCHIVE" "TERRAIN.carpathianOsm.url"

@@ -224,7 +224,13 @@ export const TERRAIN = Object.freeze({
    * `tools/build-carpathian-osm.sh` using `tools/carpathian-profile.yml`.
    */
   carpathianOsm: Object.freeze({
-    url: null, // pmtiles://https://…/carpathian-osm.pmtiles
+    // Carpathian OSM overlay published from the repo's gh-pages branch.
+    // 33 MB, zoom 8-14, bbox 22.0,47.6,27.0,49.5. Built locally from
+    // the Geofabrik Ukraine extract via tools/build-carpathian-osm.sh
+    // and committed as a static binary to keep deploys turn-key.
+    // raw.githubusercontent.com supports HTTP Range requests, so the
+    // pmtiles:// protocol works directly without a separate host.
+    url: 'pmtiles://https://raw.githubusercontent.com/Muran-prog/RepoMapper/gh-pages/carpathian-osm.pmtiles',
     attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   }),
   /**
@@ -447,7 +453,10 @@ export const FEATURES = Object.freeze({
    */
   hypsometricTint: true,
   ridgeOverlay: false,
-  carpathian: false,
+  // Carpathian trail overlay — backed by the gh-pages PMTiles archive
+  // configured in TERRAIN.carpathianOsm. 42 extra layers light up
+  // inside CARPATHIAN.bbox at z11+.
+  carpathian: true,
 
   /**
    * Use MapLibre `projection: { type: 'globe' }` at low zooms. Falls back
