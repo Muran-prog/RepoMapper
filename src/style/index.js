@@ -14,6 +14,8 @@
  *   6a. worldcover-tint           — ESA 10m landcover multiply-blend overlay
  *   7. water-fill                 — lake / sea polygons (LAND-ONLY MASK)
  *   7a. bathymetry                — GEBCO raster, replaces water_fill in sea
+ *   7b. forest_polygon (leaf-type)— Carpathian biom-colour by OSM leaf_type
+ *                                   (fill + outline + protect-outline + label)
  *   8. sky-view-factor            — multiplicative canyon emphasis
  *   9. texture-shading            — Leland Brown fractional-Laplacian PNG
  *  10. contours (minor → major)   — topographic isolines
@@ -81,6 +83,7 @@ import {
   steepStepsLayers,
   trailFurnitureLayers,
   trailLabels,
+  forestPolygonLayers,
 } from './carpathian.js';
 import { getTokens } from './tokens.js';
 
@@ -147,6 +150,15 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [hasRidgesSource=false]
  * @property {boolean} [carpathian=false]
  * @property {boolean} [hasCarpathianOsmSource=false]
+ * @property {boolean} [forestLeafType=false]
+ *           Carpathian forest leaf-type biom polygons (landuse=forest /
+ *           natural=wood with leaf_type / wood / leaf_cycle resolved
+ *           through resolveLeafExpr in carpathian.js).
+ * @property {boolean} [hasForestPolygonSource=false]
+ *           `forest_polygon` source-layer is reachable. Maps to
+ *           availability.forestPolygon in sources.js — true iff the
+ *           carpathian-osm vector source is present (the layer lives
+ *           inside that pmtiles).
  *
  * Accessibility:
  * @property {boolean} [reduceMotion=false]     Static relief, no 3D.
@@ -211,6 +223,8 @@ export function composeLayers(opts = {}) {
     hasRidgesSource = false,
     carpathian = false,
     hasCarpathianOsmSource = false,
+    forestLeafType = false,
+    hasForestPolygonSource = false,
 
     reduceMotion = false,
   } = opts;
@@ -350,6 +364,31 @@ export function composeLayers(opts = {}) {
   //     stay flat blue.
   if (bathymetry && hasBathymetrySource) {
     stack.push(...bathymetryLayers(t));
+  }
+
+  // 7b: Carpathian forest leaf-type biom polygons. Sits ABOVE the
+  //     water_fill / bathymetry mask so the vector polygons never
+  //     bleed into open water, and ABOVE the canopy-height tint so
+  //     the OSM-derived biom-colour is the dominant cue at z9-13
+  //     (Чорногора cool dark needleleaved vs Закарпаття warm
+  //     yellow-green broadleaved). The fill-opacity curve drops
+  //     past z14 so canopy-height detail reads through the fill at
+  //     hiking zooms — biom layer becomes a subtle подложка rather
+  //     than the primary signal.
+  //
+  //     Stays BELOW texture-shading / contours / trails / roads so
+  //     terrain structure and the trail web continue to read on top
+  //     of the biom-clusters. Source-gated: `hasForestPolygonSource`
+  //     is true only when carpathian-osm.pmtiles is reachable AND
+  //     `features.forestLeafType` is on; absent → silent no-op
+  //     (graceful fallback). The fourth sub-layer (forest_label)
+  //     is folded into this block so it paints in the same stack
+  //     position; it's a symbol layer with its own collision logic
+  //     that ranks BELOW peak labels via symbol-sort-key (peaks
+  //     use −ele which is far more negative than the forest-mass
+  //     `−area` key).
+  if (forestLeafType && hasForestPolygonSource) {
+    stack.push(...forestPolygonLayers(t));
   }
 
   // 8: Sky-View Factor multiplicative overlay. Emitted between

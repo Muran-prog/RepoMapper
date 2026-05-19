@@ -242,6 +242,11 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
       : true,
     hasRidgesSource: has.ridges,
     hasCarpathianOsmSource: has.carpathianOsm,
+    // forest_polygon lives inside the carpathian-osm pmtiles, so the
+    // availability mirrors the umbrella vector source; the actual
+    // emit decision still depends on `forestLeafType` (via
+    // profileToLayerOpts).
+    hasForestPolygonSource: has.forestPolygon,
     hasContoursSource,
     contoursSourceId,
     contoursMinzoom: CONTOURS.minzoom,
@@ -377,6 +382,12 @@ function profileToLayerOpts(profileConfig, features) {
       features.ridgeOverlay && profileConfig.enableRidgeOverlay,
     carpathian:
       features.carpathian && profileConfig.enableCarpathianOverlay,
+    // Forest leaf-type biom polygons are gated by the same Carpathian
+    // capability (the data lives in carpathian-osm.pmtiles) — there's
+    // no separate device-profile knob, the renderer just AND's the
+    // user flag with the umbrella Carpathian-overlay capability.
+    forestLeafType:
+      features.forestLeafType && profileConfig.enableCarpathianOverlay,
     colorRelief: features.colorRelief, // runtime-checked downstream
   };
 }

@@ -22,7 +22,7 @@ maplibre-contour. The PMTiles archives below add region-specific detail:
 | `black-sea-bathy.pmtiles`     | GEBCO 2024 seabed tint, joins seamlessly at 0 m       | `build-bathymetry.sh`           |
 | `carpathian-contours.pmtiles` | Pre-baked contours (lighter on CPU than dynamic)      | `build-contours.sh`             |
 | `carpathian-ridges.pmtiles`   | WhiteboxTools ridge lines (Imhof enhancement)         | `build-ridges.sh`               |
-| `carpathian-osm.pmtiles`      | Custom Planetiler with hiking_route / mountain_feature| `build-carpathian-osm.sh`       |
+| `carpathian-osm.pmtiles`      | Custom Planetiler with hiking_route / mountain_feature / **forest_polygon** (leaf-type biom-coloured polygons, added 2026-05) | `build-carpathian-osm.sh`       |
 
 Hosting: any static HTTPS endpoint with `Range:` support. Cloudflare R2,
 Backblaze B2, Bunny CDN, AWS S3 with the right CORS — all work. PMTiles
@@ -287,6 +287,46 @@ download `planetiler.jar`, drop it next to the scripts (or set `PLANETILER_JAR`)
 ### Carpathian OSM
 
 - Custom Planetiler profile (`carpathian-profile.yml`) creates the
-  source-layers the renderer expects: `hiking_route`, `mountain_feature`,
-  `forest_road`, `ski_piste`, `cableway`. Reads the Ukraine extract
-  from <https://download.geofabrik.de/europe/ukraine.html>.
+  source-layers the renderer expects: `hiking_route`, `trail`,
+  `mountain_feature`, `forest_road`, `forest_polygon` (added 2026-05),
+  `ski_piste`, `cableway`. Reads the Ukraine extract from
+  <https://download.geofabrik.de/europe/ukraine.html>.
+- The `forest_polygon` source-layer carries every
+  `landuse=forest` / `natural=wood` / `boundary=protected_area`
+  polygon in the Carpathian bbox with biome attributes
+  (`leaf_type`, `leaf_cycle`, `wood`, `protect_class`, `name`,
+  `area`). The renderer (`forestPolygonLayers` in
+  `src/style/carpathian.js`) cascades those tags down to one of
+  five canonical leaf-type slots
+  (needleleaved / broadleaved / mixed / leafless / unknown) and
+  paints biome-coloured fills so Чорногора reads as cool dark
+  conifer green and Угольки as warm yellow-green broadleaf at z9-13.
+  Заповідні території get an amber dashed outline; named massifs
+  get italic labels above zoom-aware area thresholds (driven by
+  `FOREST_LABEL.minAreaForName` in
+  `src/style/forest-leaf-tokens.js`).
+- **Re-build required after the schema change.** Adding
+  `forest_polygon` grows the archive by ~30 % (rough estimate:
+  80 MB → ~105 MB at zoom 8-14). After editing
+  `carpathian-profile.yml` run:
+
+  ```bash
+  bash tools/build-carpathian-osm.sh
+  ```
+
+  Then re-upload the resulting
+  `tools/.work/carpathian-osm/carpathian-osm.pmtiles` to your
+  static host (gh-pages branch, R2, B2, etc.) and bump the URL in
+  `TERRAIN.carpathianOsm.url` if you've moved it. Until you
+  rebuild, the live archive lacks the `forest_polygon` layer and
+  the renderer's graceful-fallback path keeps the map rendering
+  identically to its previous version (the layer composer skips
+  the four forest sub-layers entirely when
+  `availability.forestPolygon` is false or
+  `features.forestLeafType` is off).
+- Tile-size guard: `min_size: 4` on the `forest_polygon` feature
+  drops dust polygons at z8-9 so the archive doesn't bloat with
+  noise. Combined with the style-side `area` filter
+  (`FOREST_LABEL.minAreaForName`) this keeps the overview clean
+  (only > 50 km² massifs labelled at z8) and progressively
+  finer-grained toward z14.

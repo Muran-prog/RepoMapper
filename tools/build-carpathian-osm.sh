@@ -3,8 +3,13 @@
 # profile. Emits the source-layers the renderer expects:
 #
 #   hiking_route      lines  with osmc_symbol/network/ref/name
+#   trail             lines  with sac_scale/trail_visibility/informal/etc.
 #   mountain_feature  points with class/ele/name/prominence/rank
 #   forest_road       lines  with tracktype/surface/sac_scale/trail_visibility
+#   forest_polygon    polys  with leaf_type/leaf_cycle/wood/protect_class/area
+#                     (added 2026-05 — reaches z8-14 with min_size=4 cushion;
+#                      drives the leaf-type biom-colouring stack in
+#                      src/style/carpathian.js::forestPolygonLayers)
 #   ski_piste         lines
 #   cableway          lines
 #
@@ -12,7 +17,9 @@
 #
 # Requires the Ukraine Geofabrik extract (~700 MB) and a working Planetiler
 # install (planetiler.jar — see tools/README.md). Total run time on a
-# modern laptop: ~5-10 minutes.
+# modern laptop: ~5-10 minutes. Adding forest_polygon grows the archive
+# by ~30% (rough estimate: 80 MB → 105 MB) — re-upload required after
+# rebuild.
 
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh"
 

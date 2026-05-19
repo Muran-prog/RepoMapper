@@ -63,6 +63,13 @@ const ICONS = {
   // toggles apart at a glance. Slightly narrower silhouette + taller
   // crown communicates "height" rather than "land class".
   canopy: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 L8 9 L10 9 L7 13.5 L9.5 13.5 L6 18 L18 18 L14.5 13.5 L17 13.5 L14 9 L16 9 Z"/><line x1="12" y1="18" x2="12" y2="21"/></svg>`,
+  // Two-trees-side-by-side glyph for the Forest leaf-type toggle: a
+  // triangular conifer LEFT + a round broadleaf RIGHT, communicating
+  // "хвойний / листяний / мішаний ліс" at a glance. Distinct from
+  // the WorldCover landcover glyph (two CONIFERS) and the canopy
+  // glyph (single tall conifer), so the three forest-related toggles
+  // remain visually unambiguous.
+  forestLeaf: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17 L9 8 L12 17 Z"/><line x1="9" y1="17" x2="9" y2="20"/><circle cx="16" cy="12" r="4"/><line x1="16" y1="16" x2="16" y2="20"/></svg>`,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
   sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="18.9" y2="18.9"/><line x1="5.1" y1="18.9" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="18.9" y2="5.1"/></svg>`,
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
@@ -92,6 +99,12 @@ const ICONS = {
 
 const WORLDCOVER_TINT_PREF_KEY = 'cart:features:worldcoverTint';
 const CANOPY_HEIGHT_TINT_PREF_KEY = 'cart:features:canopyHeightTint';
+// Forest leaf-type biom polygons share the same lifecycle as the two
+// raster relief overlays above: the operator rebuilds and re-uploads
+// carpathian-osm.pmtiles once, then the user's on/off choice should
+// outlive the page. Stored under the same `cart:features:*` namespace
+// so the persistence shape stays consistent.
+const FOREST_LEAF_TYPE_PREF_KEY = 'cart:features:forestLeafType';
 
 function loadWorldcoverTintPref(fallback) {
   try {
@@ -130,6 +143,27 @@ function saveCanopyHeightTintPref(value) {
   try {
     if (typeof window === 'undefined') return;
     window.localStorage?.setItem(CANOPY_HEIGHT_TINT_PREF_KEY, value ? '1' : '0');
+  } catch {
+    /* quota / serialise — best-effort */
+  }
+}
+
+function loadForestLeafTypePref(fallback) {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = window.localStorage?.getItem(FOREST_LEAF_TYPE_PREF_KEY);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveForestLeafTypePref(value) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage?.setItem(FOREST_LEAF_TYPE_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -504,6 +538,14 @@ function renderReliefPanelBody() {
           <input type="checkbox" data-ctl="canopyHeightTint" aria-describedby="canopy-height-hint">
         </label>
         <small class="row-hint" id="canopy-height-hint">Тёмные участки = старі смерекові ліси</small>
+        <label class="row" data-ctl-row="forestLeafType" title="Хвойний / листяний / мішаний ліс по OSM leaf_type">
+          <span class="forest-leaf-label">
+            ${ICONS.forestLeaf}
+            <span>Forest types</span>
+          </span>
+          <input type="checkbox" data-ctl="forestLeafType" aria-describedby="forest-leaf-hint">
+        </label>
+        <small class="row-hint" id="forest-leaf-hint">Хвойний / листяний / мішаний ліс по OSM leaf_type</small>
         <label class="row" data-ctl-row="slopeWarning">
           <span class="slope-warn-label">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -950,6 +992,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       skyViewFactor: FEATURES.skyViewFactor,
       worldcoverTint: loadWorldcoverTintPref(FEATURES.worldcoverTint),
       canopyHeightTint: loadCanopyHeightTintPref(FEATURES.canopyHeightTint),
+      // Forest leaf-type biom polygons. Off in FEATURES until the
+      // operator rebuilds carpathian-osm.pmtiles with the new
+      // forest_polygon source-layer; once they flip the toggle on
+      // (here or via the UI) the choice survives reload.
+      forestLeafType: loadForestLeafTypePref(FEATURES.forestLeafType),
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
@@ -1095,6 +1142,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // an operator wires `TERRAIN.canopyHeight.url` the user's
       // selection should outlive the page.
       if (key === 'canopyHeightTint') saveCanopyHeightTintPref(el.checked);
+      // Forest leaf-type follows the same pattern: once the operator
+      // rebuilds carpathian-osm.pmtiles with the forest_polygon
+      // source-layer, the user's on/off choice persists across
+      // reloads under `cart:features:forestLeafType`.
+      if (key === 'forestLeafType') saveForestLeafTypePref(el.checked);
       // Any user-driven change to one of the four managed flags is
       // the natural deactivation signal for the Flat hypso preset —
       // the computed predicate handles that automatically here.
@@ -1114,6 +1166,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('skyViewFactor');
   wireToggle('worldcoverTint');
   wireToggle('canopyHeightTint');
+  wireToggle('forestLeafType');
   wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');

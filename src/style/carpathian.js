@@ -1156,3 +1156,312 @@ export function cablewayLayers(t) {
     },
   ];
 }
+
+// ===========================================================================
+// Forest leaf-type biom polygons
+// ===========================================================================
+//
+// Source-layer `forest_polygon` (added 2026-05) carries every
+// landuse=forest / natural=wood / boundary=protected_area polygon in
+// the Carpathian bbox with rich biome attributes:
+//
+//   leaf_type       — broadleaved | needleleaved | mixed | leafless
+//   leaf_cycle      — evergreen | deciduous | mixed | semi_evergreen
+//   wood (legacy)   — coniferous | deciduous | mixed
+//   landuse         — 'forest' (managed)
+//   natural         — 'wood' (natural)
+//   protect_class   — заповідник tier (1..5+)
+//   area            — m² (Planetiler-computed for sort + label gating)
+//
+// The cartographic goal at z9-13 is the three-band Carpathian read:
+//
+//   • Чорногора / Свидовець / Ґорґани — needleleaved, cool dark green
+//   • Закарпатська смуга (Угольки, Гошку) — broadleaved, warm yellow-green
+//   • Mixed slopes 800-1200 m — between the two
+//
+// Заповідні території get an amber dashed outline so Карпатський
+// заповідник, Угольсько-Широколужанський масив and Стужиця read as
+// "important within the forest cluster".
+//
+// Z-order rules (handled in src/style/index.js):
+//   - forest_polygon paints BELOW canopy-height (vector biom-colour =
+//     base, canopy modulates by stand age) and BELOW trails.
+//   - The label sub-layer paints in the symbol stack BEFORE peak
+//     labels so peak collisions win.
+// ===========================================================================
+
+/**
+ * Build a leaf-type resolver expression — cascades the OSM tag matrix
+ * down to one of the canonical token slots:
+ *
+ *   leaf_type → if has → return as-is
+ *             else wood (legacy) → coniferous → 'needleleaved'
+ *                                  deciduous  → 'broadleaved'
+ *                                  mixed      → 'mixed'
+ *             else leaf_cycle=evergreen + landuse=forest → 'needleleaved'
+ *                  leaf_cycle=deciduous                  → 'broadleaved'
+ *             else → 'unknown'
+ *
+ * The expression returns a string that exactly matches one of
+ * `t.forestLeaf.leaf.{needleleaved|broadleaved|mixed|leafless|unknown}`,
+ * so layer specs can `match` on it directly.
+ *
+ * @returns {Array} MapLibre expression
+ */
+export function resolveLeafExpr() {
+  // Step 3: leaf_cycle heuristic — 'evergreen' on a forest polygon is
+  // the strongest hint we have when leaf_type / wood are both absent.
+  const leafCycleStep = [
+    'case',
+    ['all',
+      ['==', ['coalesce', ['get', 'leaf_cycle'], 'none'], 'evergreen'],
+      // landuse OR natural: a managed forest tagged evergreen is
+      // overwhelmingly conifer (Carpathian smerek). natural=wood
+      // tagged evergreen is also conifer (no native broadleaf
+      // evergreen biome here).
+      ['any',
+        ['==', ['coalesce', ['get', 'landuse'], 'none'], 'forest'],
+        ['==', ['coalesce', ['get', 'natural'], 'none'], 'wood'],
+      ],
+    ],
+    'needleleaved',
+    [
+      'case',
+      ['==', ['coalesce', ['get', 'leaf_cycle'], 'none'], 'deciduous'],
+      'broadleaved',
+      'unknown',
+    ],
+  ];
+
+  // Step 2: legacy `wood` tag — still common on older Carpathian data.
+  const woodStep = [
+    'case',
+    ['has', 'wood'],
+    [
+      'match',
+      ['get', 'wood'],
+      'coniferous', 'needleleaved',
+      'deciduous',  'broadleaved',
+      'mixed',      'mixed',
+      'unknown',
+    ],
+    leafCycleStep,
+  ];
+
+  // Step 1: leaf_type — the primary, modern signal.
+  return [
+    'case',
+    ['has', 'leaf_type'],
+    [
+      'match',
+      ['get', 'leaf_type'],
+      'broadleaved',  'broadleaved',
+      'needleleaved', 'needleleaved',
+      'mixed',        'mixed',
+      'leafless',     'leafless',
+      'unknown',
+    ],
+    woodStep,
+  ];
+}
+
+/**
+ * Build the per-leaf-type colour `match` expression. Folds the four
+ * canonical slots (needleleaved / broadleaved / mixed / leafless)
+ * onto the resolver output, with the unknown slot as the fallback.
+ *
+ * @param {object} t  Resolved theme tokens.
+ * @param {'fill'|'outline'|'label'} role
+ * @returns {Array} MapLibre expression
+ */
+function leafColorExpr(t, role) {
+  const leaf = t.forestLeaf.leaf;
+  return [
+    'match',
+    resolveLeafExpr(),
+    'needleleaved', leaf.needleleaved[role],
+    'broadleaved',  leaf.broadleaved[role],
+    'mixed',        leaf.mixed[role],
+    'leafless',     leaf.leafless[role],
+    leaf.unknown[role],
+  ];
+}
+
+/**
+ * Forest leaf-type biom polygons + protected-area accent + named-mass
+ * labels. Returned in correct paint order (fill → outline →
+ * protect_outline → label).
+ *
+ * @param {object} t  Resolved theme tokens.
+ * @returns {Array<object>} Layer specs.
+ */
+export function forestPolygonLayers(t) {
+  const z = CARPATHIAN.zoomRules.forestPolygons;
+  const zOutline = CARPATHIAN.zoomRules.forestOutline;
+  const zProtect = CARPATHIAN.zoomRules.forestProtect;
+  const zLabels  = CARPATHIAN.zoomRules.forestLabels;
+
+  // --- a) fill ---------------------------------------------------------
+  // Soft on overview (0.35), mid-band peaks at 0.65, fades to 0.55 past
+  // z14 so canopy-height + trails read on top without competing for
+  // the same hue budget.
+  const fillLayer = {
+    id: 'carpathian_forest_fill',
+    type: 'fill',
+    source: CARP_OSM,
+    'source-layer': 'forest_polygon',
+    minzoom: z,
+    layout: {
+      // Large massifs paint first so smaller named tracts (e.g. a
+      // 5 km² protected polygon nested inside a 200 km² landuse=forest)
+      // appear ON TOP and remain visually distinct.
+      'fill-sort-key': ['coalesce', ['get', 'area'], 0],
+    },
+    paint: {
+      'fill-color': leafColorExpr(t, 'fill'),
+      'fill-opacity': linZoom([
+        [z, 0.35],
+        [10, 0.55],
+        [12, 0.65],
+        [14, 0.55],
+      ]),
+      'fill-antialias': true,
+    },
+  };
+
+  // --- b) outline ------------------------------------------------------
+  // Mid-zoom only — at overview the fill alone reads, the outline
+  // would just add visual noise. Width + opacity ramp in together
+  // so the edge fades in rather than popping at z11.
+  const outlineLayer = {
+    id: 'carpathian_forest_outline',
+    type: 'line',
+    source: CARP_OSM,
+    'source-layer': 'forest_polygon',
+    minzoom: zOutline,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': leafColorExpr(t, 'outline'),
+      'line-width': expZoom([
+        [zOutline, 0.3],
+        [14, 0.6],
+        [17, 1.0],
+      ]),
+      'line-opacity': linZoom([
+        [zOutline, 0],
+        [12, 0.4],
+        [14, 0.55],
+      ]),
+    },
+  };
+
+  // --- c) protected-area accent ---------------------------------------
+  // Янтарна пунктирна обводка над біом-кольором. Filter is forgiving:
+  // either a real protect_class or a polygon explicitly tagged as a
+  // protected_area boundary (Карпатський заповідник carries both;
+  // smaller заказники sometimes only one).
+  const protectLayer = {
+    id: 'carpathian_forest_protect_outline',
+    type: 'line',
+    source: CARP_OSM,
+    'source-layer': 'forest_polygon',
+    minzoom: zProtect,
+    filter: [
+      'any',
+      ['has', 'protect_class'],
+      ['==', ['coalesce', ['get', 'protected_area'], 'no'], 'yes'],
+    ],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: {
+      'line-color': t.forestLeaf.protect.stroke,
+      'line-width': expZoom([
+        [zProtect, 0.6],
+        [12, 1.4],
+        [16, 2.4],
+      ]),
+      'line-dasharray': ['literal', [...t.forestLeaf.protect.dash]],
+      'line-opacity': 0.85,
+    },
+  };
+
+  // --- d) labels -------------------------------------------------------
+  // Named massifs only — and only above the zoom-aware area threshold
+  // from FOREST_LABEL.minAreaForName. The threshold is folded into a
+  // `step` expression keyed by zoom so MapLibre can evaluate it
+  // per-feature without us having to re-emit one layer per zoom band.
+  //
+  // The threshold ladder mirrors src/style/forest-leaf-tokens.js so
+  // the data layer remains the single source of truth — adding a new
+  // zoom anchor there flows through here automatically.
+  const minAreaStep = (() => {
+    const thresholds = t.forestLeaf.label.minAreaForName;
+    const keys = Object.keys(thresholds)
+      .map((k) => Number(k))
+      .sort((a, b) => a - b);
+    if (keys.length === 0) return 0;
+    // Build:
+    //   ['step', ['zoom'],
+    //     +Infinity,   // below the lowest key, never label
+    //     k0, thresholds[k0],
+    //     k1, thresholds[k1],
+    //     ...]
+    const out = ['step', ['zoom'], 1e18];
+    for (const k of keys) {
+      out.push(k, thresholds[k]);
+    }
+    return out;
+  })();
+
+  const labelLayer = {
+    id: 'carpathian_forest_label',
+    type: 'symbol',
+    source: CARP_OSM,
+    'source-layer': 'forest_polygon',
+    minzoom: zLabels,
+    filter: [
+      'all',
+      ['has', 'name'],
+      // Polygon area must clear the per-zoom threshold. `coalesce`
+      // protects against polygons that somehow lack the area tag
+      // (e.g. legacy builds where the Planetiler `feature.area`
+      // expression fell through to null).
+      ['>=', ['coalesce', ['get', 'area'], 0], minAreaStep],
+    ],
+    layout: {
+      'text-field': [
+        'coalesce',
+        ['get', 'name:uk'],
+        ['get', 'name:en'],
+        ['get', 'name'],
+      ],
+      'text-font': t.font.italic,
+      // Per-zoom italic curve scaled by the bundle's fontScale so a
+      // single tweak in forest-leaf-tokens.js retunes every zoom.
+      'text-size': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        9,  10 * t.forestLeaf.label.fontScale,
+        12, 12 * t.forestLeaf.label.fontScale,
+        16, 14 * t.forestLeaf.label.fontScale,
+      ],
+      'text-max-width': 8,
+      'symbol-placement': 'point',
+      // Negative-area sort key → larger massifs win collisions.
+      // Combined with the symbol-sort-key on the peak labels (which
+      // ranks by -ele) the priority cascade is:
+      //   peaks (very negative) > forest mass labels (~−5e7) > towns.
+      // That keeps "Угольский праліс" from ever shadowing "Говерла".
+      'symbol-sort-key': ['*', -1, ['coalesce', ['get', 'area'], 0]],
+      'text-padding': 6,
+    },
+    paint: {
+      'text-color': leafColorExpr(t, 'label'),
+      'text-halo-color': t.bg,
+      'text-halo-width': 1.2,
+      'text-halo-blur': 0.4,
+    },
+  };
+
+  return [fillLayer, outlineLayer, protectLayer, labelLayer];
+}

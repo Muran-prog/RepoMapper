@@ -296,6 +296,70 @@ layers:
             tag_value: piste:difficulty
 
   # -----------------------------------------------------------------------
+  # forest_polygon — managed (landuse=forest) and natural (natural=wood)
+  # forest masses in the Carpathian bbox, plus protected-area polygons
+  # so the style side can lay an amber-pinstripe over заповідники.
+  #
+  # The renderer (src/style/carpathian.js::forestPolygonLayers) reads
+  # these attributes to drive a leaf-type → fill cascade:
+  #
+  #   leaf_type           → primary signal (broadleaved | needleleaved
+  #                         | mixed | leafless)
+  #   wood (legacy)       → coniferous → needleleaved, deciduous →
+  #                         broadleaved, mixed → mixed
+  #   leaf_cycle          → evergreen + landuse=forest → needleleaved,
+  #                         deciduous → broadleaved
+  #
+  # Tile size guard: `min_size` drops crumbs at every zoom so the
+  # carpathian-osm.pmtiles archive doesn't bloat with noise polygons.
+  # The `area` attribute is computed in m² so the style side can sort
+  # large massifs first and label-gate by zoom-aware area thresholds
+  # (FOREST_LABEL.minAreaForName in src/style/forest-leaf-tokens.js).
+  # -----------------------------------------------------------------------
+  - id: forest_polygon
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 8
+        # 4 tile px — drops dust polygons at the lowest zoom while
+        # letting Planetiler's normal simplification handle higher zooms.
+        # Combined with the style-side `area` filter this gives clean
+        # overview reads (only > 50 km² massifs labelled at z8) and
+        # progressively finer detail toward z14.
+        min_size: 4
+        include_when:
+          __any__:
+            landuse: forest
+            natural: wood
+            boundary: protected_area
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: leaf_type
+            tag_value: leaf_type
+          - key: leaf_cycle
+            tag_value: leaf_cycle
+          - key: wood
+            tag_value: wood
+          - key: landuse
+            tag_value: landuse
+          - key: natural
+            tag_value: natural
+          - key: protect_class
+            tag_value: protect_class
+          - key: protected_area
+            tag_value: protected_area
+          # Area in square metres — used by the style for both
+          # `fill-sort-key` (large massifs paint first) and
+          # zoom-gated label visibility.
+          - key: area
+            value: '${feature.area("m2")}'
+
+  # -----------------------------------------------------------------------
   # cableway — aerialway=cable_car | gondola | chair_lift | drag_lift | etc.
   # -----------------------------------------------------------------------
   - id: cableway

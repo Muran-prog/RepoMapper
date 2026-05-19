@@ -245,6 +245,13 @@ export function sourceAvailability(sources) {
     bathymetry: 'bathymetry' in sources,
     ridges: 'ridges' in sources,
     carpathianOsm: 'carpathian-osm' in sources,
+    // Forest leaf-type polygons live INSIDE carpathian-osm.pmtiles
+    // (see tools/carpathian-profile.yml `forest_polygon` layer), so
+    // their availability is one-to-one with the parent vector source.
+    // The actual `features.forestLeafType` flag still gates emission
+    // in src/style/index.js — this just signals that the data is
+    // reachable in principle.
+    forestPolygon: 'carpathian-osm' in sources,
     contoursStatic: 'contours-static' in sources,
   };
 }

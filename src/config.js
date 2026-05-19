@@ -541,6 +541,21 @@ export const CARPATHIAN = Object.freeze({
      * the red wash adds noise without information.
      */
     slopeWarning: 11,
+    /**
+     * Forest leaf-type biom polygons (landuse=forest / natural=wood
+     * with leaf_type / leaf_cycle / wood / protect_class). The fill
+     * comes in early (z8) so the three Carpathian bands —
+     * needleleaved Чорногора, broadleaved Закарпаття, mixed slopes
+     * 800-1200 m — are readable on overview. Outlines, заповідник
+     * accents and named-massif labels enter at progressively deeper
+     * zooms so overview reads as a clean colour-band map without
+     * line / type clutter. Source-gated by features.forestLeafType
+     * AND availability of carpathian-osm; see src/style/index.js.
+     */
+    forestPolygons: 8,
+    forestOutline: 11,
+    forestProtect: 9,
+    forestLabels: 9,
   }),
   /** Exaggeration multiplier applied on top of TERRAIN.exaggerationStops. */
   exaggerationMul: 1.15,
@@ -678,6 +693,25 @@ export const FEATURES = Object.freeze({
    * general-purpose relief layer.
    */
   slopeWarning: false,
+
+  /**
+   * Forest leaf-type biom polygons — fill landuse=forest /
+   * natural=wood polygons by OSM leaf_type so the Carpathian
+   * coniferous / broadleaf bands read as distinct biom-colours
+   * (cool dark needleleaved Чорногора vs warm yellow-green
+   * broadleaved Угольки). Заповідні території get an amber dashed
+   * outline; named massifs get italic labels above zoom-aware area
+   * thresholds.
+   *
+   * Off by default — the source-layer `forest_polygon` is added by
+   * the latest tools/carpathian-profile.yml but is only present in
+   * the published archive once an operator has rebuilt and
+   * re-uploaded carpathian-osm.pmtiles. Once that happens, flip
+   * this on (here or via the UI toggle in the Relief panel) and
+   * the layers light up automatically. Source missing → silent
+   * no-op (graceful fallback in src/style/index.js).
+   */
+  forestLeafType: false,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */

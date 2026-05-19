@@ -69,7 +69,7 @@ async function main() {
   // Build a full MapLibre style object the same way createMap.js would.
   // Everything here is deterministic — no network, no DOM.
   // ---------------------------------------------------------------------
-  const buildStyle = ({ theme, profile, features, hypso, sourceStubs }) => {
+  const buildStyle = ({ theme, profile, features, hypso, sourceStubs, terrainOverride }) => {
     const cfg = getProfileConfig(profile);
 
     // Stub vector source — the validator only checks its shape.
@@ -95,6 +95,11 @@ async function main() {
       contours: features.contours && cfg.enableContours,
       ridgeOverlay: features.ridgeOverlay && cfg.enableRidgeOverlay,
       carpathian: features.carpathian && cfg.enableCarpathianOverlay,
+      // Forest leaf-type biom polygons share Carpathian capability —
+      // the source-layer lives inside carpathian-osm.pmtiles, so the
+      // umbrella enableCarpathianOverlay capability gates emission.
+      forestLeafType:
+        features.forestLeafType && cfg.enableCarpathianOverlay,
       globeProjection: features.globeProjection && cfg.enableGlobeProjection,
       hypsoRampId: hypso?.rampId ?? HYPSO.defaultRampId,
     };
@@ -102,6 +107,7 @@ async function main() {
     const sources = composeSources({
       vectorSource,
       features: effectiveFeatures,
+      ...(terrainOverride ? { terrain: terrainOverride } : {}),
     });
     if (sourceStubs) Object.assign(sources, sourceStubs);
     const has = sourceAvailability(sources);
@@ -179,6 +185,8 @@ async function main() {
       hasRidgesSource: has.ridges,
       carpathian: effectiveFeatures.carpathian,
       hasCarpathianOsmSource: has.carpathianOsm,
+      forestLeafType: effectiveFeatures.forestLeafType,
+      hasForestPolygonSource: has.forestPolygon,
     };
 
     // Inject a stub dynamic-contours source if the feature is on, since
@@ -369,6 +377,45 @@ async function main() {
       hypso: { mode: 'native' },
       stubCanopyHeightUrl: true,
       stubWorldcoverUrl: true,
+    },
+    // Forest leaf-type biom polygons. Without a carpathian-osm
+    // source the layers must NOT emit (graceful fallback); with the
+    // production URL plus the feature flag on, the four sub-layers
+    // (fill / outline / protect-outline / label) appear in the
+    // composed stack. The "no-source" pack explicitly clears
+    // `TERRAIN.carpathianOsm.url` to `null` so we exercise the real
+    // null-URL code path in `composeSources`, not just a
+    // missing-stub artefact.
+    {
+      name: 'forest-leaf-no-source',
+      flags: { carpathian: true, forestLeafType: true },
+      disableCarpathianOsmUrl: true,
+    },
+    {
+      name: 'forest-leaf-with-source',
+      flags: { carpathian: true, forestLeafType: true },
+      // Production URL is hardcoded in TERRAIN.carpathianOsm.url, so
+      // composeSources() picks the source up automatically — no stub
+      // needed. We still pin a stub here for parity with the trail
+      // matrix and so the test stays robust if the hardcoded URL is
+      // ever moved.
+      stubCarpathianOsmUrl: true,
+    },
+    // Cross-product: forestLeafType ON together with worldcover +
+    // canopy-height ON, so the composer's z-order ladder (water_fill
+    // → bathymetry → forest_polygon → SVF → texture → contours) is
+    // exercised end-to-end with every relevant overlay present.
+    {
+      name: 'forest-leaf-with-worldcover-canopy',
+      flags: {
+        carpathian: true,
+        forestLeafType: true,
+        worldcoverTint: true,
+        canopyHeightTint: true,
+      },
+      stubCarpathianOsmUrl: true,
+      stubWorldcoverUrl: true,
+      stubCanopyHeightUrl: true,
     },
     // Hypso-specific feature packs — every mode the renderer can pick.
     {
@@ -641,7 +688,19 @@ async function main() {
         maxzoom: 14,
       };
     }
-    return buildStyle({ theme, profile, features, hypso, sourceStubs });
+    // Optional terrain override — packs can synthesise a TERRAIN clone
+    // with one or more URLs blanked to test the graceful-fallback
+    // path. The override is shallow: every other terrain block keeps
+    // its production URL so the rest of the matrix exercises the real
+    // source-availability map.
+    let terrainOverride = null;
+    if (pack.disableCarpathianOsmUrl) {
+      terrainOverride = {
+        ...TERRAIN,
+        carpathianOsm: { ...TERRAIN.carpathianOsm, url: null },
+      };
+    }
+    return buildStyle({ theme, profile, features, hypso, sourceStubs, terrainOverride });
   }
 
   // ---------------------------------------------------------------------
@@ -890,6 +949,207 @@ async function main() {
   if (chFails > 0) failed += chFails;
 
   // ---------------------------------------------------------------------
+  // Forest leaf-type token dictionary sanity — every canonical leaf
+  // slot (needleleaved / broadleaved / mixed / leafless / unknown)
+  // must have well-formed `fill`, `outline` and `label` colours in
+  // BOTH light and dark variants. The protected-area accent must
+  // carry a hex stroke and a tuple-of-2 dasharray. Label-area
+  // thresholds must be a sane non-empty zoom→m² ladder.
+  // ---------------------------------------------------------------------
+  const {
+    FOREST_LEAF,
+    FOREST_PROTECT,
+    FOREST_LABEL,
+    FOREST_LEAF_KEYS,
+  } = await importEsm('src/style/forest-leaf-tokens.js');
+  console.log();
+  console.log('Forest leaf-type token dictionary sanity:');
+  let flFails = 0;
+  for (const variant of ['light', 'dark']) {
+    const bundle = FOREST_LEAF[variant];
+    if (!bundle || typeof bundle !== 'object') {
+      flFails++;
+      console.log(`  FAIL ${variant}: bundle is not an object`);
+      continue;
+    }
+    let bundleErrors = 0;
+    for (const slot of FOREST_LEAF_KEYS) {
+      const tok = bundle[slot];
+      if (!tok || typeof tok !== 'object') {
+        flFails++;
+        bundleErrors++;
+        console.log(`  FAIL ${variant}.${slot}: missing token`);
+        continue;
+      }
+      for (const role of ['fill', 'outline', 'label']) {
+        const hex = tok[role];
+        if (typeof hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
+          flFails++;
+          bundleErrors++;
+          console.log(`  FAIL ${variant}.${slot}.${role}: bad hex ${hex}`);
+        }
+      }
+    }
+    if (bundleErrors === 0) console.log(`  OK   ${variant} bundle (${FOREST_LEAF_KEYS.length} slots × 3 roles)`);
+    // Protected-area accent.
+    const prot = FOREST_PROTECT[variant];
+    if (!prot || typeof prot !== 'object') {
+      flFails++;
+      console.log(`  FAIL ${variant}.protect: missing accent`);
+    } else {
+      const stroke = prot.stroke;
+      if (typeof stroke !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(stroke)) {
+        flFails++;
+        console.log(`  FAIL ${variant}.protect.stroke: bad hex ${stroke}`);
+      }
+      const dash = prot.dash;
+      if (!Array.isArray(dash) || dash.length !== 2 || !dash.every((n) => typeof n === 'number' && n > 0)) {
+        flFails++;
+        console.log(`  FAIL ${variant}.protect.dash: not a [n, n] tuple`);
+      } else {
+        console.log(`  OK   ${variant}.protect: stroke ${stroke}, dash ${JSON.stringify(dash)}`);
+      }
+    }
+  }
+  // Label thresholds — keys must be ascending zoom integers, values
+  // must be strictly DECREASING m² thresholds (deeper zoom → smaller
+  // mass labelled). fontScale must be a positive number.
+  if (typeof FOREST_LABEL?.fontScale !== 'number' || FOREST_LABEL.fontScale <= 0) {
+    flFails++;
+    console.log(`  FAIL FOREST_LABEL.fontScale must be a positive number`);
+  }
+  const minAreaKeys = Object.keys(FOREST_LABEL?.minAreaForName ?? {})
+    .map((k) => Number(k))
+    .sort((a, b) => a - b);
+  if (minAreaKeys.length === 0) {
+    flFails++;
+    console.log(`  FAIL FOREST_LABEL.minAreaForName must not be empty`);
+  } else {
+    let lastVal = Number.POSITIVE_INFINITY;
+    let monotonic = true;
+    for (const k of minAreaKeys) {
+      const v = FOREST_LABEL.minAreaForName[k];
+      if (typeof v !== 'number' || v <= 0) {
+        flFails++;
+        monotonic = false;
+        console.log(`  FAIL FOREST_LABEL.minAreaForName[${k}]: not a positive number`);
+        break;
+      }
+      if (v >= lastVal) {
+        flFails++;
+        monotonic = false;
+        console.log(`  FAIL FOREST_LABEL.minAreaForName not strictly decreasing at z=${k}`);
+        break;
+      }
+      lastVal = v;
+    }
+    if (monotonic) {
+      console.log(
+        `  OK   FOREST_LABEL.minAreaForName: ${minAreaKeys
+          .map((k) => `z${k}→${FOREST_LABEL.minAreaForName[k]}m²`)
+          .join(', ')}`,
+      );
+    }
+  }
+  console.log(`Forest leaf-type tokens: ${flFails === 0 ? 'all OK' : `${flFails} FAILED`}`);
+  if (flFails > 0) failed += flFails;
+
+  // ---------------------------------------------------------------------
+  // Forest leaf-type LAYER invariants — graceful fallback + emission +
+  // ordering. Same pattern as the Carpathian trail invariants above:
+  //
+  //   • carpathianOsm.url=null AND forestLeafType=true →
+  //     NO carpathian_forest_* layers (graceful fallback).
+  //   • carpathianOsm.url=set  AND forestLeafType=true →
+  //     fill / outline / protect_outline / label all present, in
+  //     paint order.
+  //   • The fill paints AFTER water_fill (no leaf-type bleed into
+  //     water) and BEFORE roads/trails (so the trail web reads on
+  //     top of the biom-clusters).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Forest leaf-type layer invariants:');
+  let forestLayerFails = 0;
+  const forestIds = [
+    'carpathian_forest_fill',
+    'carpathian_forest_outline',
+    'carpathian_forest_protect_outline',
+    'carpathian_forest_label',
+  ];
+
+  // Graceful fallback — URL null, feature flag on.
+  const forestNoSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, carpathian: true, forestLeafType: true },
+    sourceStubs: {},
+    terrainOverride: {
+      ...TERRAIN,
+      carpathianOsm: { ...TERRAIN.carpathianOsm, url: null },
+    },
+  });
+  for (const id of forestIds) {
+    if (forestNoSourceStyle.layers.some((l) => l.id === id)) {
+      forestLayerFails++;
+      console.log(`  FAIL ${id} emitted with carpathianOsm.url=null (should be off)`);
+    } else {
+      console.log(`  OK   ${id} absent without source (graceful fallback)`);
+    }
+  }
+
+  // Emission — production URL, feature flag on.
+  const forestWithSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, carpathian: true, forestLeafType: true },
+    sourceStubs: {
+      'carpathian-osm': {
+        type: 'vector',
+        url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      },
+    },
+  });
+  const forestIdsByPos = forestWithSourceStyle.layers
+    .map((l, i) => ({ id: l.id, i }))
+    .filter((e) => forestIds.includes(e.id));
+  for (const id of forestIds) {
+    if (!forestIdsByPos.some((e) => e.id === id)) {
+      forestLayerFails++;
+      console.log(`  FAIL ${id} not emitted with carpathianOsm source present`);
+    } else {
+      console.log(`  OK   ${id} present`);
+    }
+  }
+  // Paint order: fill → outline → protect_outline → label.
+  const positions = forestIds
+    .map((id) => forestWithSourceStyle.layers.findIndex((l) => l.id === id));
+  if (positions.every((p) => p >= 0) &&
+      positions[0] < positions[1] &&
+      positions[1] < positions[2] &&
+      positions[2] < positions[3]) {
+    console.log('  OK   fill → outline → protect_outline → label order');
+  } else {
+    forestLayerFails++;
+    console.log(`  FAIL forest layers not in expected order: ${JSON.stringify(positions)}`);
+  }
+  // Z-order vs water_fill: forest fill paints AFTER water_fill so it
+  // overlays water-bordering land and won't ever bleed under a lake.
+  // (We also rely on this for the canopy-height stack interaction.)
+  const waterFillIdx = forestWithSourceStyle.layers.findIndex((l) => l.id === 'water_fill');
+  const fillIdx = positions[0];
+  if (waterFillIdx === -1 || fillIdx === -1) {
+    forestLayerFails++;
+    console.log(`  FAIL water_fill or forest_fill not found (water=${waterFillIdx}, fill=${fillIdx})`);
+  } else if (fillIdx > waterFillIdx) {
+    console.log(`  OK   forest_fill (idx ${fillIdx}) paints after water_fill (idx ${waterFillIdx})`);
+  } else {
+    forestLayerFails++;
+    console.log(`  FAIL forest_fill (idx ${fillIdx}) must paint AFTER water_fill (idx ${waterFillIdx})`);
+  }
+  console.log(`Forest leaf-type layer invariants: ${forestLayerFails === 0 ? 'all OK' : `${forestLayerFails} FAILED`}`);
+  if (forestLayerFails > 0) failed += forestLayerFails;
+
+  // ---------------------------------------------------------------------
   // Layer-level invariants — assert that the relief stack carries the
   // exact paint properties the renderer relies on. The style-spec
   // validator only checks that EACH property is well-formed; these
@@ -1012,6 +1272,15 @@ async function main() {
     profile: 'high',
     features: trailFeaturesOn,
     sourceStubs: {},
+    // The production TERRAIN.carpathianOsm.url is a real URL, so
+    // composeSources would otherwise add the carpathian-osm source
+    // unconditionally and the "no source" arm of this test would
+    // be a no-op. Override the URL to null to exercise the actual
+    // graceful-fallback code path.
+    terrainOverride: {
+      ...TERRAIN,
+      carpathianOsm: { ...TERRAIN.carpathianOsm, url: null },
+    },
   });
   const trailIds = [
     'carpathian_forest_road',

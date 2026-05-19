@@ -1,5 +1,6 @@
 import { WORLDCOVER_RAMPS } from './worldcover-ramps.js';
 import { CANOPY_RAMPS } from './canopy-height-ramps.js';
+import { FOREST_LEAF, FOREST_PROTECT, FOREST_LABEL } from './forest-leaf-tokens.js';
 
 /**
  * Design tokens — the colour palette and typography that drive the entire
@@ -303,6 +304,25 @@ const LIGHT = {
   // ramp is also consumed offline by `tools/dump-canopy-ramp.mjs`
   // when emitting the gdaldem colour table — never duplicated here.
   canopy: CANOPY_RAMPS.light,
+
+  // Carpathian forest leaf-type biom tokens. Bridge to the standalone
+  // `forest-leaf-tokens.js` dictionary; style modules read
+  // `t.forestLeaf.leaf.<slot>.{fill,outline,label}`,
+  // `t.forestLeaf.protect.{stroke,dash}`, and `t.forestLeaf.label.*`
+  // so the theme variant is resolved without branching. The data
+  // lives in forest-leaf-tokens.js — tokens.js is purely the
+  // theme-aware re-export.
+  //
+  // Note: this is a SEPARATE namespace from the `forest` token (a hex
+  // string used by `base.js` to fill the upstream OMT `landcover_wood`
+  // class). The new `forestLeaf` slot is consumed exclusively by
+  // `carpathian.js::forestPolygonLayers` for the Carpathian-overlay
+  // leaf-type biom-colour stack.
+  forestLeaf: Object.freeze({
+    leaf: FOREST_LEAF.light,
+    protect: FOREST_PROTECT.light,
+    label: FOREST_LABEL,
+  }),
 };
 
 const DARK = {
@@ -501,6 +521,20 @@ const DARK = {
   // L* delta so the multiply-blend lands legibly on the deep slate
   // canvas without re-saturating the greens.
   canopy: CANOPY_RAMPS.dark,
+
+  // Carpathian forest leaf-type biom tokens — dark variant. Same
+  // hue family as the light bundle, L* pulled ~18-22 % so the fill
+  // reads on the deep slate canvas without re-saturating against
+  // the hillshade. Label colours are LIFTED relative to the fill
+  // (instead of dropped, like in light theme) so they remain legible
+  // against the darker biom backdrop. See `t.forestLeaf` in LIGHT
+  // for the namespace rationale (avoids colliding with the existing
+  // `forest` hex slot consumed by `base.js`).
+  forestLeaf: Object.freeze({
+    leaf: FOREST_LEAF.dark,
+    protect: FOREST_PROTECT.dark,
+    label: FOREST_LABEL,
+  }),
 };
 
 export const TOKENS = Object.freeze({ light: LIGHT, dark: DARK });

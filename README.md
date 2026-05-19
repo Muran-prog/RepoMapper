@@ -138,6 +138,7 @@ URL-gated — turn it on by populating the relevant `TERRAIN.*.url` (or
 | Hillshade        | DEM (Mapzen / Carpathian)       | 6 — over hypso, under water_fill | `FEATURES.hillshade`            |
 | WorldCover landcover-tint | ESA 10 m landcover (2021 v200)  | 6a — over hillshade, under water_fill (multiply-blend over vector landuse) | `FEATURES.worldcoverTint`       |
 | Canopy height tint | ETH Global Canopy Height 10 m (Lang et al. 2023) | 6b — over WorldCover, under water_fill (modulates tree-cover by stand age) | `FEATURES.canopyHeightTint` |
+| Forest leaf-type | OSM leaf_type / wood / leaf_cycle in `forest_polygon` source-layer | 7b — over water_fill, under SVF / texture / trails (Carpathian biom-colouring) | `FEATURES.forestLeafType` |
 | Sky-View Factor  | WhiteboxTools SkyViewFactor     | 8 — over bathymetry, under texture | `FEATURES.skyViewFactor`        |
 | Texture shading  | Leland Brown α=0.8 raster       | 9 — pulls ridges + drainage forward | `FEATURES.textureShading`       |
 | Hypsometric tint | native color-relief / raster    | 5 — under hillshade (land mask)  | `FEATURES.hypsometricTint`      |
@@ -170,6 +171,20 @@ Notes:
   to relief state: hypso suppresses, WorldCover reinforces, both at
   once → conservative MIN. Build via `tools/build-canopy-height.sh`
   (CC BY 4.0).
+- **Forest leaf-type** paints `landuse=forest` / `natural=wood`
+  polygons in the Carpathian bbox by their OSM `leaf_type` tag
+  (with cascading fallbacks to `wood` and `leaf_cycle`). The four
+  canonical slots (needleleaved / broadleaved / mixed / leafless)
+  drive distinct biom-colours so Чорногора / Свидовець / Ґорґани
+  read as cool dark conifer, Закарпатські букові праліси as warm
+  yellow-green, mixed slopes as the in-between tone. Заповідники
+  carry an amber dashed outline; named massifs italic-labelled
+  above zoom-aware area thresholds. Stacks ABOVE water_fill (no
+  bleed into lakes) and BELOW SVF / texture / trails. Source lives
+  in the same `carpathian-osm.pmtiles` archive as trails — rebuild
+  via `tools/build-carpathian-osm.sh` after pulling the new
+  `forest_polygon` schema entry; until then the renderer's
+  graceful-fallback path keeps the layer absent.
 - **Slope-warning** uses the native `color-relief` layer driven by
   the `['slope']` expression — slopes ≥ 35° render in translucent
   red (configurable via `tokens.slopeWarning`). Runtimes that don't
@@ -191,11 +206,22 @@ dedicated pipeline:
 
 - 30 m Copernicus GLO-30 DEM (built locally — see `tools/`)
 - Custom Planetiler vector PMTiles with hiking_route / mountain_feature /
-  forest_road / ski_piste / cableway source-layers
+  forest_road / forest_polygon / ski_piste / cableway source-layers
 - Trail emphasis: light casing + dashed inline (red by default, recoloured
   per OSMC/colour tags)
 - Peak/pass/saddle labels with elevation, sorted by `rank` so taller
   peaks win collisions
+- **Forest leaf-type** — fill-окраска лісових масивів за OSM
+  `leaf_type` тегом. Хвойні Чорногори читаються холодним темним
+  смерековим зеленим, букові схили Гошку та Угольки — теплішим
+  жовто-зеленим, мішані смуги між ними — проміжним відтінком.
+  Заповідні території (Карпатський, Угольсько-Широколужанський,
+  Стужиця) обведені янтарним пунктиром; названі масиви підписані
+  курсивом італьянським шрифтом тільки понад zoom-залежні пороги
+  площі (z8 > 50 км², z14 > 1 км²). Включається через `Forest types`
+  в панелі «Рельєф» і вмикається після перебудови
+  `carpathian-osm.pmtiles` із новим source-layer `forest_polygon`
+  (див. `tools/README.md`).
 - Optional ridge/valley overlay extracted via WhiteboxTools
 - Imhof-style "serpentine halo" — extra-wide soft casing on
   primary/secondary/tertiary/minor inside the bbox at z ≥ 13
@@ -238,8 +264,10 @@ Cart/
 │   │   │                  #   composeSky / composeTerrain / composeProjection
 │   │   ├── worldcover-ramps.js # ESA WorldCover 11-class colour table (light/dark)
 │   │   ├── canopy-height-ramps.js # ETH canopy-height ramp [h_m, hex, alpha] (light/dark)
+│   │   ├── forest-leaf-tokens.js # Carpathian forest leaf-type biom palette (light/dark)
 │   │   ├── contours.js    # contour line + label specs (static & dynamic)
-│   │   ├── carpathian.js  # ridges, trails, peak/pass/saddle labels, cableway
+│   │   ├── carpathian.js  # ridges, trails, peak/pass/saddle labels, cableway,
+│   │   │                  #   forestPolygonLayers (leaf-type biom polygons)
 │   │   ├── roads.js       # 14-class table; lane-scaling, surface variants,
 │   │   │                  #   subclass splits (cycleway/footway/steps),
 │   │   │                  #   Carpathian double-casing
