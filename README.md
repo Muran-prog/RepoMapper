@@ -136,6 +136,7 @@ URL-gated — turn it on by populating the relevant `TERRAIN.*.url` (or
 | Layer            | Source                          | Z-order slot                     | Toggle                          |
 | ---------------- | ------------------------------- | -------------------------------- | ------------------------------- |
 | Hillshade        | DEM (Mapzen / Carpathian)       | 6 — over hypso, under water_fill | `FEATURES.hillshade`            |
+| WorldCover landcover-tint | ESA 10 m landcover (2021 v200)  | 6a — over hillshade, under water_fill (multiply-blend over vector landuse) | `FEATURES.worldcoverTint`       |
 | Sky-View Factor  | WhiteboxTools SkyViewFactor     | 8 — over bathymetry, under texture | `FEATURES.skyViewFactor`        |
 | Texture shading  | Leland Brown α=0.8 raster       | 9 — pulls ridges + drainage forward | `FEATURES.textureShading`       |
 | Hypsometric tint | native color-relief / raster    | 5 — under hillshade (land mask)  | `FEATURES.hypsometricTint`      |
@@ -150,6 +151,14 @@ Notes:
 - **Sky-View Factor** is rendered as a multiplicative greyscale wash
   via `raster-saturation: -1`. It darkens narrow valleys, cirque
   edges and rock terraces hillshade smears out at low azimuths.
+- **WorldCover landcover-tint** paints the ESA 10 m global classification
+  (Tree / Shrub / Grass / Crop / Built-up / Bare / Snow / Wetland /
+  Moss-lichen) as a multiply-blend overlay above the hillshade and below
+  the vector water polygons, so coniferous Чорногора reads darker than
+  deciduous Гошку, polonyna grass glows yellow-green, and скельні
+  поясочки read as warm sand. Opacity rescales when hypso is active so
+  the elevation tint stays the dominant signal. Build via
+  `tools/build-worldcover.sh` (CC BY 4.0).
 - **Slope-warning** uses the native `color-relief` layer driven by
   the `['slope']` expression — slopes ≥ 35° render in translucent
   red (configurable via `tokens.slopeWarning`). Runtimes that don't
@@ -213,7 +222,9 @@ Cart/
 │   │   ├── sources.js     # composeSources() — pure source-dict builder
 │   │   ├── base.js        # background, landcover, water (split fill/way)
 │   │   ├── terrain.js     # hillshade × N, texture, hypso delegate, bathymetry,
+│   │   │                  #   composeWorldcoverLayer (ESA landcover-tint),
 │   │   │                  #   composeSky / composeTerrain / composeProjection
+│   │   ├── worldcover-ramps.js # ESA WorldCover 11-class colour table (light/dark)
 │   │   ├── contours.js    # contour line + label specs (static & dynamic)
 │   │   ├── carpathian.js  # ridges, trails, peak/pass/saddle labels, cableway
 │   │   ├── roads.js       # 14-class table; lane-scaling, surface variants,
@@ -250,11 +261,13 @@ Cart/
     ├── build-texture-shading.sh   # Leland Brown α=0.8 → raster PMTiles
     ├── build-hypso.sh             # gdaldem color-relief per ramp preset
     ├── build-bathymetry.sh        # GEBCO 2024 seabed tint, joins at 0 m
-    ├── build-contours.sh          # gdal_contour + tippecanoe → PMTiles
-    ├── build-ridges.sh            # WhiteboxTools FindRidges → PMTiles
-    ├── build-carpathian-osm.sh    # Planetiler with custom profile
-    ├── carpathian-profile.yml     # Planetiler schema
-    ├── dump-ramp.mjs              # Node ramp-table parser (CIELAB densifier)
+    ├── build-worldcover.sh         # ESA WorldCover 10 m landcover-tint
+    ├── build-contours.sh           # gdal_contour + tippecanoe → PMTiles
+    ├── build-ridges.sh             # WhiteboxTools FindRidges → PMTiles
+    ├── build-carpathian-osm.sh     # Planetiler with custom profile
+    ├── carpathian-profile.yml      # Planetiler schema
+    ├── dump-ramp.mjs               # Node ramp-table parser (CIELAB densifier)
+    ├── dump-worldcover-ramp.mjs    # Node WorldCover colour-table emitter
     ├── smoke-hypso.mjs            # headless paint-property smoke test
     └── README.md
 ```
@@ -335,6 +348,7 @@ correctness (`sky`, `terrain`, `projection`).
 - Satellite mode (default): Sentinel-2 cloudless 2024 by [EOX IT Services GmbH](https://s2maps.eu) (Contains modified Copernicus Sentinel data 2024)
 - Satellite mode (legacy fallback): © [Esri World Imagery](https://www.esri.com/) — Maxar, Earthstar Geographics, GIS User Community
 - Texture shading: Leland Brown (CC BY)
+- ESA WorldCover 10 m 2021 v200: © [ESA WorldCover project](https://esa-worldcover.org) / VITO / Brockmann Consult / CS / Gamma Remote Sensing / IIASA / WUR (CC BY 4.0)
 - Sky-View Factor: [WhiteboxTools](https://www.whiteboxgeo.com/) (Lindsay)
 - Ridge extraction: [WhiteboxTools](https://www.whiteboxgeo.com/geospatial-software/)
 - Tile pipeline: [Planetiler](https://github.com/onthegomap/planetiler), [tippecanoe](https://github.com/felt/tippecanoe), [maplibre-contour](https://github.com/onthegomap/maplibre-contour)

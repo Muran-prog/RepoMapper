@@ -428,7 +428,103 @@ export function skyViewFactorLayers(_t, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Slope-warning overlay.
+// ESA WorldCover landcover-tint overlay.
+//
+// Multiply-blend raster painted on top of the hillshade stack so the
+// underlying landuse polygons get supplemented by the actual 10 m
+// satellite classification. Reads from the colour table baked into
+// `worldcover-ramps.js` via the offline `tools/dump-worldcover-ramp.mjs`
+// pipeline, so the rendered tile pixels and the live tokens stay in
+// lock-step at every theme.
+//
+// MapLibre doesn't expose a literal "multiply" blend mode for raster
+// layers, so we approximate it with:
+//
+//   • Low opacity ceiling (~0.32 default; ~0.18 when hypso is active)
+//     so the underlying landuse / hillshade still reads through.
+//   • `raster-saturation: -0.15` to take the edge off the ramp's
+//     already low-saturation hex values.
+//   • `raster-contrast: +0.05` to keep classes distinguishable after
+//     opacity dampening.
+//   • Z-order placement above hillshade and below texture-shading
+//     (handled by `composeLayers` — see src/style/index.js).
+// ---------------------------------------------------------------------------
+
+import { WORLDCOVER_OPACITY } from './worldcover-ramps.js';
+
+/**
+ * @typedef {object} WorldcoverOpts
+ * @property {boolean} [hypsoActive=false]
+ *           When true, scale the opacity ceiling down to
+ *           `WORLDCOVER_OPACITY.hypsoActive` so the elevation tint
+ *           stays the dominant colour signal.
+ * @property {boolean} [reduceMotion=false]
+ *           When true, collapse the zoom-driven opacity curve to a
+ *           static value (the curve's mid-zoom peak).
+ */
+
+/**
+ * Build the WorldCover landcover-tint layer.
+ *
+ * Source: `'worldcover'` (added by `composeSources` when
+ * `features.worldcoverTint` is true and `TERRAIN.worldcover.url` is
+ * set). The layer is silently skipped by `composeLayers` when the
+ * source isn't present, so this factory always returns a single
+ * layer spec without worrying about availability itself.
+ *
+ * @param {object} _t
+ * @param {WorldcoverOpts} [opts]
+ * @returns {Array<object>}
+ */
+export function composeWorldcoverLayer(_t, opts = {}) {
+  const { hypsoActive = false, reduceMotion = false } = opts;
+  // Shape the zoom curve so the overlay is a hint at the country
+  // overview (z6-9), reads at full strength in the regional / hiking
+  // zoom band (z11-15) and fades out at deep zooms where roads, POIs
+  // and labels need the cleanest possible base.
+  //
+  // The peak is rescaled to `WORLDCOVER_OPACITY.hypsoActive` when the
+  // elevation tint is on so the two never compete for the same hue
+  // budget. Both curves preserve the same shape so the user perceives
+  // a smooth dampening rather than a sudden drop.
+  const peak = hypsoActive
+    ? WORLDCOVER_OPACITY.hypsoActive
+    : WORLDCOVER_OPACITY.default;
+  // Linear scale relative to the default 0.32 peak so the high-zoom
+  // fade-out behaves the same in both regimes.
+  const scale = peak / WORLDCOVER_OPACITY.default;
+  const opacityStops = [
+    [6, 0.15 * scale],
+    [9, 0.28 * scale],
+    [12, 0.32 * scale],
+    [15, 0.32 * scale],
+    [18, 0.22 * scale],
+  ];
+  // Reduce-motion: pin to the mid-zoom peak. Static, no animation.
+  const opacity = reduceMotion ? 0.32 * scale : linZoom(opacityStops);
+  return [
+    {
+      id: 'worldcover-tint',
+      type: 'raster',
+      source: 'worldcover',
+      minzoom: 6,
+      maxzoom: 22,
+      paint: {
+        'raster-opacity': opacity,
+        // Slightly desaturate so the ramp colours stay quiet under
+        // multiply-style blending — the per-class tints in
+        // worldcover-ramps.js are already low-saturation, this just
+        // takes the last edge off.
+        'raster-saturation': -0.15,
+        // Small positive contrast to keep classes distinguishable
+        // after the opacity curve clamps the wash to ~0.32.
+        'raster-contrast': 0.05,
+        'raster-hue-rotate': 0,
+        'raster-resampling': 'linear',
+      },
+    },
+  ];
+}
 //
 // Native `color-relief` layer driven by the `['slope']` expression
 // (MapLibre 5.6+). Reads the carpathian high-resolution DEM when

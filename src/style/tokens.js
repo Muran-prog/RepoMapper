@@ -1,3 +1,5 @@
+import { WORLDCOVER_RAMPS } from './worldcover-ramps.js';
+
 /**
  * Design tokens — the colour palette and typography that drive the entire
  * style system. Everything else in src/style/ consumes tokens from here, so
@@ -285,6 +287,13 @@ const LIGHT = {
     mid:    'rgba(255, 40, 20, 0.45)',
     severe: 'rgba(180, 0, 0, 0.60)',
   },
+
+  // ESA WorldCover landcover-tint ramp — bridge to the standalone
+  // `worldcover-ramps.js` dictionary. Tokens never duplicate the data,
+  // they just expose it under the theme-specific slot so style modules
+  // resolving via `getTokens(theme).worldcover` get the right variant
+  // without branching on theme.
+  worldcover: WORLDCOVER_RAMPS.light,
 };
 
 const DARK = {
@@ -472,6 +481,11 @@ const DARK = {
     mid:    'rgba(255, 70, 40, 0.50)',
     severe: 'rgba(220, 30, 20, 0.65)',
   },
+
+  // ESA WorldCover landcover-tint ramp — dark variant. Same hue family
+  // as the light theme but pulled ~15-20% darker so the multiply-blend
+  // overlay reads on the deep slate canvas without re-saturating.
+  worldcover: WORLDCOVER_RAMPS.dark,
 };
 
 export const TOKENS = Object.freeze({ light: LIGHT, dark: DARK });

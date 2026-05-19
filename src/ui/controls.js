@@ -53,6 +53,10 @@ const ICONS = {
   // 1.75-stroke vocabulary as the rest of the bar so the new button reads
   // as a peer rather than an alien addition.
   draw: DRAW_ICONS.dock,
+  // Two-tree landcover glyph used by the WorldCover relief toggle. Same
+  // 1.75-stroke vocabulary as the rest of the relief icons so the row
+  // reads as a peer of the hillshade / hypso / texture toggles.
+  landcover: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 16 L8.5 8 L12 16 Z"/><line x1="8.5" y1="16" x2="8.5" y2="19"/><path d="M13 16 L16.5 6 L20 16 Z"/><line x1="16.5" y1="16" x2="16.5" y2="19"/></svg>`,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
   sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="18.9" y2="18.9"/><line x1="5.1" y1="18.9" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="18.9" y2="5.1"/></svg>`,
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
@@ -63,6 +67,41 @@ const ICONS = {
   // Single-stroke chevron pair so it reads as "reveal a stack".
   controlsChev: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9 L12 14 L17 9"/><path d="M7 15 L12 20 L17 15" opacity="0.5"/></svg>`,
 };
+
+// ---------------------------------------------------------------------------
+// Persisted feature flags.
+//
+// Most relief feature flags are device-profile-driven and reset to
+// FEATURES defaults on every cold boot. The Land cover overlay is
+// special: the operator points TERRAIN.worldcover.url at a hosted
+// archive once and then the user's on/off choice should survive a
+// reload (otherwise the toggle reads as "off by default" forever
+// even after they enable it). Stored under a per-feature key so we
+// can grow the set without churning the schema of `cart:ui:prefs:v1`.
+// ---------------------------------------------------------------------------
+
+const WORLDCOVER_TINT_PREF_KEY = 'cart:features:worldcoverTint';
+
+function loadWorldcoverTintPref(fallback) {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = window.localStorage?.getItem(WORLDCOVER_TINT_PREF_KEY);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveWorldcoverTintPref(value) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage?.setItem(WORLDCOVER_TINT_PREF_KEY, value ? '1' : '0');
+  } catch {
+    /* quota / serialise — best-effort */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // MapLibre-native controls (top-right column) + collapse anchor.
@@ -418,6 +457,13 @@ function renderReliefPanelBody() {
         <label class="row"><span>Батиметрия</span><input type="checkbox" data-ctl="bathymetry"></label>
         <label class="row"><span>Текстурное затенение</span><input type="checkbox" data-ctl="textureShading"></label>
         <label class="row"><span>Sky-View Factor</span><input type="checkbox" data-ctl="skyViewFactor"></label>
+        <label class="row" data-ctl-row="worldcoverTint">
+          <span class="worldcover-label">
+            ${ICONS.landcover}
+            <span>Land cover</span>
+          </span>
+          <input type="checkbox" data-ctl="worldcoverTint">
+        </label>
         <label class="row" data-ctl-row="slopeWarning">
           <span class="slope-warn-label">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -862,6 +908,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       bathymetry: FEATURES.bathymetry,
       textureShading: FEATURES.textureShading,
       skyViewFactor: FEATURES.skyViewFactor,
+      worldcoverTint: loadWorldcoverTintPref(FEATURES.worldcoverTint),
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
@@ -997,6 +1044,12 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     el.checked = !!state.layerFeatures[key];
     el.addEventListener('change', async () => {
       state.layerFeatures[key] = el.checked;
+      // The Land cover toggle is the one feature whose user choice
+      // outlives the page — persist it through `cart:features:*`
+      // keys so a refresh restores the user's selection. Other
+      // feature toggles intentionally reset to FEATURES defaults
+      // each cold boot (they're tied to the device profile).
+      if (key === 'worldcoverTint') saveWorldcoverTintPref(el.checked);
       // Any user-driven change to one of the four managed flags is
       // the natural deactivation signal for the Flat hypso preset —
       // the computed predicate handles that automatically here.
@@ -1014,6 +1067,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('bathymetry');
   wireToggle('textureShading');
   wireToggle('skyViewFactor');
+  wireToggle('worldcoverTint');
   wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');

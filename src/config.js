@@ -287,6 +287,45 @@ export const TERRAIN = Object.freeze({
     maxzoom: 14,
     attribution: 'SVF: <a href="https://www.whiteboxgeo.com/" target="_blank" rel="noopener">WhiteboxTools</a> (Lindsay)',
   }),
+
+  /**
+   * ESA WorldCover landcover-tint — pre-rendered raster PMTiles archive
+   * built from the ESA + VITO 10 m global landcover product (v200, 2021).
+   * The build pipeline (`tools/build-worldcover.sh`) gdaldems each
+   * 3°×3° AWS Open Data tile through the colour table emitted by
+   * `tools/dump-worldcover-ramp.mjs`, mosaics the results in EPSG:3857,
+   * and tiles 6-13 → PMTiles.
+   *
+   * The renderer composes a multiply-blend raster layer over the
+   * vector landuse polygons so forest / grass / cropland / built-up /
+   * bare-rock surfaces read by their actual satellite-classified
+   * colour rather than as one flat green polygon.
+   *
+   * Stays disabled until the operator points `url` at a real archive
+   * — the source/layer composer in `sources.js` + `terrain.js` skip
+   * the layer entirely when `url === null`, keeping the validator
+   * green and the cold-boot render byte-identical to the previous
+   * version.
+   *
+   * License: ESA WorldCover 10 m 2021 v200 is published under
+   * **CC BY 4.0**. The attribution string below is rendered in the
+   * MapLibre attribution control whenever the source is active.
+   */
+  worldcover: Object.freeze({
+    // Carpathian WorldCover landcover-tint published from the repo's
+    // gh-pages branch — same hosting model as carpathian-osm.pmtiles.
+    // 80 MB, zoom 6-13, bbox 22.0,47.6,27.0,49.5. Built locally from
+    // the AWS Open Data ESA WorldCover bucket via
+    // tools/build-worldcover.sh and committed as a static binary so
+    // deploys stay turn-key. raw.githubusercontent.com supports HTTP
+    // Range requests, so the pmtiles:// protocol works directly.
+    url: 'pmtiles://https://raw.githubusercontent.com/Muran-prog/RepoMapper/gh-pages/carpathian-worldcover.pmtiles',
+    tileSize: 256,
+    minzoom: 6,
+    maxzoom: 13,
+    attribution:
+      '<a href="https://esa-worldcover.org" target="_blank" rel="noopener">ESA WorldCover 10m 2021 v200</a> · CC BY 4.0',
+  }),
 });
 
 /**
@@ -568,6 +607,21 @@ export const FEATURES = Object.freeze({
    * Source missing → silent no-op (graceful fallback in sources.js).
    */
   skyViewFactor: false,
+
+  /**
+   * ESA WorldCover landcover-tint — multiply-blend raster overlay
+   * driven by the 10 m global classification (Tree / Shrub / Grass /
+   * Crop / Built-up / Bare / Snow / Water / Wetland / Mangrove /
+   * Moss-lichen). Backed by the gh-pages PMTiles archive configured
+   * in `TERRAIN.worldcover.url`. Default ON now that the archive is
+   * published; users can toggle it off via the Relief panel and the
+   * choice survives reload through `cart:features:worldcoverTint`.
+   *
+   * Source missing → silent no-op (graceful fallback in sources.js
+   * and the layer composer), so any custom build that points the URL
+   * at `null` keeps rendering identically to its previous version.
+   */
+  worldcoverTint: true,
 
   /**
    * Slope-warning overlay — paints slopes ≥ 35° in translucent red so

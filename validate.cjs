@@ -87,6 +87,7 @@ async function main() {
       terrain3D: features.terrain3D && cfg.enableTerrain3D,
       textureShading: features.textureShading && cfg.enableTextureShading,
       skyViewFactor: features.skyViewFactor && cfg.enableTextureShading,
+      worldcoverTint: features.worldcoverTint,
       slopeWarning: features.slopeWarning,
       hypsometricTint: features.hypsometricTint && cfg.enableHypsoTint,
       bathymetry: features.bathymetry && cfg.enableHypsoTint,
@@ -148,6 +149,8 @@ async function main() {
       hasTextureSource: has.textureShading,
       skyViewFactor: effectiveFeatures.skyViewFactor,
       hasSkyViewFactorSource: has.skyViewFactor,
+      worldcoverTint: effectiveFeatures.worldcoverTint,
+      hasWorldcoverSource: has.worldcoverTint,
       slopeWarning: effectiveFeatures.slopeWarning,
       // The style-spec validator we ship for CI doesn't yet recognise
       // the `['slope']` expression input (added to MapLibre 5.6 after
@@ -290,6 +293,26 @@ async function main() {
       flags: { slopeWarning: true, carpathian: true },
       stubCarpathianOsmUrl: true,
       stubCarpathianDemUrl: true,
+    },
+    // ESA WorldCover landcover-tint — multiply-blend overlay above
+    // hillshade. Without a source: layer NOT emitted (graceful
+    // fallback). With a source AND hypsometric tint OFF: full-opacity
+    // curve. With a source AND hypsometric tint ON: opacity rescaled
+    // down so the elevation tint stays the dominant signal.
+    {
+      name: 'worldcover-no-source',
+      flags: { worldcoverTint: true },
+    },
+    {
+      name: 'worldcover-with-source-no-hypso',
+      flags: { worldcoverTint: true, hypsometricTint: false },
+      stubWorldcoverUrl: true,
+    },
+    {
+      name: 'worldcover-with-source-with-hypso',
+      flags: { worldcoverTint: true, hypsometricTint: true, colorRelief: true },
+      hypso: { mode: 'native' },
+      stubWorldcoverUrl: true,
     },
     // Hypso-specific feature packs — every mode the renderer can pick.
     {
@@ -534,6 +557,15 @@ async function main() {
         maxzoom: 14,
       };
     }
+    if (pack.stubWorldcoverUrl) {
+      sourceStubs['worldcover'] = {
+        type: 'raster',
+        url: 'pmtiles://https://example.com/worldcover.pmtiles',
+        tileSize: 256,
+        minzoom: 6,
+        maxzoom: 13,
+      };
+    }
     if (pack.stubCarpathianDemUrl) {
       sourceStubs['terrain-dem-carpathian'] = {
         type: 'raster-dem',
@@ -629,6 +661,69 @@ async function main() {
     console.log(`  FAIL fallback ramp '${FALLBACK_RAMP_ID}' is missing from RAMPS`);
   }
   console.log(`Total ramps: ${Object.keys(RAMPS).length}   Failed: ${rampFails}`);
+
+  // ---------------------------------------------------------------------
+  // ESA WorldCover ramp sanity — every canonical class must have a
+  // colour in BOTH light and dark variants, water (80) must be
+  // transparent in both, and every non-transparent value must be a
+  // well-formed `#rrggbb`.
+  // ---------------------------------------------------------------------
+  const {
+    WORLDCOVER_RAMPS,
+    WORLDCOVER_CLASSES,
+    WORLDCOVER_OPACITY,
+  } = await importEsm('src/style/worldcover-ramps.js');
+  console.log();
+  console.log('WorldCover ramp dictionary sanity:');
+  let wcFails = 0;
+  for (const variant of ['light', 'dark']) {
+    const ramp = WORLDCOVER_RAMPS[variant];
+    const errs = [];
+    if (!ramp || typeof ramp !== 'object') {
+      errs.push(`${variant}: not an object`);
+    } else {
+      for (const value of WORLDCOVER_CLASSES) {
+        const hex = ramp[value];
+        if (typeof hex !== 'string' || hex.length === 0) {
+          errs.push(`${variant}: missing colour for class ${value}`);
+          continue;
+        }
+        if (value === 80) {
+          if (hex !== 'transparent') {
+            errs.push(`${variant}: class 80 (water) must be 'transparent', got ${hex}`);
+          }
+          continue;
+        }
+        if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+          errs.push(`${variant}: bad hex for class ${value}: ${hex}`);
+        }
+      }
+    }
+    if (errs.length === 0) {
+      console.log(`  OK   ${variant}`);
+    } else {
+      wcFails += errs.length;
+      for (const e of errs) console.log(`  FAIL ${e}`);
+    }
+  }
+  // Opacity ceilings must obey: hypsoActive < default (so the elevation
+  // tint stays the dominant signal when both are on).
+  if (
+    typeof WORLDCOVER_OPACITY?.default !== 'number' ||
+    typeof WORLDCOVER_OPACITY?.hypsoActive !== 'number' ||
+    !(WORLDCOVER_OPACITY.hypsoActive < WORLDCOVER_OPACITY.default)
+  ) {
+    wcFails++;
+    console.log(
+      `  FAIL WORLDCOVER_OPACITY must satisfy hypsoActive < default (got ${JSON.stringify(WORLDCOVER_OPACITY)})`,
+    );
+  } else {
+    console.log(
+      `  OK   WORLDCOVER_OPACITY: default=${WORLDCOVER_OPACITY.default}, hypsoActive=${WORLDCOVER_OPACITY.hypsoActive}`,
+    );
+  }
+  console.log(`WorldCover ramps: ${wcFails === 0 ? 'all OK' : `${wcFails} FAILED`}`);
+  if (wcFails > 0) failed += wcFails;
 
   // ---------------------------------------------------------------------
   // Layer-level invariants — assert that the relief stack carries the

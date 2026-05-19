@@ -131,6 +131,18 @@ export function composeSources({
     const svf = toRasterPmtilesSource(terrain.skyViewFactor);
     if (svf) sources['sky-view-factor'] = svf;
   }
+
+  // ESA WorldCover landcover-tint — pre-rendered 10 m classification
+  // raster. Source-gated: `terrain.worldcover.url === null` means the
+  // operator hasn't run `tools/build-worldcover.sh` yet, so we don't
+  // emit the source. The layer composer in `terrain.js` then skips
+  // the layer entirely (graceful fallback). When wired, the source
+  // is consumed by `composeWorldcoverLayer` as a multiply-blend
+  // overlay above hillshade and below texture-shading.
+  if (features.worldcoverTint) {
+    const wc = toRasterPmtilesSource(terrain.worldcover);
+    if (wc) sources['worldcover'] = wc;
+  }
   if (features.hypsometricTint) {
     // The hypso subsystem has two paths. When the native color-relief
     // layer is available we don't need ANY raster source — the DEM
@@ -213,6 +225,7 @@ export function sourceAvailability(sources) {
     carpathianDem: 'terrain-dem-carpathian' in sources,
     textureShading: 'texture-shading' in sources,
     skyViewFactor: 'sky-view-factor' in sources,
+    worldcoverTint: 'worldcover' in sources,
     hypsometricTint: 'hypso-tint' in sources,
     hypsoRasterRampId: rasterRampId,
     bathymetry: 'bathymetry' in sources,

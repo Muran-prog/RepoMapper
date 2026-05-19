@@ -2,7 +2,7 @@
 
 These scripts produce the optional PMTiles archives referenced by
 `src/config.js` (TERRAIN.carpathian, TERRAIN.textureShading, TERRAIN.hypsometric,
-TERRAIN.skyViewFactor, TERRAIN.ridges, TERRAIN.carpathianOsm,
+TERRAIN.skyViewFactor, TERRAIN.worldcover, TERRAIN.ridges, TERRAIN.carpathianOsm,
 CONTOURS.staticPmtilesUrl).
 
 **The map runs perfectly without any of them.** The baseline
@@ -16,6 +16,7 @@ maplibre-contour. The PMTiles archives below add region-specific detail:
 | `carpathian-glo30.pmtiles`    | 30 m DSM, free for any use including commercial (Copernicus). Includes canopy. | `build-carpathian-dem.sh`       |
 | `ukraine-texture-shading.pmtiles` | Leland Brown α=0.8 ridge/canyon emphasis          | `build-texture-shading.sh`      |
 | `carpathian-svf.pmtiles`      | Sky-View Factor wash — multiplies darkening into canyons / cirques / rock terraces | `build-svf.sh`                  |
+| `<region>-worldcover.pmtiles` | ESA WorldCover 10 m landcover-tint multiply-blend overlay (forest / grass / cropland / built-up / bare / snow read by their actual satellite class) | `build-worldcover.sh`           |
 | `<ramp>-<theme>-hypso.pmtiles` | Per-ramp pre-rendered hypsometric tint (raster fallback for the native color-relief layer) | `build-hypso.sh --ramp=<id>` |
 | `black-sea-bathy.pmtiles`     | GEBCO 2024 seabed tint, joins seamlessly at 0 m       | `build-bathymetry.sh`           |
 | `carpathian-contours.pmtiles` | Pre-baked contours (lighter on CPU than dynamic)      | `build-contours.sh`             |
@@ -96,6 +97,7 @@ to match so the attribution and licensing disclaimer track the build.
 | build-carpathian-fabdem.sh     | `gdal` ≥ 3.4, `rio-rgbify`, `pmtiles`, manual FABDEM download (`FABDEM_DIR`)          |
 | build-texture-shading.sh       | `python3`, `numpy`, `scipy`, `rasterio`, `rio-mbtiles`, `pmtiles`                     |
 | build-svf.sh                   | `whitebox_tools`, `python3`, `numpy`, `rasterio`, `rio-mbtiles`, `pmtiles`            |
+| build-worldcover.sh            | `aws` (AWS CLI v2, anonymous), `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18    |
 | build-hypso.sh                 | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18 (runs `dump-ramp.mjs`)            |
 | build-bathymetry.sh            | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18, GEBCO 2024 source TIFF (`$GEBCO`) |
 | build-contours.sh              | `gdal`, `tippecanoe` (Felt fork), `pmtiles`                                           |
@@ -178,6 +180,36 @@ download `planetiler.jar`, drop it next to the scripts (or set `PLANETILER_JAR`)
 - `--ramp=all` builds every preset; `--theme=both` builds light + dark
   variants. Add the resulting URLs to `HYPSO.rasterUrls` in
   `src/config.js` for the runtime raster-fallback path.
+
+### WorldCover landcover-tint
+
+- ESA WorldCover 10 m global landcover product (v200, 2021), distributed
+  via the AWS Open Data registry at `s3://esa-worldcover/v200/2021/map/`.
+  Anonymous access — no AWS credentials required (the build script uses
+  `aws s3 cp --no-sign-request`).
+- Tile naming: `ESA_WorldCover_10m_2021_v200_<lat><lon>_Map.tif` covers a
+  3° × 3° block keyed by its south-west corner (e.g. `N48E021`). The
+  Ukraine bbox needs ~30 tiles (~250 MB compressed raw). Final PMTiles
+  is ~30 MB after gdaldem + rio-mbtiles + pmtiles convert at zoom 6-13.
+- Colour table is emitted by `tools/dump-worldcover-ramp.mjs`, which
+  reads `src/style/worldcover-ramps.js` directly so the offline raster
+  pixels match the live MapLibre tokens at every theme. Adding a class
+  is one edit to one file. Run `tools/dump-worldcover-ramp.mjs --list-classes`
+  to see the canonical class table.
+- License: **CC BY 4.0**, ESA / VITO / Brockmann Consult / CS / Gamma
+  Remote Sensing / IIASA / WUR. Attribution is required wherever the
+  resulting tiles are rendered. The renderer's source descriptor in
+  `TERRAIN.worldcover.attribution` carries the canonical attribution
+  string and the MapLibre attribution control surfaces it whenever the
+  source is active.
+- The water class (value 80) is rendered transparent so the vector
+  `water_polygon` layer remains the canonical land-mask. The renderer
+  also stacks the raster BELOW `water_fill` in z-order — defence in
+  depth so coastline approximations never tint blue.
+- Defaults: `--region=ukraine` (Pan-Ukraine bbox), `--theme=both`
+  (light + dark colour tables). Pass `--region=carpathian` for the
+  Carpathian-only build (~30 MB raw) or `--bbox=W,S,E,N` for an
+  arbitrary AOI.
 
 ### Bathymetry (GEBCO 2024)
 

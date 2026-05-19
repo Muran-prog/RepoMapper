@@ -11,6 +11,7 @@
  *   4. parks                      — green polygons + outline
  *   5. hypsometric tint           — color-relief or raster, covers all land
  *   6. hillshade stack            — 1× or 3× (Swiss-style) + Carpathian
+ *   6a. worldcover-tint           — ESA 10m landcover multiply-blend overlay
  *   7. water-fill                 — lake / sea polygons (LAND-ONLY MASK)
  *   7a. bathymetry                — GEBCO raster, replaces water_fill in sea
  *   8. sky-view-factor            — multiplicative canyon emphasis
@@ -63,6 +64,7 @@ import {
   legacyHypsoTintLayer,
   skyViewFactorLayers,
   slopeWarningLayers,
+  composeWorldcoverLayer,
 } from './terrain.js';
 import { DEFAULT_RAMP_ID } from './hypso/ramps.js';
 import { DEFAULT_STRENGTH_STOPS } from './hypso/expression.js';
@@ -120,6 +122,9 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [hasTextureSource=false]
  * @property {boolean} [skyViewFactor=false]
  * @property {boolean} [hasSkyViewFactorSource=false]
+ * @property {boolean} [worldcoverTint=false]
+ * @property {boolean} [hasWorldcoverSource=false]
+ *           ESA WorldCover landcover-tint raster source is available.
  * @property {boolean} [slopeWarning=false]
  *           Slope-warning overlay (color-relief on ['slope']).
  * @property {boolean} [hasSlopeExpression=false]
@@ -184,6 +189,8 @@ export function composeLayers(opts = {}) {
     hasTextureSource = false,
     skyViewFactor = false,
     hasSkyViewFactorSource = false,
+    worldcoverTint = false,
+    hasWorldcoverSource = false,
     slopeWarning = false,
     hasSlopeExpression = false,
 
@@ -252,6 +259,37 @@ export function composeLayers(opts = {}) {
         hasCarpathianSource: hasCarpathianDem,
         reduceMotion,
       }),
+    );
+  }
+
+  // 6a: ESA WorldCover landcover-tint — multiply-blend raster painted
+  //     ABOVE the hillshade stack so the satellite-classified surface
+  //     colours read on top of the shaded relief, but BELOW water_fill
+  //     so the vector water polygons remain the canonical land mask.
+  //     The class-80 (water) stop in `worldcover-ramps.js` is also
+  //     transparent — that's a defence-in-depth so the raster doesn't
+  //     tint coastline approximations even where the OMT water layer
+  //     happens to disagree with the WorldCover classifier.
+  //
+  //     Source-gated: `hasWorldcoverSource` is true only when
+  //     `TERRAIN.worldcover.url` is populated AND
+  //     `features.worldcoverTint` is on, so a missing archive renders
+  //     the map identically to its previous version (graceful
+  //     fallback).
+  if (worldcoverTint && hasWorldcoverSource) {
+    // Hypso "active" means the elevation-tint mode actually emits
+    // something (native or raster); 'off' / 'legacy' don't compete
+    // for the same hue budget here, so we treat them as inactive.
+    const hypsoActive =
+      hypsometricTint &&
+      resolveHypsoMode({
+        hypsoMode,
+        hasPrimaryDem,
+        hasHypsoRasterRamp,
+        hasHypsoSource,
+      }) !== 'off';
+    stack.push(
+      ...composeWorldcoverLayer(t, { hypsoActive, reduceMotion }),
     );
   }
 
