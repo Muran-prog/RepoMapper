@@ -451,6 +451,7 @@ export function skyViewFactorLayers(_t, opts = {}) {
 // ---------------------------------------------------------------------------
 
 import { WORLDCOVER_OPACITY } from './worldcover-ramps.js';
+import { CANOPY_OPACITY } from './canopy-height-ramps.js';
 
 /**
  * @typedef {object} WorldcoverOpts
@@ -520,6 +521,136 @@ export function composeWorldcoverLayer(_t, opts = {}) {
         // after the opacity curve clamps the wash to ~0.32.
         'raster-contrast': 0.05,
         'raster-hue-rotate': 0,
+        'raster-resampling': 'linear',
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// ETH Global Canopy Height tint overlay (Lang et al. 2023).
+//
+// Multiply-blend raster painted ABOVE the WorldCover tree-cover wash
+// so that the flat green tree-cover class gets modulated by per-pixel
+// canopy top height. Молоді посадки (height ≤ ~5 m) read as a light
+// grass-green; старі смерекові ліси Чорногори (height ≥ ~30 m) read
+// as a deep emerald; букові праліси Угольки (height ≥ ~40 m) read as
+// the darkest pixels. Pixels with height = 0 (non-forest) are fully
+// transparent — the overlay must NEVER tint a meadow / village /
+// road / water surface.
+//
+// The colour ramp + alpha schedule live in
+// `src/style/canopy-height-ramps.js`. The offline build pipeline
+// (`tools/build-canopy-height.sh` + `tools/dump-canopy-ramp.mjs`)
+// reads the same dictionary, so the rendered tile pixels and the live
+// tokens stay in lock-step at every theme.
+//
+// MapLibre doesn't expose a literal "multiply" blend mode for raster
+// layers, so we approximate it with:
+//
+//   • Zoom-driven opacity ceiling (default ~0.45) — peaks at the
+//     hiking zoom band (z10-15) where stand-age detail reads, fades
+//     out at z18+ so it doesn't crowd POIs / trail-overlay symbols.
+//   • `raster-saturation: -0.10` to take the edge off the ramp's
+//     already low-saturation greens.
+//   • `raster-contrast: +0.08` to keep stand ages distinguishable
+//     after opacity dampening.
+//   • `raster-resampling: 'linear'` so the 10 m source softens into
+//     a smooth wash at low zooms instead of pixelating.
+//   • Z-order placement above WorldCover and below texture-shading
+//     (handled by `composeLayers` — see src/style/index.js).
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {object} CanopyHeightOpts
+ * @property {boolean} [hypsoActive=false]
+ *           When true, scale the opacity ceiling DOWN to
+ *           `CANOPY_OPACITY.hypsoActive` so the elevation tint stays
+ *           the dominant colour signal.
+ * @property {boolean} [worldcoverActive=false]
+ *           When true, scale the opacity ceiling UP to
+ *           `CANOPY_OPACITY.worldcoverActive` so the canopy detail
+ *           reads through the WorldCover tree-cover wash.
+ *           When BOTH `hypsoActive` and `worldcoverActive` are true
+ *           we take the MIN multiplier (more conservative): hypso
+ *           suppression wins so the elevation tint still dominates.
+ * @property {boolean} [reduceMotion=false]
+ *           When true, collapse the zoom-driven opacity curve to a
+ *           static value (the curve's mid-zoom peak).
+ */
+
+/**
+ * Build the canopy-height-tint layer.
+ *
+ * Source: `'canopy-height'` (added by `composeSources` when
+ * `features.canopyHeightTint` is true and `TERRAIN.canopyHeight.url`
+ * is set). The layer is silently skipped by `composeLayers` when the
+ * source isn't present, so this factory always returns a single
+ * layer spec without worrying about availability itself.
+ *
+ * @param {object} _t
+ * @param {CanopyHeightOpts} [opts]
+ * @returns {Array<object>}
+ */
+export function composeCanopyHeightLayer(_t, opts = {}) {
+  const {
+    hypsoActive = false,
+    worldcoverActive = false,
+    reduceMotion = false,
+  } = opts;
+
+  // Pick the opacity peak. When both hypso and WorldCover are on we
+  // take the MIN multiplier: hypso suppression wins over WorldCover
+  // reinforcement so the elevation tint stays the dominant signal.
+  // The brief explicitly asks for "min (более консервативно)".
+  const hypsoMul = CANOPY_OPACITY.hypsoActive / CANOPY_OPACITY.default;
+  const worldcoverMul = CANOPY_OPACITY.worldcoverActive / CANOPY_OPACITY.default;
+  let mul = 1;
+  if (hypsoActive && worldcoverActive) {
+    mul = Math.min(hypsoMul, worldcoverMul);
+  } else if (hypsoActive) {
+    mul = hypsoMul;
+  } else if (worldcoverActive) {
+    mul = worldcoverMul;
+  }
+  const peak = CANOPY_OPACITY.default * mul;
+
+  // Zoom curve mirrors the brief's schedule:
+  //   z8  → 0.20   (overview — hint of forest depth)
+  //   z10 → 0.35   (regional — readable)
+  //   z12 → peak   (hiking band — full strength)
+  //   z15 → peak   (still full strength for trail planning)
+  //   z18 → 0.30   (deep zoom — yield to spritemap + POI legibility)
+  //
+  // We scale every stop by the same `mul` so the high-zoom fade-out
+  // behaves the same shape regardless of state combination.
+  const scale = peak / CANOPY_OPACITY.default;
+  const opacityStops = [
+    [8,  0.20 * scale],
+    [10, 0.35 * scale],
+    [12, CANOPY_OPACITY.default * scale],
+    [15, CANOPY_OPACITY.default * scale],
+    [18, 0.30 * scale],
+  ];
+  // Reduce-motion: pin to mid-zoom peak. Static, no animation.
+  const opacity = reduceMotion ? CANOPY_OPACITY.default * scale : linZoom(opacityStops);
+
+  return [
+    {
+      id: 'canopy-height-tint',
+      type: 'raster',
+      source: 'canopy-height',
+      minzoom: 8,
+      maxzoom: 22,
+      paint: {
+        'raster-opacity': opacity,
+        // Pull saturation down a touch — the ramp's greens are
+        // already low-saturation, this just keeps the multiply-blend
+        // honest under the WorldCover wash.
+        'raster-saturation': -0.10,
+        // Small positive contrast so stand ages stay distinguishable
+        // after the opacity curve dampens the wash.
+        'raster-contrast': 0.08,
         'raster-resampling': 'linear',
       },
     },

@@ -65,6 +65,7 @@ import {
   skyViewFactorLayers,
   slopeWarningLayers,
   composeWorldcoverLayer,
+  composeCanopyHeightLayer,
 } from './terrain.js';
 import { DEFAULT_RAMP_ID } from './hypso/ramps.js';
 import { DEFAULT_STRENGTH_STOPS } from './hypso/expression.js';
@@ -125,6 +126,10 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [worldcoverTint=false]
  * @property {boolean} [hasWorldcoverSource=false]
  *           ESA WorldCover landcover-tint raster source is available.
+ * @property {boolean} [canopyHeightTint=false]
+ * @property {boolean} [hasCanopyHeightSource=false]
+ *           ETH Global Canopy Height (Lang et al. 2023) raster source
+ *           is available.
  * @property {boolean} [slopeWarning=false]
  *           Slope-warning overlay (color-relief on ['slope']).
  * @property {boolean} [hasSlopeExpression=false]
@@ -191,6 +196,8 @@ export function composeLayers(opts = {}) {
     hasSkyViewFactorSource = false,
     worldcoverTint = false,
     hasWorldcoverSource = false,
+    canopyHeightTint = false,
+    hasCanopyHeightSource = false,
     slopeWarning = false,
     hasSlopeExpression = false,
 
@@ -290,6 +297,42 @@ export function composeLayers(opts = {}) {
       }) !== 'off';
     stack.push(
       ...composeWorldcoverLayer(t, { hypsoActive, reduceMotion }),
+    );
+  }
+
+  // 6b: ETH Global Canopy Height tint (Lang et al. 2023). Sits
+  //     directly above the WorldCover tree-cover wash — it details
+  //     that wash by per-pixel canopy top height, so younger stands
+  //     read light grass-green and старі смерекові ліси Чорногори
+  //     darken into emerald. Stays BELOW water_fill so the same
+  //     land-only mask that protects WorldCover protects this layer
+  //     (the height = 0 stop in `canopy-height-ramps.js` is also
+  //     fully transparent — defence in depth so non-forest pixels
+  //     never get tinted even if the upstream raster has noise).
+  //
+  //     Source-gated: `hasCanopyHeightSource` is true only when
+  //     `TERRAIN.canopyHeight.url` is populated AND
+  //     `features.canopyHeightTint` is on, so a missing archive
+  //     renders the map identically to its previous version
+  //     (graceful fallback). Opacity adapts to the active relief
+  //     state: hypso suppresses, WorldCover reinforces, both at
+  //     once → conservative MIN (hypso wins).
+  if (canopyHeightTint && hasCanopyHeightSource) {
+    const hypsoActive =
+      hypsometricTint &&
+      resolveHypsoMode({
+        hypsoMode,
+        hasPrimaryDem,
+        hasHypsoRasterRamp,
+        hasHypsoSource,
+      }) !== 'off';
+    const worldcoverActive = worldcoverTint && hasWorldcoverSource;
+    stack.push(
+      ...composeCanopyHeightLayer(t, {
+        hypsoActive,
+        worldcoverActive,
+        reduceMotion,
+      }),
     );
   }
 

@@ -88,6 +88,7 @@ async function main() {
       textureShading: features.textureShading && cfg.enableTextureShading,
       skyViewFactor: features.skyViewFactor && cfg.enableTextureShading,
       worldcoverTint: features.worldcoverTint,
+      canopyHeightTint: features.canopyHeightTint,
       slopeWarning: features.slopeWarning,
       hypsometricTint: features.hypsometricTint && cfg.enableHypsoTint,
       bathymetry: features.bathymetry && cfg.enableHypsoTint,
@@ -151,6 +152,8 @@ async function main() {
       hasSkyViewFactorSource: has.skyViewFactor,
       worldcoverTint: effectiveFeatures.worldcoverTint,
       hasWorldcoverSource: has.worldcoverTint,
+      canopyHeightTint: effectiveFeatures.canopyHeightTint,
+      hasCanopyHeightSource: has.canopyHeightTint,
       slopeWarning: effectiveFeatures.slopeWarning,
       // The style-spec validator we ship for CI doesn't yet recognise
       // the `['slope']` expression input (added to MapLibre 5.6 after
@@ -312,6 +315,59 @@ async function main() {
       name: 'worldcover-with-source-with-hypso',
       flags: { worldcoverTint: true, hypsometricTint: true, colorRelief: true },
       hypso: { mode: 'native' },
+      stubWorldcoverUrl: true,
+    },
+    // ETH Global Canopy Height (Lang et al. 2023) — multiply-blend
+    // overlay above WorldCover that modulates the tree-cover wash by
+    // per-pixel canopy top height. Without a source: layer NOT
+    // emitted (graceful fallback). The matrix below exercises every
+    // (worldcover on/off) × (hypso on/off) combination so the
+    // composer's opacity-multiplier branching (default / hypsoActive
+    // / worldcoverActive / both → MIN) is covered.
+    {
+      name: 'canopy-no-source',
+      flags: { canopyHeightTint: true },
+    },
+    {
+      name: 'canopy-source-no-worldcover-no-hypso',
+      flags: {
+        canopyHeightTint: true,
+        worldcoverTint: false,
+        hypsometricTint: false,
+      },
+      stubCanopyHeightUrl: true,
+    },
+    {
+      name: 'canopy-source-with-worldcover-no-hypso',
+      flags: {
+        canopyHeightTint: true,
+        worldcoverTint: true,
+        hypsometricTint: false,
+      },
+      stubCanopyHeightUrl: true,
+      stubWorldcoverUrl: true,
+    },
+    {
+      name: 'canopy-source-no-worldcover-with-hypso',
+      flags: {
+        canopyHeightTint: true,
+        worldcoverTint: false,
+        hypsometricTint: true,
+        colorRelief: true,
+      },
+      hypso: { mode: 'native' },
+      stubCanopyHeightUrl: true,
+    },
+    {
+      name: 'canopy-source-with-worldcover-with-hypso',
+      flags: {
+        canopyHeightTint: true,
+        worldcoverTint: true,
+        hypsometricTint: true,
+        colorRelief: true,
+      },
+      hypso: { mode: 'native' },
+      stubCanopyHeightUrl: true,
       stubWorldcoverUrl: true,
     },
     // Hypso-specific feature packs — every mode the renderer can pick.
@@ -566,6 +622,15 @@ async function main() {
         maxzoom: 13,
       };
     }
+    if (pack.stubCanopyHeightUrl) {
+      sourceStubs['canopy-height'] = {
+        type: 'raster',
+        url: 'pmtiles://https://example.com/canopy-height.pmtiles',
+        tileSize: 256,
+        minzoom: 8,
+        maxzoom: 13,
+      };
+    }
     if (pack.stubCarpathianDemUrl) {
       sourceStubs['terrain-dem-carpathian'] = {
         type: 'raster-dem',
@@ -724,6 +789,105 @@ async function main() {
   }
   console.log(`WorldCover ramps: ${wcFails === 0 ? 'all OK' : `${wcFails} FAILED`}`);
   if (wcFails > 0) failed += wcFails;
+
+  // ---------------------------------------------------------------------
+  // ETH Canopy Height ramp sanity — every stop must be
+  // [height_m, '#rrggbb', alpha_0_255], stops must be sorted
+  // ascending by height, the first stop must carry alpha = 0 (the
+  // brief's hard requirement: pixels with height = 0 must NEVER
+  // tint the canvas), every alpha must be in [0, 255], and the
+  // opacity ceilings must satisfy hypsoActive < default <
+  // worldcoverActive (so hypso suppresses while WorldCover
+  // reinforces).
+  // ---------------------------------------------------------------------
+  const {
+    CANOPY_RAMPS,
+    CANOPY_OPACITY,
+    CANOPY_TREE_VALUE,
+  } = await importEsm('src/style/canopy-height-ramps.js');
+  console.log();
+  console.log('Canopy Height ramp dictionary sanity:');
+  let chFails = 0;
+  for (const variant of ['light', 'dark']) {
+    const stops = CANOPY_RAMPS?.[variant];
+    const errs = [];
+    if (!Array.isArray(stops) || stops.length < 2) {
+      errs.push(`${variant}: not an array of ≥ 2 stops`);
+    } else {
+      let lastH = -Infinity;
+      for (let i = 0; i < stops.length; i++) {
+        const stop = stops[i];
+        if (!Array.isArray(stop) || stop.length !== 3) {
+          errs.push(`${variant}: stop[${i}] is not [h, '#rrggbb', alpha]`);
+          continue;
+        }
+        const [h, hex, alpha] = stop;
+        if (typeof h !== 'number' || !Number.isFinite(h)) {
+          errs.push(`${variant}: stop[${i}] non-numeric height`);
+        }
+        if (typeof hex !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
+          errs.push(`${variant}: stop[${i}] bad hex ${hex}`);
+        }
+        if (
+          typeof alpha !== 'number' ||
+          !Number.isFinite(alpha) ||
+          alpha < 0 ||
+          alpha > 255
+        ) {
+          errs.push(`${variant}: stop[${i}] bad alpha ${alpha}`);
+        }
+        if (h < lastH) errs.push(`${variant}: stops not sorted ascending`);
+        lastH = h;
+        // The first stop (height = 0) MUST be fully transparent.
+        if (i === 0) {
+          if (h !== 0) errs.push(`${variant}: first stop must be height = 0`);
+          if (alpha !== 0) {
+            errs.push(
+              `${variant}: first stop alpha must be 0 (got ${alpha}) — non-forest pixels must never tint`,
+            );
+          }
+        }
+      }
+    }
+    if (errs.length === 0) {
+      console.log(`  OK   ${variant}`);
+    } else {
+      chFails += errs.length;
+      for (const e of errs) console.log(`  FAIL ${e}`);
+    }
+  }
+  // Opacity ceilings: hypsoActive < default (hypso suppresses canopy
+  // so the elevation tint stays dominant); worldcoverActive > default
+  // (canopy reinforces over the flat WorldCover wash so stand-age
+  // detail reads through).
+  const o = CANOPY_OPACITY ?? {};
+  if (
+    typeof o.default !== 'number' ||
+    typeof o.hypsoActive !== 'number' ||
+    typeof o.worldcoverActive !== 'number' ||
+    !(o.hypsoActive < o.default) ||
+    !(o.worldcoverActive > o.default)
+  ) {
+    chFails++;
+    console.log(
+      `  FAIL CANOPY_OPACITY must satisfy hypsoActive < default < worldcoverActive (got ${JSON.stringify(o)})`,
+    );
+  } else {
+    console.log(
+      `  OK   CANOPY_OPACITY: hypsoActive=${o.hypsoActive}, default=${o.default}, worldcoverActive=${o.worldcoverActive}`,
+    );
+  }
+  // Tree-value sanity — should be the WorldCover tree-cover class (10).
+  if (CANOPY_TREE_VALUE !== 10) {
+    chFails++;
+    console.log(
+      `  FAIL CANOPY_TREE_VALUE must equal 10 (WorldCover tree-cover class), got ${CANOPY_TREE_VALUE}`,
+    );
+  } else {
+    console.log(`  OK   CANOPY_TREE_VALUE === 10`);
+  }
+  console.log(`Canopy Height ramps: ${chFails === 0 ? 'all OK' : `${chFails} FAILED`}`);
+  if (chFails > 0) failed += chFails;
 
   // ---------------------------------------------------------------------
   // Layer-level invariants — assert that the relief stack carries the

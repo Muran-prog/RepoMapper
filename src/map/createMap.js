@@ -230,6 +230,7 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
     hasTextureSource: has.textureShading,
     hasSkyViewFactorSource: has.skyViewFactor,
     hasWorldcoverSource: has.worldcoverTint,
+    hasCanopyHeightSource: has.canopyHeightTint,
     // Optimistic: assume the runtime supports `['slope']` in
     // color-relief expressions on first compose. If the probe later
     // discovers it doesn't, `detectHypsoCaps` removes the layer
@@ -369,6 +370,7 @@ function profileToLayerOpts(profileConfig, features) {
     skyViewFactor:
       features.skyViewFactor && profileConfig.enableTextureShading,
     worldcoverTint: features.worldcoverTint,
+    canopyHeightTint: features.canopyHeightTint,
     slopeWarning: features.slopeWarning,
     contours: features.contours && profileConfig.enableContours,
     ridgeOverlay:

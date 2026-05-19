@@ -17,6 +17,7 @@ maplibre-contour. The PMTiles archives below add region-specific detail:
 | `ukraine-texture-shading.pmtiles` | Leland Brown α=0.8 ridge/canyon emphasis          | `build-texture-shading.sh`      |
 | `carpathian-svf.pmtiles`      | Sky-View Factor wash — multiplies darkening into canyons / cirques / rock terraces | `build-svf.sh`                  |
 | `<region>-worldcover.pmtiles` | ESA WorldCover 10 m landcover-tint multiply-blend overlay (forest / grass / cropland / built-up / bare / snow read by their actual satellite class) | `build-worldcover.sh`           |
+| `<region>-canopy.pmtiles`     | ETH Global Canopy Height 10 m (Lang et al. 2023) — modulates WorldCover tree-cover by stand age (молоді посадки → light grass-green, старі смерекові ліси → emerald) | `build-canopy-height.sh`        |
 | `<ramp>-<theme>-hypso.pmtiles` | Per-ramp pre-rendered hypsometric tint (raster fallback for the native color-relief layer) | `build-hypso.sh --ramp=<id>` |
 | `black-sea-bathy.pmtiles`     | GEBCO 2024 seabed tint, joins seamlessly at 0 m       | `build-bathymetry.sh`           |
 | `carpathian-contours.pmtiles` | Pre-baked contours (lighter on CPU than dynamic)      | `build-contours.sh`             |
@@ -98,6 +99,7 @@ to match so the attribution and licensing disclaimer track the build.
 | build-texture-shading.sh       | `python3`, `numpy`, `scipy`, `rasterio`, `rio-mbtiles`, `pmtiles`                     |
 | build-svf.sh                   | `whitebox_tools`, `python3`, `numpy`, `rasterio`, `rio-mbtiles`, `pmtiles`            |
 | build-worldcover.sh            | `aws` (AWS CLI v2, anonymous), `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18    |
+| build-canopy-height.sh         | `curl`, `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18, `python3`                |
 | build-hypso.sh                 | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18 (runs `dump-ramp.mjs`)            |
 | build-bathymetry.sh            | `gdal` ≥ 3.4, `rio-mbtiles`, `pmtiles`, `node` ≥ 18, GEBCO 2024 source TIFF (`$GEBCO`) |
 | build-contours.sh              | `gdal`, `tippecanoe` (Felt fork), `pmtiles`                                           |
@@ -210,6 +212,54 @@ download `planetiler.jar`, drop it next to the scripts (or set `PLANETILER_JAR`)
   (light + dark colour tables). Pass `--region=carpathian` for the
   Carpathian-only build (~30 MB raw) or `--bbox=W,S,E,N` for an
   arbitrary AOI.
+
+### Canopy Height (ETH)
+
+- ETH Global Canopy Height 10 m model from Lang, Jetz, Schindler &
+  Wegner (2023): "A high-resolution canopy height model of the Earth",
+  *Nature Ecology & Evolution*. Float32 metres per pixel, 0 = no
+  canopy, ~50 m = old-growth reference plots. Trained on GEDI returns
+  + Sentinel-2 imagery; the project page is
+  <https://langnico.github.io/globalcanopyheight/>.
+- Distribution: 3° × 3° GeoTIFF tiles published as a GitHub release
+  asset at <https://github.com/langnico/global-canopy-height-model/releases>
+  (release tag overrideable via `ETH_RELEASE_TAG`, default `v1.0`).
+  Tile naming: `ETH_GlobalCanopyHeight_10m_2020_<lat><lon>_Map.tif`
+  where `<lat><lon>` encodes the south-west corner (e.g. `N48E021`).
+  The Ukraine bbox needs ~30 tiles, ~150 MB raw download.
+- Local-cache mode: set `ETH_CHM_DIR=/path/to/local/chm` to read
+  pre-downloaded GeoTIFFs instead of hitting the GitHub release.
+  Useful when running from inside a CI runner that has the cache
+  pre-warmed, or when the operator has already pulled the AWS
+  Open Data fallback (`s3://dataforgood-fb-data/forests/v1/alsgedi_global_v6_float/chm/`)
+  and converted it to the ETH naming convention.
+- Output: ~25 MB pmtiles after gdaldem + rio-mbtiles + pmtiles
+  convert at zoom 8-13. The renderer composes a multiply-blend
+  raster layer above the WorldCover tree-cover wash so the flat
+  tree-cover class gets modulated by per-pixel canopy top height —
+  молоді посадки після рубок read as a light grass-green, старі
+  смерекові ліси Чорногори darken into emerald, букові праліси
+  Угольки read as the darkest pixels.
+- Colour table is emitted by `tools/dump-canopy-ramp.mjs`, which
+  reads `src/style/canopy-height-ramps.js` directly so the offline
+  raster pixels match the live MapLibre tokens at every theme.
+  Adding a stop is one edit to one file. Run
+  `tools/dump-canopy-ramp.mjs --list-stops` to see the canonical
+  height → colour → alpha table.
+- License: **CC BY 4.0**, Lang et al. 2023. Attribution is required
+  wherever the resulting tiles are rendered. The renderer's source
+  descriptor in `TERRAIN.canopyHeight.attribution` carries the
+  canonical attribution string and the MapLibre attribution control
+  surfaces it whenever the source is active.
+- The first ramp stop (height = 0) is fully transparent — pixels
+  with NO canopy can NEVER tint a meadow / village / road / lake.
+  This is enforced at three layers: (a) the data layer in
+  `canopy-height-ramps.js`, (b) the dump script's defensive check
+  before emitting the gdaldem table, (c) the validator's
+  ramp-dictionary sanity pass.
+- Defaults: `--region=ukraine`, `--theme=both`. Pass
+  `--region=carpathian` for the Carpathian-only build (~50 MB raw,
+  ~10 MB final pmtiles) or `--bbox=W,S,E,N` for an arbitrary AOI.
 
 ### Bathymetry (GEBCO 2024)
 

@@ -1,4 +1,5 @@
 import { WORLDCOVER_RAMPS } from './worldcover-ramps.js';
+import { CANOPY_RAMPS } from './canopy-height-ramps.js';
 
 /**
  * Design tokens — the colour palette and typography that drive the entire
@@ -294,6 +295,14 @@ const LIGHT = {
   // resolving via `getTokens(theme).worldcover` get the right variant
   // without branching on theme.
   worldcover: WORLDCOVER_RAMPS.light,
+
+  // ETH Global Canopy Height ramp — same pattern as `worldcover`
+  // above. Definition lives in `canopy-height-ramps.js`; tokens.js
+  // is just the theme-aware bridge so style modules resolving via
+  // `getTokens(theme).canopy` always get the right variant. The
+  // ramp is also consumed offline by `tools/dump-canopy-ramp.mjs`
+  // when emitting the gdaldem colour table — never duplicated here.
+  canopy: CANOPY_RAMPS.light,
 };
 
 const DARK = {
@@ -486,6 +495,12 @@ const DARK = {
   // as the light theme but pulled ~15-20% darker so the multiply-blend
   // overlay reads on the deep slate canvas without re-saturating.
   worldcover: WORLDCOVER_RAMPS.dark,
+
+  // ETH Global Canopy Height ramp — dark variant. Same hue family
+  // as the light theme; canopy-height-ramps.js owns the per-stop
+  // L* delta so the multiply-blend lands legibly on the deep slate
+  // canvas without re-saturating the greens.
+  canopy: CANOPY_RAMPS.dark,
 };
 
 export const TOKENS = Object.freeze({ light: LIGHT, dark: DARK });

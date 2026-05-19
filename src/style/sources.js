@@ -143,6 +143,19 @@ export function composeSources({
     const wc = toRasterPmtilesSource(terrain.worldcover);
     if (wc) sources['worldcover'] = wc;
   }
+
+  // ETH Global Canopy Height (Lang et al. 2023) — pre-rendered 10 m
+  // canopy top-height raster. Stacks ABOVE the WorldCover tree-cover
+  // wash so it modulates that wash by stand age. Source-gated:
+  // `terrain.canopyHeight.url === null` means the build hasn't been
+  // run yet, so the source is omitted and the layer composer skips
+  // the layer entirely (graceful fallback). When wired the source
+  // is consumed by `composeCanopyHeightLayer` as a multiply-blend
+  // overlay above WorldCover and below texture-shading.
+  if (features.canopyHeightTint) {
+    const ch = toRasterPmtilesSource(terrain.canopyHeight);
+    if (ch) sources['canopy-height'] = ch;
+  }
   if (features.hypsometricTint) {
     // The hypso subsystem has two paths. When the native color-relief
     // layer is available we don't need ANY raster source — the DEM
@@ -226,6 +239,7 @@ export function sourceAvailability(sources) {
     textureShading: 'texture-shading' in sources,
     skyViewFactor: 'sky-view-factor' in sources,
     worldcoverTint: 'worldcover' in sources,
+    canopyHeightTint: 'canopy-height' in sources,
     hypsometricTint: 'hypso-tint' in sources,
     hypsoRasterRampId: rasterRampId,
     bathymetry: 'bathymetry' in sources,

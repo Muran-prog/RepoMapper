@@ -326,6 +326,34 @@ export const TERRAIN = Object.freeze({
     attribution:
       '<a href="https://esa-worldcover.org" target="_blank" rel="noopener">ESA WorldCover 10m 2021 v200</a> · CC BY 4.0',
   }),
+
+  /**
+   * ETH Global Canopy Height (Lang et al. 2023) — modulates the
+   * WorldCover tree-cover wash by per-pixel canopy top height. The
+   * raster is a pre-rendered 8-bit RGBA PNG mosaic produced by
+   * `tools/build-canopy-height.sh`; the colour table is emitted by
+   * `tools/dump-canopy-ramp.mjs` from `src/style/canopy-height-ramps.js`
+   * so the offline pixels match the live tokens at every theme.
+   *
+   * Stack position: ABOVE WorldCover (it details the tree-cover class
+   * specifically) but BELOW texture-shading and contours so the
+   * ridge / drainage / topographic structure stays the dominant
+   * cartographic signal. Source-gated — `url === null` means
+   * the operator hasn't run the build yet, so the layer composer
+   * skips the layer entirely (graceful fallback).
+   *
+   * License: CC BY 4.0. Attribution string carries the canonical
+   * author + project link; the MapLibre attribution control surfaces
+   * it whenever the source is active.
+   */
+  canopyHeight: Object.freeze({
+    url: null, // pmtiles://https://…/<region>-canopy.pmtiles
+    tileSize: 256,
+    minzoom: 8,
+    maxzoom: 13,
+    attribution:
+      '<a href="https://langnico.github.io/globalcanopyheight/" target="_blank" rel="noopener">ETH Global Canopy Height 10m (Lang et al. 2023)</a> · CC BY 4.0',
+  }),
 });
 
 /**
@@ -622,6 +650,22 @@ export const FEATURES = Object.freeze({
    * at `null` keeps rendering identically to its previous version.
    */
   worldcoverTint: true,
+
+  /**
+   * ETH Global Canopy Height tint — multiply-blend raster overlay
+   * driven by Lang et al. 2023's 10 m global canopy top-height
+   * model. Modulates the WorldCover tree-cover wash by stand age:
+   * молоді посадки read as a light grass-green, старі смерекові
+   * ліси Чорногори read as a dark emerald, букові праліси Угольки
+   * read as the darkest pixels.
+   *
+   * Off by default — enabled when the operator points
+   * `TERRAIN.canopyHeight.url` at a build of
+   * `tools/build-canopy-height.sh`. Source missing → silent no-op
+   * (graceful fallback in `sources.js` + the layer composer). The
+   * user's choice survives a reload via `cart:features:canopyHeightTint`.
+   */
+  canopyHeightTint: false,
 
   /**
    * Slope-warning overlay — paints slopes ≥ 35° in translucent red so

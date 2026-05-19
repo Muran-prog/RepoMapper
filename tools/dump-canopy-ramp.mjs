@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+/**
+ * dump-canopy-ramp.mjs — emit a gdaldem color-relief table for the
+ * ETH Global Canopy Height (Lang et al. 2023) raster pipeline,
+ * parsed straight out of `src/style/canopy-height-ramps.js` so the
+ * offline build always matches what the live MapLibre paint would
+ * render.
+ *
+ * Usage
+ * -----
+ *   tools/dump-canopy-ramp.mjs [--theme=light|dark]
+ *                              [--output=path.txt]
+ *
+ *   tools/dump-canopy-ramp.mjs --list-stops
+ *
+ * Output (gdaldem `-color-relief` syntax):
+ *
+ *     # ETH Global Canopy Height ramp (theme=light)
+ *     0   0   0   0   0     # no canopy / non-forest — transparent
+ *     1 126 160  96  60     # молода поросль / кущі
+ *     5  94 133  64 120     # середній підріст
+ *    15  61 107  50 170     # зрілий ліс
+ *    30  42  79  36 210     # старовозрастний — Чорногора
+ *    50  26  54  24 230     # еталонні старі смерекові смуги
+ *    nv   0   0   0   0     # NoData — transparent
+ *
+ * The first stop carries alpha = 0 — height = 0 means no canopy,
+ * and the rendered overlay must NEVER tint a meadow / village /
+ * road / lake. The "nv" line is the gdaldem token for NoData;
+ * partial tile coverage at the bbox edges (or any pixel the
+ * upstream raster flags as missing) reads as transparent.
+ *
+ * The mapping `height → (r,g,b,a)` is taken from
+ * `CANOPY_RAMPS[theme]` — never hard-coded here. Adding a stop
+ * is one edit to one file.
+ *
+ * Dependencies: only Node ≥ 18, no npm packages.
+ */
+
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO = path.dirname(HERE);
+
+async function importEsm(rel) {
+  const abs = path.resolve(REPO, rel);
+  return import(pathToFileURL(abs).href);
+}
+
+function parseArgs(argv) {
+  const out = { theme: 'light', output: null, listStops: false };
+  for (const a of argv) {
+    if (a === '--list-stops') out.listStops = true;
+    else if (a.startsWith('--theme=')) out.theme = a.slice('--theme='.length);
+    else if (a.startsWith('--output=')) out.output = a.slice('--output='.length);
+    else if (a === '-h' || a === '--help') {
+      printHelp();
+      process.exit(0);
+    } else {
+      process.stderr.write(`unknown argument: ${a}\n`);
+      process.exit(2);
+    }
+  }
+  return out;
+}
+
+function printHelp() {
+  process.stdout.write(
+    `dump-canopy-ramp.mjs — emit gdaldem color-relief table for ETH Canopy Height
+
+  tools/dump-canopy-ramp.mjs [--theme=light|dark] [--output=path.txt]
+  tools/dump-canopy-ramp.mjs --list-stops
+  -h, --help
+
+The mapping height_m → (R, G, B, A) is read from src/style/canopy-height-ramps.js.
+First stop (height=0) MUST carry alpha=0 so non-forest pixels stay transparent.
+`,
+  );
+}
+
+/**
+ * Format a single (height, R, G, B, A) line for gdaldem. Values are
+ * right-aligned in 3-char columns so the resulting file diffs cleanly.
+ *
+ * @param {string|number} value 'nv' for NoData, or the height in metres.
+ * @param {number} r 0..255
+ * @param {number} g 0..255
+ * @param {number} b 0..255
+ * @param {number} a 0..255
+ * @param {string} [comment]
+ * @returns {string}
+ */
+function formatLine(value, r, g, b, a, comment) {
+  const v = String(value).padStart(3);
+  const rs = String(r).padStart(3);
+  const gs = String(g).padStart(3);
+  const bs = String(b).padStart(3);
+  const as = String(a).padStart(3);
+  const tail = comment ? `  # ${comment}` : '';
+  return `${v} ${rs} ${gs} ${bs} ${as}${tail}\n`;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  const { CANOPY_RAMPS, getCanopyRamp, hexToRgb } = await importEsm(
+    'src/style/canopy-height-ramps.js',
+  );
+
+  if (args.listStops) {
+    for (const variant of ['light', 'dark']) {
+      process.stdout.write(`# ${variant}\n`);
+      for (const [h, hex, alpha] of CANOPY_RAMPS[variant]) {
+        process.stdout.write(`${String(h).padStart(3)}  ${hex}  alpha=${alpha}\n`);
+      }
+    }
+    return;
+  }
+
+  if (!['light', 'dark'].includes(args.theme)) {
+    process.stderr.write(`unknown theme '${args.theme}' (expected 'light' or 'dark')\n`);
+    process.exit(2);
+  }
+
+  const ramp = getCanopyRamp(args.theme);
+
+  // Defensive: invariant from canopy-height-ramps.js is that the
+  // first stop is height=0 with alpha=0. Re-check at emit time so a
+  // future ramp edit can't accidentally produce a build that tints
+  // non-forest pixels.
+  if (!Array.isArray(ramp) || ramp.length === 0) {
+    process.stderr.write(`canopy-height-ramps.js: ${args.theme} ramp is empty\n`);
+    process.exit(2);
+  }
+  const [firstH, , firstA] = ramp[0];
+  if (firstH !== 0 || firstA !== 0) {
+    process.stderr.write(
+      `canopy-height-ramps.js: first stop must be [0, _, 0] (got [${firstH}, _, ${firstA}])\n`,
+    );
+    process.exit(2);
+  }
+
+  const lines = [];
+  lines.push(`# ETH Global Canopy Height 10m (Lang et al. 2023)\n`);
+  lines.push(`# theme: ${args.theme}\n`);
+  lines.push(`# generated by tools/dump-canopy-ramp.mjs\n`);
+  lines.push(`# DO NOT edit this file directly — change src/style/canopy-height-ramps.js instead\n`);
+  lines.push(`#\n`);
+  lines.push(`# height_m  R   G   B   A\n`);
+
+  for (let i = 0; i < ramp.length; i++) {
+    const [h, hex, alpha] = ramp[i];
+    const rgb = hexToRgb(hex);
+    if (!rgb) {
+      process.stderr.write(`canopy-height-ramps.js: bad hex at stop ${i}: ${hex}\n`);
+      process.exit(2);
+    }
+    const [r, g, b] = rgb;
+    let comment = `${h} m canopy`;
+    if (i === 0) comment = 'no canopy / non-forest — transparent';
+    lines.push(formatLine(h, r, g, b, alpha, comment));
+  }
+  // NoData sentinel — anything unmatched (partial tile coverage,
+  // upstream nodata, oceans, etc.) reads transparent.
+  lines.push(formatLine('nv', 0, 0, 0, 0, 'NoData — transparent'));
+
+  const text = lines.join('');
+  if (args.output) {
+    await fs.writeFile(args.output, text);
+    process.stderr.write(`wrote ${args.output}\n`);
+  } else {
+    process.stdout.write(text);
+  }
+}
+
+main().catch((err) => {
+  process.stderr.write(`dump-canopy-ramp.mjs crashed: ${err?.stack || err}\n`);
+  process.exit(2);
+});
