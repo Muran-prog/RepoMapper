@@ -376,7 +376,12 @@ export const CARPATHIAN = Object.freeze({
    */
   zoomRules: Object.freeze({
     ridges: 8,
-    trails: 10,
+    trails: 11,
+    informalTrails: 13,
+    viaFerrata: 13,
+    trailLabels: 13,
+    mountainPoi: 12,
+    forestRoads: 11,
     peaks: 8,
     passes: 11,
     saddles: 11,

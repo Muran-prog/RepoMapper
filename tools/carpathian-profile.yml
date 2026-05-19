@@ -2,17 +2,17 @@
 #
 # Reference: https://github.com/onthegomap/planetiler/blob/main/CUSTOMSCHEMA.md
 #
-# This profile emits five source-layers that the renderer's src/style/carpathian.js
-# expects. The layer names and property names must match exactly — keep this
-# file in lockstep with that module.
+# This profile emits the source-layers that the renderer's
+# src/style/carpathian.js expects. The layer names and property names
+# must match exactly — keep this file in lockstep with that module.
 #
 # Build with:
 #   bash tools/build-carpathian-osm.sh
 schema_name: Cart Carpathian
 schema_description: |
-  Hiking routes, mountain features, forest roads, ski pistes and cableways
-  for the Ukrainian Carpathians. Built on top of OSM data; redistribution
-  follows the ODbL.
+  Hiking routes, raw mountain trails (path/track/footway/bridleway/via_ferrata
+  /steps), mountain features, forest roads, ski pistes and cableways for the
+  Ukrainian Carpathians. Built on top of OSM data; redistribution follows the ODbL.
 attribution: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>
 
 # Pull only the OSM tags we actually consume — keeps tile size small.
@@ -23,7 +23,8 @@ layers:
 
   # -----------------------------------------------------------------------
   # hiking_route — every OSM relation tagged route=hiking inside the bbox.
-  # The Carpathian style renders these with a casing + dashed inline.
+  # The Carpathian style still consults this for backwards compatibility,
+  # but the new pipeline is driven by the `trail` layer below (raw ways).
   # -----------------------------------------------------------------------
   - id: hiking_route
     features:
@@ -53,9 +54,84 @@ layers:
             tag_value: distance
 
   # -----------------------------------------------------------------------
-  # mountain_feature — natural=peak / saddle / cliff / mountain_pass.
-  # Includes `rank` = -ele so symbol-sort-key naturally favours tall peaks
-  # (lower sort-key wins collisions in MapLibre).
+  # trail — raw highway ways used for foot / bicycle / mountaineering
+  # navigation. Pulled directly from OSM (not relation-derived) so we get
+  # informal stitches, side branches and via-ferrate that don't belong
+  # to a route relation. The Carpathian style renders these by sac_scale,
+  # trail_visibility, informal-flag, bridge / ladder / ford and via-
+  # ferrata grade.
+  # -----------------------------------------------------------------------
+  - id: trail
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 12
+        include_when:
+          highway: ["path", "footway", "track", "bridleway",
+                    "cycleway", "via_ferrata", "steps"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: highway
+            tag_value: highway
+          - key: sac_scale
+            tag_value: sac_scale
+          - key: trail_visibility
+            tag_value: trail_visibility
+          - key: informal
+            tag_value: informal
+          - key: surface
+            tag_value: surface
+          - key: smoothness
+            tag_value: smoothness
+          - key: width
+            tag_value: width
+          - key: incline
+            tag_value: incline
+          - key: bridge
+            tag_value: bridge
+          - key: tunnel
+            tag_value: tunnel
+          - key: ford
+            tag_value: ford
+          - key: ladder
+            tag_value: ladder
+          - key: mtb_scale
+            tag_value: mtb:scale
+          - key: mtb_scale_uphill
+            tag_value: mtb:scale:uphill
+          - key: ski
+            tag_value: ski
+          - key: piste_type
+            tag_value: piste:type
+          - key: access
+            tag_value: access
+          - key: oneway
+            tag_value: oneway
+          - key: ref
+            tag_value: ref
+          - key: network
+            tag_value: network
+          - key: osmc_symbol
+            tag_value: osmc:symbol
+          - key: colour
+            tag_value: colour
+          - key: via_ferrata_scale
+            tag_value: via_ferrata_scale
+
+  # -----------------------------------------------------------------------
+  # mountain_feature — natural peaks, saddles, cliffs, plus a richer
+  # set of point POIs the Carpathian style turns into icons:
+  #   • natural   — spring, cave_entrance, rock, stone, sinkhole
+  #   • man_made  — cairn, adit, wayside_shrine, cross, tower
+  #   • tourism   — alpine_hut, wilderness_hut, viewpoint, camp_site
+  #   • amenity   — shelter, drinking_water, toilets
+  # `rank` = -ele so symbol-sort-key naturally favours tall peaks.
+  # `class` is the discriminator the style reads to pick an icon.
   # -----------------------------------------------------------------------
   - id: mountain_feature
     features:
@@ -97,16 +173,85 @@ layers:
             tag_value: ele
           - key: rank
             value: '${-feature.tags.get("ele", 0)}'
+      # Hydrographic + geomorphologic POIs.
+      - source: osm
+        geometry: point
+        min_zoom: 12
+        include_when:
+          natural: ["spring", "cave_entrance", "rock", "stone", "sinkhole"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: class
+            tag_value: natural
+          - key: ele
+            tag_value: ele
+      # Anthropogenic landmarks: cairns, mine adits, way-shrines, crosses, towers.
+      - source: osm
+        geometry: point
+        min_zoom: 12
+        include_when:
+          man_made: ["cairn", "adit", "wayside_shrine", "cross", "tower"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: class
+            tag_value: man_made
+          - key: ele
+            tag_value: ele
+      # Tourism POIs — alpine huts, viewpoints, camp sites.
+      - source: osm
+        geometry: point
+        min_zoom: 12
+        include_when:
+          tourism: ["alpine_hut", "wilderness_hut", "viewpoint", "camp_site"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: class
+            tag_value: tourism
+          - key: ele
+            tag_value: ele
+      # Amenity POIs — shelters, drinking water, toilets.
+      - source: osm
+        geometry: point
+        min_zoom: 13
+        include_when:
+          amenity: ["shelter", "drinking_water", "toilets"]
+        attributes:
+          - key: name
+            tag_value: name
+          - key: name:uk
+            tag_value: name:uk
+          - key: name:en
+            tag_value: name:en
+          - key: class
+            tag_value: amenity
+          - key: ele
+            tag_value: ele
 
   # -----------------------------------------------------------------------
-  # forest_road — every highway=track inside the bbox with surface/tracktype
-  # info, plus highway=path with sac_scale (Alpine grading).
+  # forest_road — every highway=track / unclassified / path inside the
+  # bbox with surface, tracktype, sac_scale info and the 4wd / motor-
+  # vehicle / access / oneway flags.
   # -----------------------------------------------------------------------
   - id: forest_road
     features:
       - source: osm
         geometry: line
-        min_zoom: 12
+        min_zoom: 11
         include_when:
           __any__:
             - highway: ["track", "unclassified", "path"]
@@ -123,6 +268,14 @@ layers:
             tag_value: sac_scale
           - key: trail_visibility
             tag_value: trail_visibility
+          - key: 4wd_only
+            tag_value: 4wd_only
+          - key: motor_vehicle
+            tag_value: motor_vehicle
+          - key: access
+            tag_value: access
+          - key: oneway
+            tag_value: oneway
 
   # -----------------------------------------------------------------------
   # ski_piste — piste:type=downhill | nordic | sled.

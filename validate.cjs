@@ -231,6 +231,22 @@ async function main() {
         bathymetry: false,
       },
     },
+    // Carpathian trail-overlay smoke packs — exercise the new
+    // forest-roads → trails → via-ferrata → steps → furniture →
+    // labels pipeline. Without a real `carpathian-osm` source the
+    // composer must NOT emit any of those layers (graceful fallback);
+    // the matching with-source pack confirms we DO emit them when
+    // the source is present.
+    {
+      name: 'carpathian-trails-no-source',
+      flags: { carpathian: true },
+      // No stub source — composeSources() leaves carpathian-osm out.
+    },
+    {
+      name: 'carpathian-trails-with-source',
+      flags: { carpathian: true },
+      stubCarpathianOsmUrl: true,
+    },
     // Hypso-specific feature packs — every mode the renderer can pick.
     {
       name: 'hypso-native',
@@ -459,6 +475,12 @@ async function main() {
         maxzoom: 9,
       };
     }
+    if (pack.stubCarpathianOsmUrl) {
+      sourceStubs['carpathian-osm'] = {
+        type: 'vector',
+        url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      };
+    }
     return buildStyle({ theme, profile, features, hypso, sourceStubs });
   }
 
@@ -647,7 +669,95 @@ async function main() {
   }
   console.log(`Layer invariants: ${invariantFails === 0 ? 'all OK' : `${invariantFails} FAILED`}`);
 
-  process.exit(failed + rampFails + invariantFails > 0 ? 1 : 0);
+  // ---------------------------------------------------------------------
+  // Carpathian trail-pipeline invariants — verify graceful fallback and
+  // ordering of the new layer stack.
+  //
+  //   • Without a carpathian-osm source: composer MUST NOT emit any
+  //     trail/forest-road/via-ferrata/etc. layer (graceful fallback).
+  //   • With a source: the layers MUST be emitted AND must appear in
+  //     the documented z-order: forest_road → informal → trail →
+  //     via-ferrata → steps → furniture → labels.
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Carpathian trail invariants:');
+  let trailFails = 0;
+  const trailFeaturesOn = { ...FEATURES, carpathian: true };
+
+  // Without source.
+  const noSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: trailFeaturesOn,
+    sourceStubs: {},
+  });
+  const trailIds = [
+    'carpathian_forest_road',
+    'carpathian_trail_informal',
+    'carpathian_trail_inline',
+    'carpathian_via_ferrata_inline',
+    'carpathian_trail_steps',
+    'carpathian_trail_bridge',
+    'carpathian_trail_label',
+  ];
+  for (const id of trailIds) {
+    const present = noSourceStyle.layers.some((l) => l.id === id);
+    if (present) {
+      trailFails++;
+      console.log(`  FAIL ${id} emitted without carpathian-osm source (should be off)`);
+    } else {
+      console.log(`  OK   ${id} absent without source (graceful fallback)`);
+    }
+  }
+
+  // With source.
+  const withSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: trailFeaturesOn,
+    sourceStubs: {
+      'carpathian-osm': {
+        type: 'vector',
+        url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      },
+    },
+  });
+  const withIds = withSourceStyle.layers.map((l) => l.id);
+  for (const id of trailIds) {
+    if (!withIds.includes(id)) {
+      trailFails++;
+      console.log(`  FAIL ${id} not emitted even though carpathian-osm source is present`);
+    } else {
+      console.log(`  OK   ${id} present`);
+    }
+  }
+  // Ordering: the indices must be strictly increasing in this sequence.
+  const orderSeq = [
+    'carpathian_forest_road',
+    'carpathian_trail_informal',
+    'carpathian_trail_inline',
+    'carpathian_via_ferrata_inline',
+    'carpathian_trail_steps',
+    'carpathian_trail_bridge',
+    'carpathian_trail_label',
+  ];
+  let lastIdx = -1;
+  let lastId = null;
+  for (const id of orderSeq) {
+    const idx = withIds.indexOf(id);
+    if (idx <= lastIdx) {
+      trailFails++;
+      console.log(`  FAIL ${id} (idx ${idx}) appears at or before ${lastId} (idx ${lastIdx})`);
+    }
+    lastIdx = idx;
+    lastId = id;
+  }
+  if (lastIdx !== -1 && trailFails === 0) {
+    console.log('  OK   forest → informal → trail → via-ferrata → steps → furniture → labels order');
+  }
+  console.log(`Carpathian trail invariants: ${trailFails === 0 ? 'all OK' : `${trailFails} FAILED`}`);
+
+  process.exit(failed + rampFails + invariantFails + trailFails > 0 ? 1 : 0);
 }
 
 main().catch((err) => {

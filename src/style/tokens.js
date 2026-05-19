@@ -215,6 +215,31 @@ const LIGHT = {
   carpathianTrailCasing: '#fff8e8',
   carpathianTrailDim: '#b65030',
 
+  // SAC mountain hiking grading (T1 walking → T6 alpine grade III).
+  // The scale colours are independent of the OSMC marked-route palette;
+  // they communicate physical difficulty regardless of paint markings.
+  // Each pair is [inline, dim/dark accent for halo/glow].
+  sacScale: {
+    t1: '#2f8b3d', // hiking — green
+    t2: '#e4b02e', // mountain hiking — yellow
+    t3: '#e07a26', // demanding mountain hiking — orange
+    t4: '#cc3b1f', // alpine — red
+    t5: '#7d3aa3', // demanding alpine — purple
+    t6: '#1e1e1e', // difficult alpine — black
+  },
+  // Marked but no SAC grade. Slightly cooler red than the T4 alpine
+  // tone so a "marked but ungraded" route doesn't read as alpine.
+  sacScaleNeutral: '#a04030',
+  // Via-ferrata — black serration over red inline. Scale text uses
+  // the same black so K1..K6 reads against the route halo.
+  trailViaFerrata: '#1e1e1e',
+  // Informal stitches — un-maintained social trails. Painted as a
+  // thin desaturated grey dot pattern over whatever's underneath.
+  trailInformal: '#7a766c',
+  // Bridges — white perpendicular hatching on top of the trail
+  // casing. Reads as a structural stripe at every zoom.
+  trailBridge: '#ffffff',
+
   // ---------------------------------------------------------------------
   // Premium glow accents — derived from the existing accent family
   // (motorwayCasing amber for roads/labels, the trail red for trails,
@@ -390,6 +415,21 @@ const DARK = {
   carpathianTrail: '#ff5b3d',
   carpathianTrailCasing: '#0e1318',
   carpathianTrailDim: '#c2432a',
+
+  // SAC scale — dark theme variants. Each token brightened so the
+  // category reads at low alpha against the deep slate canvas.
+  sacScale: {
+    t1: '#7ec77d',
+    t2: '#f1c84d',
+    t3: '#ffa55a',
+    t4: '#ff5b3d',
+    t5: '#c47fde',
+    t6: '#dadada',
+  },
+  sacScaleNeutral: '#d27660',
+  trailViaFerrata: '#f0f0f0',
+  trailInformal: '#7d7a72',
+  trailBridge: '#f6f1e3',
 
   // Premium glow accents — dark theme uses warmer amber against
   // the deep slate background. Slightly higher alpha than light

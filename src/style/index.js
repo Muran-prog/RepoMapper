@@ -67,6 +67,12 @@ import {
   trailLayers,
   carpathianLabels,
   cablewayLayers,
+  forestRoadLayers,
+  informalTrailLayers,
+  viaFerrataLayers,
+  steepStepsLayers,
+  trailFurnitureLayers,
+  trailLabels,
 } from './carpathian.js';
 import { getTokens } from './tokens.js';
 
@@ -286,8 +292,22 @@ export function composeLayers(opts = {}) {
   );
 
   // 16: Carpathian trail emphasis — above roads so trails read over them.
+  //     Order is critical for legibility:
+  //       a. forest roads          (broadest, lowest contrast)
+  //       b. informal social paths (grey dots)
+  //       c. marked trails         (glow → casing → inline, by sac_scale)
+  //       d. via-ferrata           (red + black serration)
+  //       e. steps                 (perpendicular hatching)
+  //       f. bridges/ladders/fords (structural symbols on top)
+  //       g. trail labels          (above their geometry)
   if (carpathian && hasCarpathianOsmSource) {
+    stack.push(...forestRoadLayers(t));
+    stack.push(...informalTrailLayers(t));
     stack.push(...trailLayers(t));
+    stack.push(...viaFerrataLayers(t));
+    stack.push(...steepStepsLayers(t));
+    stack.push(...trailFurnitureLayers(t));
+    stack.push(...trailLabels(t));
   }
 
   // 17: Buildings.
