@@ -69,51 +69,120 @@ const HAZARD = {
   },
 };
 
-const NAME_EXPR = [
-  'coalesce',
-  ['get', 'name:uk'],
-  ['get', 'name:en'],
-  ['get', 'name'],
-];
+/**
+ * Build a hazard label expression with a "type-suffix" after the name:
+ *
+ *   has name  →   "<name> / <typeText>"            (font-scale 1.0)
+ *                 "<ele> м"                        (font-scale 0.78)
+ *   no name   →   "<typeText>"                    (font-scale 1.0)
+ *                 "<ele> м"                        (font-scale 0.78)
+ *
+ * The slash + type token is wired in as a low-key cartographic ride-
+ * along — same line as the place name but immediately tells the user
+ * what KIND of hazard this is (extreme peak / hard peak / cliff / high
+ * pass). Keeps the safety-relevant signal readable even at country-
+ * overview zoom where the elevation might still be invisible.
+ *
+ * `withEle` controls whether the second line carries the elevation
+ * sub-string. Cliffs don't have a useful `ele` tag in OSM (cliff
+ * geometry is the line of the drop, not a single elevation), so the
+ * caller passes `withEle: false` for the cliff variant.
+ *
+ * `fallbackName` is the localised noun used when no `name`/`name:uk`/
+ * `name:en` exists ("Обрив" for cliffs, "Перевал" for passes). For
+ * peaks we set fallbackName = '' which collapses the "<fallback> /
+ * <type>" line into just "<type>" so we don't render bogus "/ Экс. пик"
+ * with empty leading slash.
+ *
+ * The shape is built with a `case` switch on `has name*` rather than
+ * a `coalesce(...)`-then-concat trick because MapLibre's `format`
+ * operator wants concrete strings per segment, not a coalesce'd
+ * fallback that may be `null`.
+ *
+ * @param {string} typeText      Short Russian type label (e.g. "Экс. пик").
+ * @param {object} [opts]
+ * @param {boolean} [opts.withEle=true]  Append "<ele> м" sub-line.
+ * @param {string}  [opts.fallbackName='']  Noun used when name is missing.
+ *                                            Set '' to drop the "/ type"
+ *                                            slash entirely (peaks).
+ * @returns {Array} MapLibre `format` expression.
+ */
+function nameTypeEleLabel(typeText, { withEle = true, fallbackName = '' } = {}) {
+  // Per-feature decision: does this object have any `name` tag?
+  const hasAnyName = [
+    'any',
+    ['has', 'name:uk'],
+    ['has', 'name:en'],
+    ['has', 'name'],
+  ];
 
-/** "<name>\n<ele> м" — same shape as the regular peak label. */
-const NAME_AND_ELE = [
-  'format',
-  NAME_EXPR, { 'font-scale': 1.0 },
-  '\n', {},
-  ['concat', ['to-string', ['get', 'ele']], ' м'], { 'font-scale': 0.78 },
-];
+  // First line: either "<name> / <type>" (named) or fallback.
+  // We pick the localized name preferring uk, then en, then default.
+  const nameThenType = [
+    'concat',
+    ['coalesce', ['get', 'name:uk'], ['get', 'name:en'], ['get', 'name']],
+    ' / ',
+    typeText,
+  ];
 
-/** Cliff name OR localised fallback "Обрив". Never empty. */
-const CLIFF_LABEL = [
-  'format',
-  [
-    'coalesce',
-    ['get', 'name:uk'],
-    ['get', 'name:en'],
-    ['get', 'name'],
-    'Обрив',
-  ], { 'font-scale': 1.0 },
-];
+  // Fallback line — never has a leading "/", just the noun OR the type.
+  // For peaks (fallbackName='') we want just the type ("Экс. пик");
+  // for cliffs/passes we want the localised noun ("Обрив", "Перевал")
+  // followed by " / type" so it still reads as "<noun> / <type>" when
+  // unnamed.
+  const fallbackFirstLine =
+    fallbackName === ''
+      ? typeText
+      : ['concat', fallbackName, ' / ', typeText];
 
-/** Pass name + elevation, fallback "Перевал". */
-const PASS_LABEL = [
-  'format',
-  [
-    'coalesce',
-    ['get', 'name:uk'],
-    ['get', 'name:en'],
-    ['get', 'name'],
-    'Перевал',
-  ], { 'font-scale': 1.0 },
-  '\n', {},
-  [
+  const firstLine = ['case', hasAnyName, nameThenType, fallbackFirstLine];
+
+  if (!withEle) {
+    return ['format', firstLine, { 'font-scale': 1.0 }];
+  }
+
+  // Second line: "\n<ele> м", but only if `ele` is set (Carpathian
+  // peaks always have it; high passes usually do).
+  const eleSegment = [
     'case',
     ['has', 'ele'],
     ['concat', ['to-string', ['get', 'ele']], ' м'],
     '',
-  ], { 'font-scale': 0.78 },
-];
+  ];
+
+  return [
+    'format',
+    firstLine, { 'font-scale': 1.0 },
+    '\n', {},
+    eleSegment, { 'font-scale': 0.78 },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Type-tagged labels — one per hazard kind. Short Russian abbreviations
+// keep the label compact even at country-overview zoom where every
+// extra character costs collision space:
+//
+//   Экс. пик     — экстремальный пик (≥1800 m)
+//   Слож. пик    — сложный пик       (1500–1800 m)
+//   Обрыв        — cliff / sharp drop
+//   Оп. перевал  — опасный перевал   (≥1300 m)
+//
+// Forms are deliberately distinct so the user reads "пик" vs "перевал"
+// vs "обрыв" at a glance even when the abbreviation prefix ("Экс." /
+// "Слож." / "Оп.") is small. None of the strings collide with the OSM
+// `name` field, so we never accidentally hide a real toponym.
+// ---------------------------------------------------------------------------
+
+const EXTREME_PEAK_LABEL = nameTypeEleLabel('Экс. пик');
+const HARD_PEAK_LABEL = nameTypeEleLabel('Слож. пик');
+const CLIFF_LABEL = nameTypeEleLabel('Обрыв', {
+  withEle: false,
+  fallbackName: 'Скеля',
+});
+const PASS_LABEL = nameTypeEleLabel('Оп. перевал', {
+  fallbackName: 'Перевал',
+});
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -308,7 +377,7 @@ export function hazardLayers(t) {
     ringColor: t.hazard.peak.ring,
     labelColor: t.hazard.peak.label,
     labelHalo: t.hazard.peak.halo,
-    labelText: NAME_AND_ELE,
+    labelText: EXTREME_PEAK_LABEL,
     // Crisp ring small at country zoom, chunky at hiking zooms.
     ringStops: [[6, 5], [9, 7], [12, 9], [16, 12], [20, 16]],
     glowStops: [[6, 11], [9, 14], [12, 18], [16, 24], [20, 32]],
@@ -327,7 +396,7 @@ export function hazardLayers(t) {
     ringColor: t.hazard.peakHard.ring,
     labelColor: t.hazard.peakHard.label,
     labelHalo: t.hazard.peakHard.halo,
-    labelText: NAME_AND_ELE,
+    labelText: HARD_PEAK_LABEL,
     ringStops: [[8, 4.5], [12, 7], [16, 10], [20, 14]],
     glowStops: [[8, 10], [12, 14], [16, 20], [20, 28]],
     textSizeStops: [[8, 10], [12, 12], [16, 14], [20, 17]],
