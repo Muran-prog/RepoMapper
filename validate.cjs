@@ -100,6 +100,10 @@ async function main() {
       // umbrella enableCarpathianOverlay capability gates emission.
       forestLeafType:
         features.forestLeafType && cfg.enableCarpathianOverlay,
+      // Hazardous-terrain overlay also rides the umbrella Carpathian
+      // capability since the data lives in carpathian-osm.pmtiles.
+      hazardousTerrain:
+        features.hazardousTerrain && cfg.enableCarpathianOverlay,
       globeProjection: features.globeProjection && cfg.enableGlobeProjection,
       hypsoRampId: hypso?.rampId ?? HYPSO.defaultRampId,
     };
@@ -187,6 +191,7 @@ async function main() {
       hasCarpathianOsmSource: has.carpathianOsm,
       forestLeafType: effectiveFeatures.forestLeafType,
       hasForestPolygonSource: has.forestPolygon,
+      hazardousTerrain: effectiveFeatures.hazardousTerrain,
     };
 
     // Inject a stub dynamic-contours source if the feature is on, since
@@ -416,6 +421,30 @@ async function main() {
       stubCarpathianOsmUrl: true,
       stubWorldcoverUrl: true,
       stubCanopyHeightUrl: true,
+    },
+    // Hazardous-terrain overlay — extreme peaks / cliffs / dangerous
+    // passes. Without a carpathian-osm source the layers must not
+    // emit (graceful fallback); with the source on, all 12 sub-layers
+    // (4 hazard kinds × glow / ring / label) appear in the stack.
+    {
+      name: 'hazard-no-source',
+      flags: { hazardousTerrain: true },
+      disableCarpathianOsmUrl: true,
+    },
+    {
+      name: 'hazard-with-source',
+      flags: { hazardousTerrain: true },
+      stubCarpathianOsmUrl: true,
+    },
+    // Cross-product: hazardousTerrain ON together with the full
+    // Carpathian trail web ON. Verifies the two independent feature
+    // toggles (a user can run hazards alone, or with full detail)
+    // co-emit cleanly without colliding sort-keys / source-layer
+    // references.
+    {
+      name: 'hazard-with-carpathian',
+      flags: { hazardousTerrain: true, carpathian: true },
+      stubCarpathianOsmUrl: true,
     },
     // Hypso-specific feature packs — every mode the renderer can pick.
     {
@@ -1148,6 +1177,113 @@ async function main() {
   }
   console.log(`Forest leaf-type layer invariants: ${forestLayerFails === 0 ? 'all OK' : `${forestLayerFails} FAILED`}`);
   if (forestLayerFails > 0) failed += forestLayerFails;
+
+  // ---------------------------------------------------------------------
+  // Hazardous-terrain LAYER invariants — graceful fallback + emission
+  // + always-on-top ordering. Without a carpathian-osm source the 12
+  // hazard layers must NOT emit; with the source they all emit, AFTER
+  // every other label/symbol layer (so they win every collision).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Hazardous-terrain layer invariants:');
+  let hazardLayerFails = 0;
+  const hazardIds = [
+    'hazard_peak_extreme_glow',
+    'hazard_peak_extreme_ring',
+    'hazard_peak_extreme_label',
+    'hazard_peak_hard_glow',
+    'hazard_peak_hard_ring',
+    'hazard_peak_hard_label',
+    'hazard_cliff_glow',
+    'hazard_cliff_ring',
+    'hazard_cliff_label',
+    'hazard_pass_danger_glow',
+    'hazard_pass_danger_ring',
+    'hazard_pass_danger_label',
+  ];
+
+  // Graceful fallback — URL null, feature flag on.
+  const hazardNoSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, hazardousTerrain: true },
+    sourceStubs: {},
+    terrainOverride: {
+      ...TERRAIN,
+      carpathianOsm: { ...TERRAIN.carpathianOsm, url: null },
+    },
+  });
+  let absentCount = 0;
+  for (const id of hazardIds) {
+    if (hazardNoSourceStyle.layers.some((l) => l.id === id)) {
+      hazardLayerFails++;
+      console.log(`  FAIL ${id} emitted with carpathianOsm.url=null (should be off)`);
+    } else {
+      absentCount++;
+    }
+  }
+  console.log(`  OK   all 12 hazard_* layers absent without source (${absentCount}/12)`);
+
+  // Emission — production URL, feature flag on.
+  const hazardWithSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, hazardousTerrain: true },
+    sourceStubs: {
+      'carpathian-osm': {
+        type: 'vector',
+        url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      },
+    },
+  });
+  let presentCount = 0;
+  for (const id of hazardIds) {
+    if (!hazardWithSourceStyle.layers.some((l) => l.id === id)) {
+      hazardLayerFails++;
+      console.log(`  FAIL ${id} not emitted with carpathian-osm source present`);
+    } else {
+      presentCount++;
+    }
+  }
+  console.log(`  OK   all 12 hazard_* layers present with source (${presentCount}/12)`);
+
+  // Always-on-top: every hazard layer's index must be greater than
+  // the index of the LAST non-hazard layer in the stack. Equivalent
+  // to "hazards are emitted last".
+  const hazardLayers = hazardWithSourceStyle.layers
+    .map((l, i) => ({ id: l.id, i }))
+    .filter((e) => hazardIds.includes(e.id));
+  const minHazardIdx = Math.min(...hazardLayers.map((e) => e.i));
+  const maxNonHazardIdx = hazardWithSourceStyle.layers
+    .map((l, i) => ({ id: l.id, i }))
+    .filter((e) => !hazardIds.includes(e.id))
+    .reduce((max, e) => Math.max(max, e.i), -1);
+  if (minHazardIdx > maxNonHazardIdx) {
+    console.log(`  OK   hazard_* layers all paint after every other layer (min=${minHazardIdx} > max-other=${maxNonHazardIdx})`);
+  } else {
+    hazardLayerFails++;
+    console.log(`  FAIL hazard_* layers must paint last (min hazard idx ${minHazardIdx}, max other idx ${maxNonHazardIdx})`);
+  }
+
+  // Sort-key arbitration: every hazard label's symbol-sort-key must be
+  // more negative than any peak-label sort-key (peak sort-key is
+  // `coalesce(rank, 0)` which on Hoverla is -2061, so hazard labels
+  // need to be < -2061; in practice they sit at -7e8 .. -1e9).
+  let sortKeyOk = true;
+  for (const layer of hazardWithSourceStyle.layers) {
+    if (!layer.id.endsWith('_label') || !layer.id.startsWith('hazard_')) continue;
+    const sk = layer.layout?.['symbol-sort-key'];
+    if (typeof sk !== 'number' || sk > -1e6) {
+      hazardLayerFails++;
+      sortKeyOk = false;
+      console.log(`  FAIL ${layer.id}: symbol-sort-key ${sk} not aggressively negative`);
+    }
+  }
+  if (sortKeyOk) {
+    console.log('  OK   every hazard label has symbol-sort-key < -1e6 (always wins collisions)');
+  }
+  console.log(`Hazardous-terrain layer invariants: ${hazardLayerFails === 0 ? 'all OK' : `${hazardLayerFails} FAILED`}`);
+  if (hazardLayerFails > 0) failed += hazardLayerFails;
 
   // ---------------------------------------------------------------------
   // Layer-level invariants — assert that the relief stack carries the

@@ -32,6 +32,10 @@
  *  19. cableway / ski piste       — mountain auxiliaries
  *  20. labels                     — places, roads, water, parks, POIs
  *  21. Carpathian labels          — peaks / passes / saddles (top priority)
+ *  22. Hazardous-terrain overlay  — extreme peaks / cliffs / dangerous
+ *                                   passes (very negative sort-key, wins
+ *                                   every collision; emitted last so it
+ *                                   paints on top of everything)
  *
  * Land-only mask: layers 5–6 (hypso + hillshade) sit BELOW the water
  * polygons in layer 7, so the colour wash never bleeds into lakes or
@@ -85,6 +89,7 @@ import {
   trailLabels,
   forestPolygonLayers,
 } from './carpathian.js';
+import { hazardLayers } from './hazards.js';
 import { getTokens } from './tokens.js';
 
 /**
@@ -159,6 +164,11 @@ import { getTokens } from './tokens.js';
  *           availability.forestPolygon in sources.js — true iff the
  *           carpathian-osm vector source is present (the layer lives
  *           inside that pmtiles).
+ * @property {boolean} [hazardousTerrain=false]
+ *           Hazardous-terrain overlay (extreme peaks, cliffs,
+ *           dangerous passes). Backed by the same carpathian-osm
+ *           pmtiles archive — emit-gated by both the feature flag
+ *           and `hasCarpathianOsmSource`.
  *
  * Accessibility:
  * @property {boolean} [reduceMotion=false]     Static relief, no 3D.
@@ -225,6 +235,7 @@ export function composeLayers(opts = {}) {
     hasCarpathianOsmSource = false,
     forestLeafType = false,
     hasForestPolygonSource = false,
+    hazardousTerrain = false,
 
     reduceMotion = false,
   } = opts;
@@ -502,6 +513,26 @@ export function composeLayers(opts = {}) {
   //     after generic labels so collisions favour mountain features.
   if (labels && carpathian && hasCarpathianOsmSource) {
     stack.push(...carpathianLabels(t));
+  }
+
+  // 22: Hazardous-terrain overlay — high-visibility magenta/teal/tangerine
+  //     rings + safety-labels for extreme peaks, cliffs, and dangerous
+  //     mountain passes. Emitted LAST so the markers and labels paint
+  //     on top of everything else, including peak labels. Source-gated:
+  //     the data lives in the same `mountain_feature` source-layer used
+  //     by `carpathianLabels`, so availability mirrors the umbrella
+  //     Carpathian-overlay capability. The label sort-keys (-1e9 ..
+  //     -7e8) sit far below any other symbol-sort-key in the project,
+  //     so MapLibre's collision arbiter always favours hazard markers.
+  //
+  //     Toggle independent from `carpathian`: a user who turned the
+  //     full Carpathian detail off can still leave the hazard overlay
+  //     on so the overview map stays free of trail clutter while
+  //     keeping the safety-relevant signal visible. The opposite
+  //     direction (carpathian ON, hazardousTerrain OFF) is also valid
+  //     — that's why we don't AND with `carpathian` here.
+  if (hazardousTerrain && hasCarpathianOsmSource) {
+    stack.push(...hazardLayers(t));
   }
 
   return stack;

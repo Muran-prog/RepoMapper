@@ -70,6 +70,12 @@ const ICONS = {
   // glyph (single tall conifer), so the three forest-related toggles
   // remain visually unambiguous.
   forestLeaf: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17 L9 8 L12 17 Z"/><line x1="9" y1="17" x2="9" y2="20"/><circle cx="16" cy="12" r="4"/><line x1="16" y1="16" x2="16" y2="20"/></svg>`,
+  // Mountain-with-warning glyph for the Hazardous-terrain toggle:
+  // a sharp peak silhouette with an exclamation mark inside, calling
+  // out "danger / hard-to-reach". Keeps the same single-stroke
+  // 1.75-width vocabulary as every other relief glyph so the row
+  // reads as a peer of the slope-warning / hillshade / hypso toggles.
+  hazard: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20 L10 7 L13 12 L16 8 L21 20 Z"/><line x1="12" y1="13" x2="12" y2="17"/><circle cx="12" cy="19" r="0.6" fill="currentColor"/></svg>`,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
   sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="18.9" y2="18.9"/><line x1="5.1" y1="18.9" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="18.9" y2="5.1"/></svg>`,
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
@@ -105,6 +111,10 @@ const CANOPY_HEIGHT_TINT_PREF_KEY = 'cart:features:canopyHeightTint';
 // outlive the page. Stored under the same `cart:features:*` namespace
 // so the persistence shape stays consistent.
 const FOREST_LEAF_TYPE_PREF_KEY = 'cart:features:forestLeafType';
+// Hazardous-terrain overlay (extreme peaks, cliffs, dangerous passes).
+// Defaults to ON and the user choice persists so a user who turns the
+// "danger" markers off doesn't see them re-appear after every reload.
+const HAZARDOUS_TERRAIN_PREF_KEY = 'cart:features:hazardousTerrain';
 
 function loadWorldcoverTintPref(fallback) {
   try {
@@ -164,6 +174,27 @@ function saveForestLeafTypePref(value) {
   try {
     if (typeof window === 'undefined') return;
     window.localStorage?.setItem(FOREST_LEAF_TYPE_PREF_KEY, value ? '1' : '0');
+  } catch {
+    /* quota / serialise — best-effort */
+  }
+}
+
+function loadHazardousTerrainPref(fallback) {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = window.localStorage?.getItem(HAZARDOUS_TERRAIN_PREF_KEY);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveHazardousTerrainPref(value) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage?.setItem(HAZARDOUS_TERRAIN_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -557,6 +588,14 @@ function renderReliefPanelBody() {
           </span>
           <input type="checkbox" data-ctl="slopeWarning">
         </label>
+        <label class="row" data-ctl-row="hazardousTerrain" title="Труднодоступные пики, обрывы, опасные перевалы">
+          <span class="hazard-label">
+            ${ICONS.hazard}
+            <span>Опасные участки</span>
+          </span>
+          <input type="checkbox" data-ctl="hazardousTerrain" aria-describedby="hazard-hint">
+        </label>
+        <small class="row-hint" id="hazard-hint">Труднодоступные пики (≥1500 м), обрывы, опасные перевалы</small>
         <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
         <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
       </div>
@@ -1000,6 +1039,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
+      // Hazardous-terrain overlay — on by default; user choice persists
+      // under `cart:features:hazardousTerrain` for the same reason
+      // worldcover/canopy/forestLeaf do (operator-side data is hosted,
+      // so the user's "off" decision should outlive the page).
+      hazardousTerrain: loadHazardousTerrainPref(FEATURES.hazardousTerrain),
     },
   };
   const effectiveProfile = () =>
@@ -1147,6 +1191,10 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // source-layer, the user's on/off choice persists across
       // reloads under `cart:features:forestLeafType`.
       if (key === 'forestLeafType') saveForestLeafTypePref(el.checked);
+      // Hazardous-terrain overlay defaults to ON; the user's choice
+      // (especially "off") needs to outlive the page so the markers
+      // don't reappear on every reload.
+      if (key === 'hazardousTerrain') saveHazardousTerrainPref(el.checked);
       // Any user-driven change to one of the four managed flags is
       // the natural deactivation signal for the Flat hypso preset —
       // the computed predicate handles that automatically here.
@@ -1170,6 +1218,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
+  wireToggle('hazardousTerrain');
 
   // ----- Flat hypsometric preset --------------------------------------
   //

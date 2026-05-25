@@ -712,6 +712,34 @@ export const FEATURES = Object.freeze({
    * no-op (graceful fallback in src/style/index.js).
    */
   forestLeafType: false,
+
+  /**
+   * Hazardous terrain overlay — high-visibility "danger" markers for
+   * truly hard-to-reach mountains, sharp cliffs and dangerous high
+   * passes inside the Carpathian bbox. Driven entirely by the
+   * `mountain_feature` source-layer of `carpathian-osm.pmtiles`:
+   *
+   *   class=peak  + ele ≥ 1800 m → "extreme peak"   (магента)
+   *   class=peak  + ele ≥ 1500 m → "hard peak"      (deep crimson)
+   *   class=cliff               → "cliff / обрив"  (teal)
+   *   class=pass  + ele ≥ 1300 m → "dangerous pass" (tangerine)
+   *
+   * Each match renders as a bright halo + crisp ring + safety-label.
+   * Label colour comes from a dedicated `t.hazard.*.label` token
+   * that's distinct from every existing label-colour token, so a
+   * hazard label can be told from a regular peak/place label at a
+   * glance — even at low zoom without zooming in.
+   *
+   * Defaults to ON because the source archive is already hosted from
+   * the gh-pages branch and the layer carries safety-relevant signal
+   * (alpine routes, off-trail planning context). Source missing →
+   * silent no-op (graceful fallback in src/style/index.js).
+   *
+   * The user can toggle it off via the Relief panel; their choice is
+   * persisted under `cart:features:hazardousTerrain` so it survives
+   * a reload.
+   */
+  hazardousTerrain: true,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */

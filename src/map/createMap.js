@@ -388,6 +388,14 @@ function profileToLayerOpts(profileConfig, features) {
     // user flag with the umbrella Carpathian-overlay capability.
     forestLeafType:
       features.forestLeafType && profileConfig.enableCarpathianOverlay,
+    // Hazardous-terrain overlay shares the umbrella Carpathian
+    // capability (data lives in carpathian-osm.pmtiles), but is a
+    // SEPARATE user-facing toggle so a user can render the hazard
+    // markers without the full trail / forest-road / via-ferrata
+    // detail web. The renderer just AND's the user flag with the
+    // umbrella enableCarpathianOverlay capability.
+    hazardousTerrain:
+      features.hazardousTerrain && profileConfig.enableCarpathianOverlay,
     colorRelief: features.colorRelief, // runtime-checked downstream
   };
 }

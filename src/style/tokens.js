@@ -323,6 +323,61 @@ const LIGHT = {
     protect: FOREST_PROTECT.light,
     label: FOREST_LABEL,
   }),
+
+  // ---------------------------------------------------------------------
+  // Hazardous-terrain overlay — extreme peaks, cliffs, dangerous high
+  // passes. Each kind owns four slots:
+  //
+  //   ring   — crisp circle stroke around the marker
+  //   glow   — soft outer halo (alpha-rgba) for far-away legibility
+  //   label  — text fill, deliberately a hue NOT used by any other
+  //            label-colour token (`textPeak`, `textPass`, `textPrimary`,
+  //            `textRoad`, `textPark`, `sacScale.*`, …) so a hazard
+  //            label can be told from a regular label at a glance.
+  //   halo   — high-contrast text halo so the label reads on hypso /
+  //            hillshade / forest fill / paper background alike.
+  //
+  // Hue choices in the LIGHT theme:
+  //   • peak (extreme, ≥1800 m)    — vivid magenta. No other layer in
+  //                                  the project uses pink/magenta, so
+  //                                  the marker is unmistakable.
+  //   • peakHard (1500–1800 m)     — deep crimson, sits between peak
+  //                                  magenta and trail red without
+  //                                  collapsing into either.
+  //   • cliff                      — saturated teal. Far from the
+  //                                  amber/red/green vocabulary and
+  //                                  contrasts clean against forest fill.
+  //   • passDanger (≥1300 m)       — bright tangerine. Distinct enough
+  //                                  from the cooler amber accent
+  //                                  (`motorwayCasing`) to read as
+  //                                  "warning sign" rather than "road".
+  // ---------------------------------------------------------------------
+  hazard: Object.freeze({
+    peak: Object.freeze({
+      ring:  '#d61f7a',                           // vivid magenta
+      glow:  'rgba(214, 31, 122, 0.42)',
+      label: '#a3145c',                           // deep magenta — readable
+      halo:  '#fbf4f8',
+    }),
+    peakHard: Object.freeze({
+      ring:  '#b8264a',
+      glow:  'rgba(184, 38, 74, 0.36)',
+      label: '#86162f',
+      halo:  '#fff2f4',
+    }),
+    cliff: Object.freeze({
+      ring:  '#0aa5a3',                           // saturated teal
+      glow:  'rgba(10, 165, 163, 0.38)',
+      label: '#04706f',
+      halo:  '#eafaf9',
+    }),
+    passDanger: Object.freeze({
+      ring:  '#ff7a1a',                           // bright tangerine
+      glow:  'rgba(255, 122, 26, 0.36)',
+      label: '#a04a05',
+      halo:  '#fff5e6',
+    }),
+  }),
 };
 
 const DARK = {
@@ -534,6 +589,38 @@ const DARK = {
     leaf: FOREST_LEAF.dark,
     protect: FOREST_PROTECT.dark,
     label: FOREST_LABEL,
+  }),
+
+  // Hazardous-terrain overlay — dark variant. Hues are lifted (higher
+  // L*) so the rings + labels read against the deep slate canvas
+  // without crushing into the dimmed hypso palette. Halo flips to the
+  // dark canvas colour so the label glow reads as a clean cut-out
+  // around bright glyphs.
+  hazard: Object.freeze({
+    peak: Object.freeze({
+      ring:  '#ff5fa8',
+      glow:  'rgba(255, 95, 168, 0.46)',
+      label: '#ffb1d4',                           // soft rose, vivid on dark
+      halo:  '#1a0a14',
+    }),
+    peakHard: Object.freeze({
+      ring:  '#ff6c8c',
+      glow:  'rgba(255, 108, 140, 0.40)',
+      label: '#ffb6c5',
+      halo:  '#1a0c12',
+    }),
+    cliff: Object.freeze({
+      ring:  '#3fd0ce',
+      glow:  'rgba(63, 208, 206, 0.42)',
+      label: '#9ae9e7',
+      halo:  '#08201f',
+    }),
+    passDanger: Object.freeze({
+      ring:  '#ffa251',
+      glow:  'rgba(255, 162, 81, 0.40)',
+      label: '#ffd4a3',
+      halo:  '#1d1208',
+    }),
   }),
 };
 
