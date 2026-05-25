@@ -62,6 +62,7 @@ import { roadLayers } from './roads.js';
 import { buildingLayers } from './buildings.js';
 import { boundaryLayers } from './boundaries.js';
 import { labelLayers } from './labels.js';
+import { settlementOutlineLayers } from './settlements.js';
 import {
   hillshadeLayers,
   textureShadingLayers,
@@ -111,6 +112,13 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [enableSuburbs=true]
  * @property {boolean} [enableRoadShieldsMinor=true]
  * @property {boolean} [roadsCarpathianDoubleCasing=true]
+ * @property {boolean} [settlementOutline=true]
+ *           Heavy road-style violet outline around residential /
+ *           suburb / quarter / neighbourhood polygons so populated
+ *           places read at country-overview zoom. Mirrors the road
+ *           glow → casing → inline paint pattern; see
+ *           `src/style/settlements.js` for the layer stack. Off →
+ *           layers not emitted (graceful fallback).
  *
  * Relief & terrain stack:
  * @property {boolean} [hillshade=false]        Emit hillshade layer(s).
@@ -196,6 +204,7 @@ export function composeLayers(opts = {}) {
     enableSuburbs = true,
     enableRoadShieldsMinor = true,
     roadsCarpathianDoubleCasing = true,
+    settlementOutline = true,
 
     hillshade = false,
     multiDirHillshade = false,
@@ -436,6 +445,21 @@ export function composeLayers(opts = {}) {
 
   // 14: Aeroway.
   stack.push(...baseAeroway(t));
+
+  // 14a: Settlement outlines — heavy road-style violet frame around
+  //      residential / suburb / quarter / neighbourhood polygons so
+  //      villages, towns and cities read as framed plots at country
+  //      overview zoom. Mirrors the road glow → casing → inline
+  //      paint pattern. Sits ABOVE every base / landcover / landuse
+  //      fill (so the violet wash isn't buried) and BELOW the road
+  //      stack (so road network paints cleanly across settlement
+  //      boundaries at high zoom). Toggleable via the user-facing
+  //      Layers panel checkbox; default ON. See settlements.js for
+  //      the four-layer stack and the rationale behind the violet
+  //      hue choice.
+  if (settlementOutline) {
+    stack.push(...settlementOutlineLayers(t));
+  }
 
   // 15: Roads.
   stack.push(

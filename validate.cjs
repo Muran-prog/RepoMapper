@@ -133,6 +133,7 @@ async function main() {
       enableSuburbs: cfg.enableSuburbs,
       enableRoadShieldsMinor: cfg.enableRoadShieldsMinor,
       roadsCarpathianDoubleCasing: cfg.roadsCarpathianDoubleCasing,
+      settlementOutline: features.settlementOutline,
 
       hillshade: effectiveFeatures.hillshade,
       multiDirHillshade: cfg.enableMultiDirHillshade && effectiveFeatures.hillshade,
@@ -252,6 +253,7 @@ async function main() {
     { name: 'no-hypso', flags: { hypsometricTint: false } },
     { name: 'no-ridge', flags: { ridgeOverlay: false } },
     { name: 'no-carpathian', flags: { carpathian: false } },
+    { name: 'no-settlement-outline', flags: { settlementOutline: false } },
     {
       name: 'minimal',
       flags: {

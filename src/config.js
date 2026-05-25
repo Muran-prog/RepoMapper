@@ -740,6 +740,28 @@ export const FEATURES = Object.freeze({
    * a reload.
    */
   hazardousTerrain: true,
+
+  /**
+   * Settlement outlines — heavy, road-style violet frame around
+   * residential / suburb / quarter / neighbourhood polygons in the
+   * upstream OMT `landuse` source-layer. Mirrors the road glow →
+   * casing → inline paint pattern from `roads.js` so populated
+   * places read as framed plots from country-overview zoom (z4)
+   * instead of vanishing into the cream paper background as they
+   * do with the soft `landuse_residential` fill alone.
+   *
+   * Defaults to ON — the brief asks for villages, towns and cities
+   * to read "without zoom". Toggleable from the Layers panel; the
+   * choice is NOT persisted because no operator-side data is
+   * involved (the residential polygons ship in the upstream OMT
+   * tiles and the toggle is purely a stylistic preference).
+   *
+   * See `src/style/settlements.js` for the four-layer paint stack
+   * and the rationale behind the violet hue choice (every other
+   * accent family — amber roads, red trails, teal cliffs, magenta
+   * hazards, green forests — was already claimed).
+   */
+  settlementOutline: true,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */

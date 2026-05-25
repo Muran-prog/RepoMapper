@@ -279,6 +279,24 @@ const LIGHT = {
   trailGlow: 'rgba(204, 59, 31, 0.38)',
   textPeakGlow: 'rgba(122, 90, 56, 0.42)',
 
+  // ---------------------------------------------------------------------
+  // Settlement outlines — heavy boundary stroke around residential
+  // landuse polygons. Mirrors the road glow → casing → inline pattern
+  // so villages / towns / cities read as framed plots at country
+  // overview zoom (where the soft cream `residential` fill is invisible).
+  //
+  // Hue choice: deep violet. Roads own amber, trails own red, cliffs
+  // own teal, hazards own magenta + tangerine, forests own green.
+  // Violet is the only unclaimed accent in the project, so a settlement
+  // frame reads as its own tier in the cartographic hierarchy without
+  // colliding with any existing layer. See `settlements.js` for the
+  // four-layer paint stack that consumes these tokens.
+  // ---------------------------------------------------------------------
+  settlementInline: '#7c3aed',                       // bright violet core
+  settlementCasing: '#3b1e6e',                       // deep aubergine frame
+  settlementGlow: 'rgba(124, 58, 237, 0.45)',        // inner heat ring
+  settlementGlowOuter: 'rgba(124, 58, 237, 0.22)',   // outer ambient wash
+
   // Slope-warning overlay — translucent red gradient for steep terrain
   // (≥ 35°) painted via the native `color-relief` layer. The three
   // tokens correspond to the 35°/45°/60° stops in the layer's slope
@@ -555,6 +573,16 @@ const DARK = {
   peakMarkerGlow: 'rgba(240, 230, 207, 0.40)',
   trailGlow: 'rgba(255, 91, 61, 0.42)',
   textPeakGlow: 'rgba(240, 230, 207, 0.40)',
+
+  // Settlement outlines — dark variant. Same violet hue family as
+  // light, lifted in lightness so the inline core pops against the
+  // deep slate canvas without crushing into the dimmed hypso palette.
+  // Casing stays dark for a crisp frame; glows carry slightly higher
+  // alpha to compensate for the dimmer base background.
+  settlementInline: '#a78bfa',
+  settlementCasing: '#1e0e3c',
+  settlementGlow: 'rgba(167, 139, 250, 0.50)',
+  settlementGlowOuter: 'rgba(167, 139, 250, 0.26)',
 
   // Slope-warning overlay — dark theme uses slightly hotter reds with
   // a touch more alpha so the overlay reads against the deep slate

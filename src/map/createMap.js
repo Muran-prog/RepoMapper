@@ -359,6 +359,10 @@ function profileToLayerOpts(profileConfig, features) {
     enableSuburbs: profileConfig.enableSuburbs,
     enableRoadShieldsMinor: profileConfig.enableRoadShieldsMinor,
     roadsCarpathianDoubleCasing: profileConfig.roadsCarpathianDoubleCasing,
+    // Heavy violet outline around residential/suburb/quarter/neighbourhood
+    // polygons. Pure user preference — no device-profile knob, just the
+    // raw flag from FEATURES (overridden by the user's UI toggle).
+    settlementOutline: features.settlementOutline,
 
     // Relief stack — AND the user's feature flag with the device profile
     // capability so the union is respected (never render a heavy feature

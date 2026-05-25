@@ -526,6 +526,11 @@ function renderLayersPanelBody() {
         <label class="row"><span>Подписи</span><input type="checkbox" data-ctl="labels" checked></label>
         <label class="row"><span>Точки интереса</span><input type="checkbox" data-ctl="pois" checked></label>
         <label class="row"><span>3D-здания</span><input type="checkbox" data-ctl="b3d" checked></label>
+        <label class="row" data-ctl-row="settlementOutline" title="Жирная обводка вокруг сёл, посёлков, городов — видно даже без зума">
+          <span>Обводка поселений</span>
+          <input type="checkbox" data-ctl="settlementOutline" aria-describedby="settlement-outline-hint">
+        </label>
+        <small class="row-hint" id="settlement-outline-hint">Жирная рамка вокруг сёл, посёлков и городов — как у дорог</small>
       </div>
     </div>
     <p class="panel-meta">Включайте визуальные слои поверх базовой карты. Изменения
@@ -1044,6 +1049,12 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // worldcover/canopy/forestLeaf do (operator-side data is hosted,
       // so the user's "off" decision should outlive the page).
       hazardousTerrain: loadHazardousTerrainPref(FEATURES.hazardousTerrain),
+      // Settlement outlines — heavy road-style violet frame around
+      // residential / suburb / quarter / neighbourhood polygons.
+      // Pure stylistic preference (no operator-side data is involved
+      // — the polygons ship in the upstream OMT tiles), so we don't
+      // persist it: every cold boot starts from the FEATURES default.
+      settlementOutline: FEATURES.settlementOutline,
     },
   };
   const effectiveProfile = () =>
@@ -1219,6 +1230,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
   wireToggle('hazardousTerrain');
+  wireToggle('settlementOutline');
 
   // ----- Flat hypsometric preset --------------------------------------
   //
