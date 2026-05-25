@@ -158,12 +158,15 @@ const LIGHT = {
 
   // ---------------------------------------------------------------------
   // Relief & atmosphere — Swiss-cartography inspired light-day palette.
-  // Shadow is a warm umber, highlight a soft cream, accent pulls toward
-  // the same umber to unify shaded slopes with the paper background.
+  // Shadow is a deep warm umber for pronounced ridge contrast (matches
+  // classic OSM topo references where shaded slopes read as strong
+  // sepia rather than a faint wash). Highlight stays a soft cream;
+  // accent pulls toward the same umber so cliffs / cirques don't pick
+  // up a competing hue.
   // ---------------------------------------------------------------------
-  hillshadeShadow: '#4a3220',
+  hillshadeShadow: '#241509',
   hillshadeHighlight: '#fff9ec',
-  hillshadeAccent: '#7a5a38',
+  hillshadeAccent: '#5a3e22',
 
   // Sky / atmosphere — daylight haze. Horizon is pale warm white, sky is
   // a gentle blue, fog is high-key to let terrain peek through at pitch.
