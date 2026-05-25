@@ -104,6 +104,11 @@ async function main() {
       // capability since the data lives in carpathian-osm.pmtiles.
       hazardousTerrain:
         features.hazardousTerrain && cfg.enableCarpathianOverlay,
+      // Hiking-route ribbons share the same source-layer parent
+      // (`hiking_route` inside carpathian-osm.pmtiles), so they ride
+      // the same umbrella capability gate as forest-leaf and hazards.
+      hikingRoutes:
+        features.hikingRoutes && cfg.enableCarpathianOverlay,
       globeProjection: features.globeProjection && cfg.enableGlobeProjection,
       hypsoRampId: hypso?.rampId ?? HYPSO.defaultRampId,
     };
@@ -193,6 +198,7 @@ async function main() {
       forestLeafType: effectiveFeatures.forestLeafType,
       hasForestPolygonSource: has.forestPolygon,
       hazardousTerrain: effectiveFeatures.hazardousTerrain,
+      hikingRoutes: effectiveFeatures.hikingRoutes,
     };
 
     // Inject a stub dynamic-contours source if the feature is on, since
@@ -446,6 +452,34 @@ async function main() {
     {
       name: 'hazard-with-carpathian',
       flags: { hazardousTerrain: true, carpathian: true },
+      stubCarpathianOsmUrl: true,
+    },
+    // Hiking-route ribbons — `hiking_route` source-layer of the
+    // carpathian-osm archive, painted as continuous coloured
+    // underlay-bands beneath the per-trail glow / casing / inline.
+    // Without a source the layers must NOT emit (graceful fallback);
+    // with the source on, the base-ribbon, highlight and label all
+    // appear. The cross-product pack also stacks the ribbons with the
+    // full Carpathian trail web to verify the two pipelines co-emit
+    // without z-order conflicts.
+    {
+      name: 'hiking-routes-no-source',
+      flags: { hikingRoutes: true, carpathian: false },
+      disableCarpathianOsmUrl: true,
+    },
+    {
+      name: 'hiking-routes-with-source',
+      flags: { hikingRoutes: true, carpathian: false },
+      stubCarpathianOsmUrl: true,
+    },
+    {
+      name: 'hiking-routes-with-carpathian',
+      flags: { hikingRoutes: true, carpathian: true },
+      stubCarpathianOsmUrl: true,
+    },
+    {
+      name: 'hiking-routes-off',
+      flags: { hikingRoutes: false, carpathian: true },
       stubCarpathianOsmUrl: true,
     },
     // Hypso-specific feature packs — every mode the renderer can pick.
@@ -1286,6 +1320,155 @@ async function main() {
   }
   console.log(`Hazardous-terrain layer invariants: ${hazardLayerFails === 0 ? 'all OK' : `${hazardLayerFails} FAILED`}`);
   if (hazardLayerFails > 0) failed += hazardLayerFails;
+
+  // ---------------------------------------------------------------------
+  // Hiking-route ribbon LAYER invariants — graceful fallback + emission
+  // + z-order. The ribbons live BETWEEN the relief stack (hillshade /
+  // hypso / texture) and the per-trail glow (`carpathian_trail_glow`),
+  // so a single named route reads as one coloured underlay while the
+  // SAC-scale dashed inline still paints crisply on top.
+  //
+  //   • hikingRoutes=true + carpathianOsm.url=null →
+  //     NO hiking_route_* layers (graceful fallback).
+  //   • hikingRoutes=true + carpathianOsm source present →
+  //     hiking_route_ribbon, hiking_route_ribbon_highlight,
+  //     hiking_route_label all emitted, in paint order.
+  //   • hikingRoutes=false + carpathianOsm source present →
+  //     NO hiking_route_* layers (feature flag wins).
+  //   • Z-order: every hiking_route_* paints AFTER hillshade/hypso/
+  //     texture (so the ribbon reads on top of relief) and BEFORE
+  //     `carpathian_trail_glow` (so trail glow + dashes paint on top).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Hiking-route ribbon layer invariants:');
+  let hikingFails = 0;
+  const hikingIds = [
+    'hiking_route_ribbon',
+    'hiking_route_ribbon_highlight',
+    'hiking_route_label',
+  ];
+
+  // 1. Graceful fallback — feature on, source URL=null.
+  const hikingNoSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, hikingRoutes: true, carpathian: true },
+    sourceStubs: {},
+    terrainOverride: {
+      ...TERRAIN,
+      carpathianOsm: { ...TERRAIN.carpathianOsm, url: null },
+    },
+  });
+  for (const id of hikingIds) {
+    if (hikingNoSourceStyle.layers.some((l) => l.id === id)) {
+      hikingFails++;
+      console.log(`  FAIL ${id} emitted with carpathianOsm.url=null (should be off)`);
+    } else {
+      console.log(`  OK   ${id} absent without source (graceful fallback)`);
+    }
+  }
+
+  // 2. Feature flag off — source present, but feature disabled.
+  const hikingFeatureOffStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, hikingRoutes: false, carpathian: true },
+    sourceStubs: {
+      'carpathian-osm': {
+        type: 'vector',
+        url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      },
+    },
+  });
+  for (const id of hikingIds) {
+    if (hikingFeatureOffStyle.layers.some((l) => l.id === id)) {
+      hikingFails++;
+      console.log(`  FAIL ${id} emitted with FEATURES.hikingRoutes=false`);
+    } else {
+      console.log(`  OK   ${id} absent with feature flag off`);
+    }
+  }
+
+  // 3. Emission — feature on, source present.
+  const hikingWithSourceStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, hikingRoutes: true, carpathian: true },
+    sourceStubs: {
+      'carpathian-osm': {
+        type: 'vector',
+        url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+      },
+    },
+  });
+  const hikingPositions = hikingIds.map((id) =>
+    hikingWithSourceStyle.layers.findIndex((l) => l.id === id),
+  );
+  for (let i = 0; i < hikingIds.length; i++) {
+    if (hikingPositions[i] === -1) {
+      hikingFails++;
+      console.log(`  FAIL ${hikingIds[i]} not emitted with source present`);
+    } else {
+      console.log(`  OK   ${hikingIds[i]} present (idx ${hikingPositions[i]})`);
+    }
+  }
+  // Paint order: ribbon → ribbon_highlight → label.
+  if (
+    hikingPositions.every((p) => p >= 0) &&
+    hikingPositions[0] < hikingPositions[1] &&
+    hikingPositions[1] < hikingPositions[2]
+  ) {
+    console.log('  OK   ribbon → ribbon_highlight → label paint order');
+  } else {
+    hikingFails++;
+    console.log(`  FAIL hiking layers not in expected order: ${JSON.stringify(hikingPositions)}`);
+  }
+
+  // 4. Z-order — ribbon must paint AFTER hypso/hillshade and BEFORE
+  //    carpathian_trail_glow. Pick the FIRST ribbon idx vs the
+  //    relevant landmark layers.
+  const ribbonIdx = hikingPositions[0];
+  const trailGlowIdx = hikingWithSourceStyle.layers.findIndex(
+    (l) => l.id === 'carpathian_trail_glow',
+  );
+  const hikingHillshadeIdx = hikingWithSourceStyle.layers.findIndex(
+    (l) => l.id === 'hillshade' || l.id === 'hillshade_nw' || l.id === 'hillshade_top',
+  );
+  const hikingHypsoIdx = hikingWithSourceStyle.layers.findIndex(
+    (l) => l.id === 'hypso_color_relief' || l.id === 'hypso_tint' || l.id === 'hypso',
+  );
+  if (ribbonIdx === -1) {
+    // already reported above
+  } else {
+    // Above relief — only check when these layers actually emit (low
+    // device profiles disable hillshade/hypso entirely).
+    if (hikingHillshadeIdx >= 0 && ribbonIdx <= hikingHillshadeIdx) {
+      hikingFails++;
+      console.log(`  FAIL ribbon (idx ${ribbonIdx}) must paint AFTER hillshade (idx ${hikingHillshadeIdx})`);
+    } else if (hikingHillshadeIdx >= 0) {
+      console.log(`  OK   ribbon (idx ${ribbonIdx}) paints after hillshade (idx ${hikingHillshadeIdx})`);
+    }
+    if (hikingHypsoIdx >= 0 && ribbonIdx <= hikingHypsoIdx) {
+      hikingFails++;
+      console.log(`  FAIL ribbon (idx ${ribbonIdx}) must paint AFTER hypso (idx ${hikingHypsoIdx})`);
+    } else if (hikingHypsoIdx >= 0) {
+      console.log(`  OK   ribbon (idx ${ribbonIdx}) paints after hypso (idx ${hikingHypsoIdx})`);
+    }
+    // Below trail glow — only check when carpathian trail web is
+    // also emitted (carpathian flag on AND source present, which is
+    // exactly the test condition here).
+    if (trailGlowIdx === -1) {
+      hikingFails++;
+      console.log('  FAIL carpathian_trail_glow not emitted in cross-product test');
+    } else if (ribbonIdx >= trailGlowIdx) {
+      hikingFails++;
+      console.log(`  FAIL ribbon (idx ${ribbonIdx}) must paint BEFORE carpathian_trail_glow (idx ${trailGlowIdx})`);
+    } else {
+      console.log(`  OK   ribbon (idx ${ribbonIdx}) paints before carpathian_trail_glow (idx ${trailGlowIdx})`);
+    }
+  }
+  console.log(`Hiking-route ribbon layer invariants: ${hikingFails === 0 ? 'all OK' : `${hikingFails} FAILED`}`);
+  if (hikingFails > 0) failed += hikingFails;
 
   // ---------------------------------------------------------------------
   // Layer-level invariants — assert that the relief stack carries the

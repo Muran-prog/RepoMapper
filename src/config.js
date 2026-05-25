@@ -622,6 +622,26 @@ export const FEATURES = Object.freeze({
   carpathian: true,
 
   /**
+   * Hiking-route ribbons — paints OSM `route=hiking` relations from
+   * the `hiking_route` source-layer of `carpathian-osm.pmtiles` as
+   * continuous coloured underlay-ribbons (per-network red/blue/yellow/
+   * green palette, see `src/style/hiking-routes.js`).
+   *
+   * Stack position: BETWEEN the relief layers (hillshade / hypso /
+   * texture) and `carpathian_trail_glow`, so a single named route
+   * (Закарпатський ландшафтний шлях, Чорногірський хребет, …) reads
+   * as ONE ribbon from start to end while the per-trail SAC-scale
+   * dashes still paint clearly on top.
+   *
+   * Default ON — the gh-pages-hosted carpathian-osm.pmtiles already
+   * carries the source-layer (see tools/carpathian-profile.yml). Turn
+   * off to render exactly the previous Carpathian trail web with no
+   * route ribbons. Source missing OR feature off → silent no-op
+   * (graceful fallback in src/style/index.js).
+   */
+  hikingRoutes: true,
+
+  /**
    * Use MapLibre `projection: { type: 'globe' }` at low zooms. Falls back
    * to plain Mercator below the min-zoom threshold. Only useful on the
    * overview zoom (≤5), so it's off by default.

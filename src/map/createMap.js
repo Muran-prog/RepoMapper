@@ -400,6 +400,15 @@ function profileToLayerOpts(profileConfig, features) {
     // umbrella enableCarpathianOverlay capability.
     hazardousTerrain:
       features.hazardousTerrain && profileConfig.enableCarpathianOverlay,
+    // Hiking-route ribbons share the same source-layer parent
+    // (`hiking_route` inside carpathian-osm.pmtiles), so they ride
+    // the same umbrella capability. Independent user-facing toggle:
+    // a user can render the coloured route ribbons WITHOUT the
+    // per-segment SAC trail web (set carpathian off, hikingRoutes on)
+    // and vice-versa. See src/style/hiking-routes.js for the layer
+    // factory and src/style/index.js for the z-order placement.
+    hikingRoutes:
+      features.hikingRoutes && profileConfig.enableCarpathianOverlay,
     colorRelief: features.colorRelief, // runtime-checked downstream
   };
 }

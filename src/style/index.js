@@ -90,6 +90,7 @@ import {
   trailLabels,
   forestPolygonLayers,
 } from './carpathian.js';
+import { hikingRouteLayers } from './hiking-routes.js';
 import { hazardLayers } from './hazards.js';
 import { getTokens } from './tokens.js';
 
@@ -245,6 +246,7 @@ export function composeLayers(opts = {}) {
     forestLeafType = false,
     hasForestPolygonSource = false,
     hazardousTerrain = false,
+    hikingRoutes = false,
 
     reduceMotion = false,
   } = opts;
@@ -468,6 +470,25 @@ export function composeLayers(opts = {}) {
       carpathianDoubleCasing: roadsCarpathianDoubleCasing,
     }),
   );
+
+  // 15a: Hiking-route ribbons — coloured underlay-bands for OSM
+  //      `route=hiking` relations from the `hiking_route` source-layer.
+  //      Sits ABOVE the relief stack (hillshade / hypso / texture /
+  //      contours / ridges) and ABOVE the road network so the ribbon
+  //      reads as a wash carrying the route colour, but BELOW
+  //      `carpathian_trail_glow` so the per-SAC inline + glow paint
+  //      crisply ON TOP of the ribbon (the trail web stays the
+  //      dominant cue at hiking zooms; the ribbon is the
+  //      "this-segment-belongs-to-Чорногірський хребет" cue).
+  //
+  //      Independent of the umbrella `carpathian` toggle — a user can
+  //      run a clean overview map with route ribbons on but the
+  //      trail-web off, or vice-versa. Source-gated through
+  //      `hasCarpathianOsmSource` so a missing archive renders the
+  //      map identically to its previous version (graceful fallback).
+  if (hikingRoutes && hasCarpathianOsmSource) {
+    stack.push(...hikingRouteLayers(t));
+  }
 
   // 16: Carpathian trail emphasis — above roads so trails read over them.
   //     Order is critical for legibility:

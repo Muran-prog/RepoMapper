@@ -23,14 +23,65 @@ layers:
 
   # -----------------------------------------------------------------------
   # hiking_route — every OSM relation tagged route=hiking inside the bbox.
-  # The Carpathian style still consults this for backwards compatibility,
-  # but the new pipeline is driven by the `trail` layer below (raw ways).
+  #
+  # The Carpathian style now also drives a dedicated ribbon-overlay
+  # pipeline off this layer (`src/style/hiking-routes.js`) so a single
+  # named relation (Закарпатський ландшафтний шлях, Чорногірський
+  # хребет, Нескучна стежка, …) reads as ONE continuous coloured ribbon
+  # from start to end, regardless of how many `way`s the relation
+  # stitches across. The ribbon-colour cascade is `osmc:symbol`
+  # (first segment, the `<waycolour>` field) → `colour` → `network`
+  # (iwn=red, nwn=blue, rwn=yellow, lwn=green) → neutral fallback.
+  # The cascade is implemented entirely in the MapLibre style as a
+  # `match` expression — no JS-side preprocessing of features — so
+  # every per-route attribute below MUST land in the tile.
+  #
+  # The legacy `trail` source-layer (raw OSM ways) keeps driving the
+  # per-segment SAC-scale dashed inline; the ribbon paints UNDER it,
+  # giving the OSM-Hiking-Map "double signal" effect (continuous route
+  # underlay + per-segment difficulty overlay).
+  #
+  # Attributes carried per relation (consumed both by the style
+  # ribbon-cascade and by the upcoming UI route-card popup):
+  #
+  #   • `osmc_symbol` — primary colour cue (first segment is
+  #     `<waycolour>`); also used by the route-card to render the
+  #     painted way-marking glyph.
+  #   • `colour`      — secondary colour fallback when
+  #     `osmc:symbol` is absent.
+  #   • `symbol`      — verbal description of the way-marking
+  #     (e.g. "Yellow disk on tree"), shown verbatim in the popup.
+  #   • `state`       — relation lifecycle (proposed / abandoned /
+  #     disused / etc.); the renderer can dim or hide accordingly.
+  #   • `operator`    — who maintains the route.
+  #   • `distance`    — total length in km (already there; kept).
+  #   • `description` — long-form route description for the popup.
+  #   • `wikipedia`   — wiki link, surfaced in the popup.
+  #   • `from` / `to` — start and end labels for the route-card.
+  #
+  # `min_zoom` lowered from 10 → 9 so the ribbon lights up at the
+  # same overview zoom the trail web does (CARPATHIAN.zoomRules.trails
+  # = 9). Without this match the user would see hazel dashes WITHOUT
+  # the ribbon at z9-z10 and only get the ribbon "later", which
+  # contradicts the "ribbon is the underlay" cartographic story.
+  #
+  # NOTE on Planetiler relation context: the schema-yaml
+  # Planetiler profile (CUSTOMSCHEMA.md) currently exposes only
+  # per-feature attributes, not parent-relation context, on the
+  # `osm` source. So the attributes below are read directly off
+  # the relation feature itself — which is exactly the case for
+  # `hiking_route` because we filter for `type=route` +
+  # `route=hiking`. No `_relations` lookup is needed, and the
+  # graceful-fallback chain in `hiking-routes.js::ribbonColorExpr`
+  # handles tiles that pre-date this schema change without
+  # recompiling the renderer (osmc_symbol missing → colour →
+  # network → neutral).
   # -----------------------------------------------------------------------
   - id: hiking_route
     features:
       - source: osm
         geometry: line
-        min_zoom: 10
+        min_zoom: 9
         include_when:
           __all__:
             type: route
@@ -50,8 +101,22 @@ layers:
             tag_value: osmc:symbol
           - key: colour
             tag_value: colour
+          - key: symbol
+            tag_value: symbol
+          - key: state
+            tag_value: state
+          - key: operator
+            tag_value: operator
           - key: distance
             tag_value: distance
+          - key: description
+            tag_value: description
+          - key: wikipedia
+            tag_value: wikipedia
+          - key: from
+            tag_value: from
+          - key: to
+            tag_value: to
 
   # -----------------------------------------------------------------------
   # trail — raw highway ways used for foot / bicycle / mountaineering
