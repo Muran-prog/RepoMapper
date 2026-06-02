@@ -814,10 +814,11 @@ export const DEFAULT_THEME = 'light'; // 'light' | 'dark'
 //                  Liberty is the closest visually to Google Maps, so
 //                  we use it as the default.
 //
-//   • satellite  — Esri World Imagery (no key) raster tiles with a
-//                  thin local overlay of place + transportation_name
-//                  labels for readability. Composed locally from a
-//                  minimal style skeleton — no fetch.
+//   • satellite  — EOX Sentinel-2 at overview zooms, then a high-detail
+//                  imagery provider (Mapbox Satellite by default) with
+//                  Esri World Imagery kept as the no-key fallback.
+//                  A thin local overlay of place + transportation_name
+//                  labels keeps the imagery readable.
 //
 // Mode switches travel through `map.setStyle(newStyle, { diff: false })`
 // so the camera (centre / zoom / pitch / bearing) is preserved without
@@ -844,7 +845,14 @@ export const MAP_MODE_STORAGE_KEY = 'cart:map-mode';
 export const STANDARD_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
 /**
- * Default satellite tiles — EOX Sentinel-2 cloudless 2024.
+ * Public Mapbox token used by the Mapbox Satellite provider below.
+ * This is intentionally a public `pk.*` browser token.
+ */
+export const MAPBOX_TOKEN =
+  'pk.eyJ1IjoiZHdrb2R3b2tkd2tvd2Rrb2R3a293ZHdkd2RkdyIsImEiOiJjbXB3aWk0ZHAwMHBrMnJxem5mOHV3aXkzIn0.eJ6nyfgTR49tVFHoT1UEJg';
+
+/**
+ * Default low-zoom satellite tiles — EOX Sentinel-2 cloudless 2024.
  *
  * EOX publishes a free, key-less, recent cloudless Sentinel-2 mosaic
  * via WMTS at <https://s2maps.eu>. License: Contains modified
@@ -898,10 +906,22 @@ export const SATELLITE_PROVIDERS = Object.freeze({
       'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>' +
       ' — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
   }),
+  mapbox: Object.freeze({
+    /** Mapbox Raster Tiles API — Mapbox Satellite tileset. */
+    url:
+      `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}.jpg90?access_token=${MAPBOX_TOKEN}`,
+    retinaUrl:
+      `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90?access_token=${MAPBOX_TOKEN}`,
+    tileSize: 256,
+    minzoom: 0,
+    maxzoom: 22,
+    attribution:
+      'Satellite imagery © <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener">Mapbox</a>',
+  }),
 });
 
-/** Active satellite provider id. Switch to 'esri' for >z14 detail. */
-export const SATELLITE_PROVIDER = 'eox';
+/** Active high-detail satellite provider id. */
+export const SATELLITE_PROVIDER = 'mapbox';
 
 /**
  * When the active provider's max zoom is exceeded and this flag is
