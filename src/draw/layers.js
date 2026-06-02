@@ -39,6 +39,7 @@ export const LAYERS = Object.freeze({
   fill: 'cart-draw-fill',
   lineCasing: 'cart-draw-line-casing',
   line: 'cart-draw-line',
+  linePreview: 'cart-draw-line-preview',
   arrowHead: 'cart-draw-arrow-head',
   pointHalo: 'cart-draw-point-halo',
   point: 'cart-draw-point',
@@ -124,7 +125,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Polygon'],
-        ['!=', ['get', 'kind'], 'arrow-head'],
+        ['!=', 'kind', 'arrow-head'],
       ],
       paint: {
         'fill-color': ['coalesce', ['get', 'fill'], fill],
@@ -185,9 +186,16 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       id: LAYERS.line,
       type: 'line',
       source: SOURCE_ID,
-      filter: ['any',
-        ['==', '$type', 'LineString'],
-        ['==', '$type', 'Polygon'],
+      // Committed / auto-gen geometry only. The in-flight dashed
+      // preview is a separate layer below — MapLibre cannot drive
+      // `line-dasharray` from feature properties, so the dash/solid
+      // split has to live in two layers rather than one expression.
+      filter: ['all',
+        ['any',
+          ['==', '$type', 'LineString'],
+          ['==', '$type', 'Polygon'],
+        ],
+        ['!=', 'preview', true],
       ],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
@@ -202,15 +210,32 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
           ['==', ['get', 'autoMode'], 'mesh'], ['*', strokeOpacityExpr, 0.6],
           strokeOpacityExpr,
         ],
-        // Only the in-flight rubber-band preview uses a dashed stroke
-        // (so the user can tell the authoring-state ghost apart from
-        // committed geometry). Auto-gen and user-drawn lines are both
-        // solid — they're real features, they should look real.
-        'line-dasharray': [
-          'case',
-          ['==', ['get', 'preview'], true], ['literal', [1.2, 1.2]],
-          ['literal', [1, 0]],
+      },
+    },
+
+    // ---- In-flight preview stroke (dashed authoring ghost) ------------
+    // MapLibre rejects data-driven `line-dasharray`, so the dashed
+    // rubber-band that distinguishes an in-progress draft from
+    // committed geometry lives in its own layer keyed on the
+    // `preview` flag. Committed lines never carry that flag and are
+    // drawn solid by `draw-line` above.
+    {
+      id: LAYERS.linePreview,
+      type: 'line',
+      source: SOURCE_ID,
+      filter: ['all',
+        ['any',
+          ['==', '$type', 'LineString'],
+          ['==', '$type', 'Polygon'],
         ],
+        ['==', 'preview', true],
+      ],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['coalesce', ['get', 'color'], color],
+        'line-width': ['coalesce', ['get', 'weight'], weight],
+        'line-opacity': strokeOpacityExpr,
+        'line-dasharray': [1.2, 1.2],
       },
     },
 
@@ -224,7 +249,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Polygon'],
-        ['==', ['get', 'kind'], 'arrow-head'],
+        ['==', 'kind', 'arrow-head'],
       ],
       paint: {
         'fill-color': ['coalesce', ['get', 'color'], color],
@@ -245,8 +270,8 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Point'],
-        ['!=', ['get', 'kind'], 'vertex'],
-        ['!=', ['get', 'kind'], 'vertex-mid'],
+        ['!=', 'kind', 'vertex'],
+        ['!=', 'kind', 'vertex-mid'],
       ],
       paint: {
         'circle-radius': [
@@ -278,8 +303,8 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Point'],
-        ['!=', ['get', 'kind'], 'vertex'],
-        ['!=', ['get', 'kind'], 'vertex-mid'],
+        ['!=', 'kind', 'vertex'],
+        ['!=', 'kind', 'vertex-mid'],
       ],
       paint: {
         'circle-radius': ['coalesce', ['get', 'radius'], 8],
@@ -308,7 +333,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Point'],
-        ['==', ['get', 'kind'], 'marker'],
+        ['==', 'kind', 'marker'],
         ['has', 'displayOrder'],
       ],
       layout: {
@@ -335,7 +360,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Point'],
-        ['==', ['get', 'kind'], 'vertex-mid'],
+        ['==', 'kind', 'vertex-mid'],
       ],
       paint: {
         'circle-radius': 4,
@@ -354,7 +379,7 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       source: SOURCE_ID,
       filter: ['all',
         ['==', '$type', 'Point'],
-        ['==', ['get', 'kind'], 'vertex'],
+        ['==', 'kind', 'vertex'],
       ],
       paint: {
         'circle-radius': [
