@@ -299,6 +299,7 @@ export function resolveSatelliteImageryPlan(opts = {}) {
     SATELLITE_FALLBACK &&
     fallback.id !== base.id &&
     fallback.id !== active.id &&
+    active.maxzoom < fallback.maxzoom &&
     fallback.maxzoom > detailMinzoom;
   if (wantsFallback) {
     entries.push({

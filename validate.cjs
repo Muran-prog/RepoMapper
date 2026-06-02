@@ -51,7 +51,10 @@ async function main() {
   const { composeLayers } = await importEsm('src/style/index.js');
   const { composeSources, sourceAvailability } = await importEsm('src/style/sources.js');
   const { composeSky, composeTerrain, composeProjection } = await importEsm('src/style/terrain.js');
-  const { composeSatelliteStyle } = await importEsm('src/style/satellite.js');
+  const {
+    composeSatelliteStyle,
+    resolveSatelliteImageryPlan,
+  } = await importEsm('src/style/satellite.js');
   const { getProfileConfig } = await importEsm('src/device.js');
   const {
     FEATURES,
@@ -1469,6 +1472,111 @@ async function main() {
   }
   console.log(`Hiking-route ribbon layer invariants: ${hikingFails === 0 ? 'all OK' : `${hikingFails} FAILED`}`);
   if (hikingFails > 0) failed += hikingFails;
+
+  // ---------------------------------------------------------------------
+  // Satellite imagery invariants — the hybrid stack must keep the clean
+  // EOX overview, Esri as a no-key fallback, and Mapbox as the active
+  // high-detail provider without overzooming past native source limits.
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Satellite imagery invariants:');
+  let satelliteFails = 0;
+
+  const satelliteStyle1x = composeSatelliteStyle({ pixelRatio: 1 });
+  const satelliteStyle2x = composeSatelliteStyle({ pixelRatio: 2 });
+  const satellitePlan1x = resolveSatelliteImageryPlan({ pixelRatio: 1 });
+  const eoxFallbackPlan = resolveSatelliteImageryPlan({ providerId: 'eox', pixelRatio: 1 });
+  const satIds = satelliteStyle1x.layers.map((l) => l.id);
+  const expectedSatLayers = [
+    'satellite_imagery_base_eox',
+    'satellite_imagery_primary_mapbox',
+  ];
+  const expectedSatSources = [
+    ['satellite-imagery-base-eox', 14],
+    ['satellite-imagery-primary-mapbox', 22],
+  ];
+
+  for (let i = 0; i < expectedSatLayers.length; i++) {
+    const id = expectedSatLayers[i];
+    const idx = satIds.indexOf(id);
+    if (idx !== i) {
+      satelliteFails++;
+      console.log(`  FAIL ${id} expected at imagery index ${i}, got ${idx}`);
+    } else {
+      console.log(`  OK   ${id} paints at imagery index ${i}`);
+    }
+  }
+
+  for (const [sourceId, expectedMaxzoom] of expectedSatSources) {
+    const source = satelliteStyle1x.sources[sourceId];
+    if (!source) {
+      satelliteFails++;
+      console.log(`  FAIL ${sourceId} missing`);
+      continue;
+    }
+    if (source.maxzoom !== expectedMaxzoom) {
+      satelliteFails++;
+      console.log(`  FAIL ${sourceId}.maxzoom expected ${expectedMaxzoom}, got ${source.maxzoom}`);
+    } else {
+      console.log(`  OK   ${sourceId}.maxzoom === ${expectedMaxzoom}`);
+    }
+  }
+
+  const zoomChecks = [
+    [satelliteStyle1x.layers.find((l) => l.id === 'satellite_imagery_base_eox'), 'base', 0, 14.01],
+    [satelliteStyle1x.layers.find((l) => l.id === 'satellite_imagery_primary_mapbox'), 'primary', 14, 22.01],
+  ];
+  for (const [layer, label, minzoom, maxzoom] of zoomChecks) {
+    if (!layer) continue;
+    if (layer.minzoom !== minzoom || layer.maxzoom !== maxzoom) {
+      satelliteFails++;
+      console.log(`  FAIL ${label} layer zoom window expected ${minzoom}-${maxzoom}, got ${layer.minzoom}-${layer.maxzoom}`);
+    } else {
+      console.log(`  OK   ${label} layer zoom window ${minzoom}-${maxzoom}`);
+    }
+    if (layer.paint?.['raster-resampling'] !== 'linear') {
+      satelliteFails++;
+      console.log(`  FAIL ${layer.id}: raster-resampling is not linear`);
+    } else {
+      console.log(`  OK   ${layer.id}: raster-resampling is linear`);
+    }
+  }
+
+  const primary1xUrl = satelliteStyle1x.sources['satellite-imagery-primary-mapbox']?.tiles?.[0] ?? '';
+  const primary2xUrl = satelliteStyle2x.sources['satellite-imagery-primary-mapbox']?.tiles?.[0] ?? '';
+  if (!primary1xUrl.includes('@2x')) {
+    satelliteFails++;
+    console.log('  FAIL DPR=1 Mapbox URL does not use forced @2x');
+  } else {
+    console.log('  OK   DPR=1 Mapbox URL uses forced @2x tiles');
+  }
+  if (!primary2xUrl.includes('@2x')) {
+    satelliteFails++;
+    console.log('  FAIL DPR=2 Mapbox URL does not use @2x');
+  } else {
+    console.log('  OK   DPR=2 Mapbox URL uses @2x tiles');
+  }
+  if (satellitePlan1x.maxZoom !== 22 || satelliteStyle1x.metadata?.maxZoom !== 22) {
+    satelliteFails++;
+    console.log(`  FAIL satellite maxZoom expected 22, got plan=${satellitePlan1x.maxZoom}, metadata=${satelliteStyle1x.metadata?.maxZoom}`);
+  } else {
+    console.log('  OK   satellite maxZoom is capped at 22');
+  }
+  if (satellitePlan1x.fallbackProviderId !== null) {
+    satelliteFails++;
+    console.log(`  FAIL default Mapbox plan unexpectedly uses fallback ${satellitePlan1x.fallbackProviderId}`);
+  } else {
+    console.log('  OK   default Mapbox plan does not render Esri underlay');
+  }
+  const eoxFallback = eoxFallbackPlan.entries.find((entry) => entry.role === 'fallback');
+  if (eoxFallback?.provider?.id !== 'esri' || eoxFallbackPlan.maxZoom !== 19) {
+    satelliteFails++;
+    console.log(`  FAIL EOX-only fallback expected Esri maxZoom 19, got provider=${eoxFallback?.provider?.id}, maxZoom=${eoxFallbackPlan.maxZoom}`);
+  } else {
+    console.log('  OK   Esri fallback is still available when EOX is the active provider');
+  }
+  console.log(`Satellite imagery invariants: ${satelliteFails === 0 ? 'all OK' : `${satelliteFails} FAILED`}`);
+  if (satelliteFails > 0) failed += satelliteFails;
 
   // ---------------------------------------------------------------------
   // Layer-level invariants — assert that the relief stack carries the

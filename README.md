@@ -388,8 +388,8 @@ correctness (`sky`, `terrain`, `projection`).
 - Terrain (default) © [Mapzen Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (AWS Open Data)
 - Optional Carpathian DEM (recommended): [FABDEM v1.2](https://data.bris.ac.uk/data/dataset/25wfy0f9ukoge2gs7a5mqpq2j7) © Fathom (CC BY-NC 4.0, **non-commercial use only**)
 - Optional Carpathian DEM (commercial fallback): © [Copernicus GLO-30](https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model)
-- Satellite mode (default): Sentinel-2 cloudless 2024 by [EOX IT Services GmbH](https://s2maps.eu) (Contains modified Copernicus Sentinel data 2024)
-- Satellite mode (legacy fallback): © [Esri World Imagery](https://www.esri.com/) — Maxar, Earthstar Geographics, GIS User Community
+- Satellite mode: low zooms use Sentinel-2 cloudless 2024 by [EOX IT Services GmbH](https://s2maps.eu) (Contains modified Copernicus Sentinel data 2024); high-detail zooms use © [Mapbox Satellite](https://www.mapbox.com/about/maps/) with `@2x` tiles on HiDPI displays
+- Satellite fallback: © [Esri World Imagery](https://www.esri.com/) — Maxar, Earthstar Geographics, GIS User Community
 - Texture shading: Leland Brown (CC BY)
 - ESA WorldCover 10 m 2021 v200: © [ESA WorldCover project](https://esa-worldcover.org) / VITO / Brockmann Consult / CS / Gamma Remote Sensing / IIASA / WUR (CC BY 4.0)
 - ETH Global Canopy Height 10 m: Lang, Jetz, Schindler, Wegner, "A high-resolution canopy height model of the Earth" — [project page](https://langnico.github.io/globalcanopyheight/), *Nature Ecology & Evolution* (2023) (CC BY 4.0)

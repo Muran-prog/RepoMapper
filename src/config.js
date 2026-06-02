@@ -935,8 +935,8 @@ export const SATELLITE_FALLBACK_PROVIDER = 'esri';
 /** Zoom where the satellite stack switches from overview mosaic to detail imagery. */
 export const SATELLITE_DETAIL_MINZOOM = 14;
 
-/** Request retina imagery when the browser pixel ratio reaches this threshold. */
-export const SATELLITE_RETINA_DPR = 1.25;
+/** Request Mapbox @2x imagery even on DPR=1 displays for maximum sharpness. */
+export const SATELLITE_RETINA_DPR = 1;
 
 /**
  * When the active provider's max zoom is exceeded and this flag is
@@ -962,5 +962,5 @@ export const MAP_MODE_LABELS = Object.freeze({
 export const MAP_MODE_HINTS = Object.freeze({
   cart: 'Премиум-карта Cart со свечением и акцентами',
   standard: 'Стандартная карта (OpenFreeMap Liberty)',
-  satellite: 'Cloudless Sentinel-2 2024 (EOX)',
+  satellite: 'EOX Sentinel-2 + Mapbox Satellite с Esri fallback',
 });
