@@ -339,7 +339,13 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       layout: {
         'text-field': ['to-string', ['get', 'displayOrder']],
         'text-size': 11,
-        'text-font': ['Noto Sans Bold', 'Noto Sans Regular'],
+        // Single-font stack ONLY. OpenFreeMap's glyph server (and most
+        // others) 404 on multi-font stacks like
+        // `Noto Sans Bold,Noto Sans Regular` — and a 404 here fails the
+        // whole symbol bucket, which collapses the ENTIRE cart-draw
+        // tile, making every drawing (markers, lines, fills) vanish the
+        // moment a numbered marker exists. Matches `tokens.js` font.bold.
+        'text-font': ['Noto Sans Bold'],
         'text-anchor': 'center',
         'text-justify': 'center',
         'text-allow-overlap': true,
@@ -442,7 +448,10 @@ export function makeMeasureLayers() {
       layout: {
         'text-field': ['get', 'label'],
         'text-size': 11,
-        'text-font': ['Noto Sans Bold', 'Noto Sans Regular'],
+        // Single-font stack ONLY — see the note on the marker label
+        // layer above. A multi-font stack 404s on OpenFreeMap glyphs
+        // and would collapse the entire measure-overlay tile.
+        'text-font': ['Noto Sans Bold'],
         'text-anchor': 'center',
         'text-justify': 'center',
         'text-allow-overlap': true,
