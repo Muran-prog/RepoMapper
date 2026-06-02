@@ -49,7 +49,7 @@ import {
   composeProjection,
   evalExaggeration,
 } from '../style/terrain.js';
-import { composeSatelliteStyle } from '../style/satellite.js';
+import { composeSatelliteStyle, getSatelliteMaxZoom } from '../style/satellite.js';
 import {
   CONTOURS_SOURCE_LAYER,
 } from '../style/contours.js';
@@ -422,6 +422,19 @@ function profileToMapOpts(profileConfig) {
   };
 }
 
+function maxZoomForMode(mode, caps) {
+  if (mode !== 'satellite') return VIEW.maxZoom;
+  return Math.min(VIEW.maxZoom, getSatelliteMaxZoom({ pixelRatio: caps?.dpr }));
+}
+
+function syncMapZoomLimits(map, mode, caps) {
+  const maxZoom = maxZoomForMode(mode, caps);
+  map.setMaxZoom(maxZoom);
+  if (map.getZoom() > maxZoom) {
+    map.jumpTo({ zoom: maxZoom });
+  }
+}
+
 /**
  * Resolve the effective feature set — user toggles AND device caps. The
  * caps side is small (just reduce-motion overrides), kept here so createMap
@@ -502,7 +515,7 @@ export async function createMap(container, opts = {}) {
     pitch: VIEW.pitch,
     bearing: VIEW.bearing,
     minZoom: VIEW.minZoom,
-    maxZoom: VIEW.maxZoom,
+    maxZoom: maxZoomForMode(mode, caps),
     maxBounds: VIEW.maxBounds,
 
     // From the device profile
@@ -647,6 +660,7 @@ export async function applyStyle(map, patch = {}) {
     map,
   });
   map.setStyle(style, { diff: false });
+  syncMapZoomLimits(map, mode, caps);
 
   // The new style means the native-color-relief probe (if any) needs
   // re-running because the layer may have been recreated.
@@ -713,7 +727,7 @@ async function buildModeStyle(opts) {
     }
   }
   if (mode === 'satellite') {
-    return composeSatelliteStyle();
+    return composeSatelliteStyle({ pixelRatio: opts.caps?.dpr });
   }
   return buildStyle(opts);
 }

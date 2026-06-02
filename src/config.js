@@ -878,6 +878,7 @@ export const SATELLITE_TILES = Object.freeze({
   tileSize: 256,
   minzoom: 0,
   maxzoom: 14,
+  resampling: 'linear',
   attribution:
     'Sentinel-2 cloudless 2024 by <a href="https://s2maps.eu" target="_blank" rel="noopener">EOX IT Services GmbH</a>' +
     ' (Contains modified Copernicus Sentinel data 2024)',
@@ -902,6 +903,7 @@ export const SATELLITE_PROVIDERS = Object.freeze({
     tileSize: 256,
     minzoom: 0,
     maxzoom: 19,
+    resampling: 'linear',
     attribution:
       'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>' +
       ' — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
@@ -915,6 +917,7 @@ export const SATELLITE_PROVIDERS = Object.freeze({
     tileSize: 256,
     minzoom: 0,
     maxzoom: 22,
+    resampling: 'linear',
     attribution:
       'Satellite imagery © <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener">Mapbox</a>',
   }),
@@ -923,13 +926,25 @@ export const SATELLITE_PROVIDERS = Object.freeze({
 /** Active high-detail satellite provider id. */
 export const SATELLITE_PROVIDER = 'mapbox';
 
+/** Low-zoom cloudless base provider used by the hybrid satellite stack. */
+export const SATELLITE_BASE_PROVIDER = 'eox';
+
+/** No-key high-detail fallback provider used under/after the base layer. */
+export const SATELLITE_FALLBACK_PROVIDER = 'esri';
+
+/** Zoom where the satellite stack switches from overview mosaic to detail imagery. */
+export const SATELLITE_DETAIL_MINZOOM = 14;
+
+/** Request retina imagery when the browser pixel ratio reaches this threshold. */
+export const SATELLITE_RETINA_DPR = 1.25;
+
 /**
  * When the active provider's max zoom is exceeded and this flag is
  * true, the satellite-style composer falls back to the next-best
- * provider (Esri). Off by default — most users would rather see the
- * EOX mosaic stop than abruptly switch attribution mid-zoom.
+ * provider (Esri). Kept on so the EOX overview never degrades into
+ * overzoomed z14 pixels when no Mapbox detail layer is selected.
  */
-export const SATELLITE_FALLBACK = false;
+export const SATELLITE_FALLBACK = true;
 
 /**
  * Display labels in the user-friendly switcher UI. Plain strings so

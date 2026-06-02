@@ -3,8 +3,10 @@
  *
  * The Satellite map is intentionally light:
  *
- *   • One raster source — Esri World Imagery (key-less public tiles).
- *   • One raster layer covering the whole viewport.
+ *   • EOX Sentinel-2 cloudless as the clean low-zoom base.
+ *   • Esri World Imagery as the no-key z14+ fallback.
+ *   • Mapbox Satellite (or whichever provider config selects) as the
+ *     high-detail z14+ primary, with @2x tiles on HiDPI displays.
  *   • A thin overlay of transportation_name + place labels from
  *     OpenMapTiles so the user can still read where they are without
  *     any "real" cartography painted on top of the imagery.
@@ -20,7 +22,17 @@
  * `src/map/createMap.js` (browser) and `validate.cjs` (Node).
  */
 
-import { OPENFREEMAP, SATELLITE_TILES, SATELLITE_PROVIDERS, SATELLITE_PROVIDER, SATELLITE_FALLBACK } from '../config.js';
+import {
+  OPENFREEMAP,
+  SATELLITE_TILES,
+  SATELLITE_PROVIDERS,
+  SATELLITE_PROVIDER,
+  SATELLITE_BASE_PROVIDER,
+  SATELLITE_FALLBACK_PROVIDER,
+  SATELLITE_DETAIL_MINZOOM,
+  SATELLITE_RETINA_DPR,
+  SATELLITE_FALLBACK,
+} from '../config.js';
 import { labelLayers } from './labels.js';
 import { boundaryLayers } from './boundaries.js';
 import { getTokens } from './tokens.js';
@@ -33,11 +45,9 @@ import { getTokens } from './tokens.js';
  */
 const VECTOR_SOURCE_ID = 'openmaptiles';
 
-/** Source id for the imagery raster. */
-const RASTER_SOURCE_ID = 'satellite-imagery';
-
-/** Render-id for the imagery layer. Drawn as a single full-viewport pane. */
-const RASTER_LAYER_ID = 'satellite_imagery';
+const SOURCE_PREFIX = 'satellite-imagery';
+const LAYER_PREFIX = 'satellite_imagery';
+const ZOOM_EPSILON = 0.01;
 
 /**
  * Subset of label layer ids we keep. The brief asks for transportation
@@ -185,18 +195,147 @@ function buildSatelliteBoundaries() {
   return boundaryLayers(t);
 }
 
+function normalizePixelRatio(pixelRatio) {
+  const n = Number(pixelRatio);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(1, Math.min(n, 3));
+}
+
+function fallbackProviderId() {
+  if (SATELLITE_PROVIDERS?.[SATELLITE_PROVIDER]) return SATELLITE_PROVIDER;
+  if (SATELLITE_PROVIDERS?.[SATELLITE_BASE_PROVIDER]) return SATELLITE_BASE_PROVIDER;
+  return 'eox';
+}
+
 /**
- * Resolve the active provider tile spec. Picks `SATELLITE_PROVIDERS[
- * SATELLITE_PROVIDER]` and falls back to the legacy `SATELLITE_TILES`
- * constant if the dispatch is somehow unconfigured (mostly to keep
- * older test harnesses working).
- *
- * @returns {{ url: string, tileSize: number, minzoom: number, maxzoom: number, attribution: string }}
+ * Resolve a provider config into the concrete tile URL to be emitted in
+ * the style. Retina handling happens here so the rest of the composer
+ * works with one URL template per source.
  */
-function resolveProvider() {
-  const id = SATELLITE_PROVIDER;
-  const spec = SATELLITE_PROVIDERS?.[id];
-  return spec ?? SATELLITE_TILES;
+function resolveProvider(providerId, { pixelRatio = 1 } = {}) {
+  const id = SATELLITE_PROVIDERS?.[providerId] ? providerId : fallbackProviderId();
+  const spec = SATELLITE_PROVIDERS?.[id] ?? SATELLITE_TILES;
+  const dpr = normalizePixelRatio(pixelRatio);
+  const retina = dpr >= SATELLITE_RETINA_DPR && typeof spec.retinaUrl === 'string';
+  return {
+    id,
+    url: retina ? spec.retinaUrl : spec.url,
+    tileSize: spec.tileSize ?? 256,
+    minzoom: spec.minzoom ?? 0,
+    maxzoom: spec.maxzoom ?? 14,
+    attribution: spec.attribution,
+    resampling: spec.resampling ?? 'linear',
+    fadeDuration: spec.fadeDuration ?? 80,
+    retina,
+  };
+}
+
+function sourceIdFor(role, providerId) {
+  return `${SOURCE_PREFIX}-${role}-${providerId}`;
+}
+
+function layerIdFor(role, providerId) {
+  return `${LAYER_PREFIX}_${role}_${providerId}`;
+}
+
+function withLayerMaxzoom(maxzoom) {
+  return Math.min(maxzoom + ZOOM_EPSILON, 24);
+}
+
+function buildRasterSource(provider) {
+  const source = {
+    type: 'raster',
+    tiles: [provider.url],
+    tileSize: provider.tileSize,
+    minzoom: provider.minzoom,
+    maxzoom: provider.maxzoom,
+  };
+  if (provider.attribution) source.attribution = provider.attribution;
+  return source;
+}
+
+function buildRasterLayer(entry) {
+  const layer = {
+    id: layerIdFor(entry.role, entry.provider.id),
+    type: 'raster',
+    source: entry.sourceId,
+    paint: {
+      'raster-resampling': entry.provider.resampling,
+      'raster-fade-duration': entry.provider.fadeDuration,
+    },
+  };
+  if (Number.isFinite(entry.minzoom)) layer.minzoom = entry.minzoom;
+  if (Number.isFinite(entry.maxzoom)) layer.maxzoom = withLayerMaxzoom(entry.maxzoom);
+  return layer;
+}
+
+/**
+ * Build the zoom-aware imagery stack. Source maxzoom always stays at the
+ * provider's native max; layer maxzoom and the runtime map maxZoom cap
+ * prevent meaningful overzoom/stretching above that native ceiling.
+ *
+ * @param {object} [opts]
+ * @param {string} [opts.providerId]
+ * @param {number} [opts.pixelRatio]
+ * @returns {{ entries: Array<object>, maxZoom: number, activeProviderId: string, baseProviderId: string, fallbackProviderId: string|null, pixelRatio: number }}
+ */
+export function resolveSatelliteImageryPlan(opts = {}) {
+  const pixelRatio = normalizePixelRatio(opts.pixelRatio);
+  const detailMinzoom = SATELLITE_DETAIL_MINZOOM;
+  const active = resolveProvider(opts.providerId ?? SATELLITE_PROVIDER, { pixelRatio });
+  const base = resolveProvider(SATELLITE_BASE_PROVIDER, { pixelRatio });
+  const fallback = resolveProvider(SATELLITE_FALLBACK_PROVIDER, { pixelRatio });
+
+  const entries = [];
+  entries.push({
+    role: 'base',
+    provider: base,
+    sourceId: sourceIdFor('base', base.id),
+    minzoom: base.minzoom,
+    maxzoom: Math.min(base.maxzoom, detailMinzoom),
+  });
+
+  const wantsFallback =
+    SATELLITE_FALLBACK &&
+    fallback.id !== base.id &&
+    fallback.id !== active.id &&
+    fallback.maxzoom > detailMinzoom;
+  if (wantsFallback) {
+    entries.push({
+      role: 'fallback',
+      provider: fallback,
+      sourceId: sourceIdFor('fallback', fallback.id),
+      minzoom: detailMinzoom,
+      maxzoom: fallback.maxzoom,
+    });
+  }
+
+  if (active.id !== base.id) {
+    entries.push({
+      role: 'primary',
+      provider: active,
+      sourceId: sourceIdFor('primary', active.id),
+      minzoom: detailMinzoom,
+      maxzoom: active.maxzoom,
+    });
+  }
+
+  const maxZoom = Math.max(...entries.map((entry) => entry.maxzoom));
+  return {
+    entries,
+    maxZoom,
+    activeProviderId: active.id,
+    baseProviderId: base.id,
+    fallbackProviderId: wantsFallback ? fallback.id : null,
+    pixelRatio,
+  };
+}
+
+/**
+ * Effective satellite camera maxZoom for runtime overzoom prevention.
+ */
+export function getSatelliteMaxZoom(opts = {}) {
+  return resolveSatelliteImageryPlan(opts).maxZoom;
 }
 
 /**
@@ -211,25 +350,20 @@ function resolveProvider() {
  * @param {string} [opts.providerId]
  *     Override the active satellite provider ('eox' | 'esri' | …).
  *     Defaults to `SATELLITE_PROVIDER`.
+ * @param {number} [opts.pixelRatio]
+ *     Browser `devicePixelRatio`, used to pick @2x imagery where supported.
  * @returns {object} A spec-valid MapLibre style.
  */
 export function composeSatelliteStyle(opts = {}) {
   const glyphs = opts.glyphs ?? OPENFREEMAP.glyphs;
   const sprite = opts.sprite ?? OPENFREEMAP.sprite;
   const vectorTilejsonUrl = opts.vectorTilejsonUrl ?? OPENFREEMAP.tilejson;
-  const providerId = opts.providerId ?? SATELLITE_PROVIDER;
-  const provider = SATELLITE_PROVIDERS?.[providerId] ?? resolveProvider();
+  const plan = resolveSatelliteImageryPlan({
+    providerId: opts.providerId ?? SATELLITE_PROVIDER,
+    pixelRatio: opts.pixelRatio,
+  });
 
   const sources = {
-    // Raster imagery — single source, single layer.
-    [RASTER_SOURCE_ID]: {
-      type: 'raster',
-      tiles: [provider.url],
-      tileSize: provider.tileSize,
-      minzoom: provider.minzoom,
-      maxzoom: provider.maxzoom,
-      attribution: provider.attribution,
-    },
     // Vector — labels overlay only. Same source-layer ids the rest of
     // the project consumes (place / transportation_name).
     [VECTOR_SOURCE_ID]: {
@@ -239,60 +373,12 @@ export function composeSatelliteStyle(opts = {}) {
     },
   };
 
-  // Optional Esri fallback overlay. Only emitted when (a) the active
-  // provider has a maxzoom strictly less than 19 (i.e. it really is
-  // the EOX cloudless mosaic, not Esri itself) and (b) the operator
-  // opted in via SATELLITE_FALLBACK. The fallback layer kicks in past
-  // the active provider's maxzoom so the user transitions to Esri
-  // imagery instead of seeing a blank pane at z15+.
-  const wantFallback =
-    SATELLITE_FALLBACK &&
-    providerId !== 'esri' &&
-    SATELLITE_PROVIDERS?.esri &&
-    provider.maxzoom < SATELLITE_PROVIDERS.esri.maxzoom;
-  if (wantFallback) {
-    sources['satellite-imagery-fallback'] = {
-      type: 'raster',
-      tiles: [SATELLITE_PROVIDERS.esri.url],
-      tileSize: SATELLITE_PROVIDERS.esri.tileSize,
-      minzoom: provider.maxzoom,
-      maxzoom: SATELLITE_PROVIDERS.esri.maxzoom,
-      attribution: SATELLITE_PROVIDERS.esri.attribution,
-    };
+  for (const entry of plan.entries) {
+    sources[entry.sourceId] = buildRasterSource(entry.provider);
   }
 
   const layers = [
-    {
-      id: RASTER_LAYER_ID,
-      type: 'raster',
-      source: RASTER_SOURCE_ID,
-      // Tiny contrast nudge keeps the imagery legible without colour
-      // distortion. Keep this conservative — we deliberately don't
-      // mutate the photographic content beyond MapLibre's own resampling.
-      paint: {
-        'raster-resampling': 'linear',
-        'raster-fade-duration': 220,
-      },
-    },
-    ...(wantFallback
-      ? [
-          {
-            id: 'satellite_imagery_fallback',
-            type: 'raster',
-            source: 'satellite-imagery-fallback',
-            // Same paint as the primary so the user can't tell the
-            // exact zoom where the swap happens — only the
-            // attribution control hints at it.
-            paint: {
-              'raster-resampling': 'linear',
-              'raster-fade-duration': 220,
-            },
-            // Activate one zoom past the primary provider's max so
-            // tile boundaries line up cleanly.
-            minzoom: provider.maxzoom,
-          },
-        ]
-      : []),
+    ...plan.entries.map(buildRasterLayer),
     // Admin boundaries painted ON TOP of imagery and BELOW labels so
     // they read as cartographic chrome, not part of the photograph.
     ...buildSatelliteBoundaries(),
@@ -302,7 +388,15 @@ export function composeSatelliteStyle(opts = {}) {
   return {
     version: 8,
     name: 'Cart · Satellite',
-    metadata: { mode: 'satellite', schema: 'openmaptiles', provider: providerId },
+    metadata: {
+      mode: 'satellite',
+      schema: 'openmaptiles',
+      provider: plan.activeProviderId,
+      baseProvider: plan.baseProviderId,
+      fallbackProvider: plan.fallbackProviderId,
+      maxZoom: plan.maxZoom,
+      pixelRatio: plan.pixelRatio,
+    },
     sources,
     glyphs,
     sprite,
