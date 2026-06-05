@@ -31,6 +31,7 @@ import {
   PERF,
   FEATURES,
   TERRAIN,
+  WORLD3D,
   CONTOURS,
   HYPSO,
   DEFAULT_THEME,
@@ -184,7 +185,7 @@ async function resolveVectorTriple() {
 // and produces a full spec-valid style object ready for `map.setStyle`.
 // ---------------------------------------------------------------------------
 
-async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState, map }) {
+async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState, map, immersive3d = false }) {
   const { vectorSource, glyphs, sprite } = await resolveVectorTriple();
 
   // hypso ramp id is forwarded to composeSources so it pre-adds the
@@ -283,10 +284,15 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
     TERRAIN.exaggerationStops,
     profileConfig.terrainExaggerationMul ?? 1,
   );
+  // In the immersive "3D Мир" mode we force terrain on (if a DEM exists)
+  // at a fixed dramatic exaggeration — it stays on at every zoom, unlike
+  // the 2D lifecycle which suppresses terrain below TERRAIN.terrain3DMinZoom.
   const terrain = composeTerrain({
-    enable: features.terrain3D && profileConfig.enableTerrain3D && !finalLayerOpts.reduceMotion,
+    enable: immersive3d
+      ? has.primaryDem
+      : features.terrain3D && profileConfig.enableTerrain3D && !finalLayerOpts.reduceMotion,
     hasPrimaryDem: has.primaryDem,
-    initialExaggeration,
+    initialExaggeration: immersive3d ? WORLD3D.exaggeration : initialExaggeration,
   });
   if (terrain) style.terrain = terrain;
 
@@ -730,6 +736,11 @@ async function buildModeStyle(opts) {
   if (mode === 'satellite') {
     return composeSatelliteStyle({ pixelRatio: opts.caps?.dpr });
   }
+  // world3d uses the SAME Cart composition, but with terrain forced on
+  // (immersive flag) so the relief is always present regardless of zoom.
+  if (mode === 'world3d') {
+    return buildStyle({ ...opts, immersive3d: true });
+  }
   return buildStyle(opts);
 }
 /**
@@ -754,10 +765,13 @@ export async function applyMapMode(map, mode) {
   const prevMode = prev.mode;
 
   // --- Leaving world3d → returning to a MapLibre mode ----------------
+  // world3d is now a native-MapLibre immersive state (no Cesium). Tear
+  // down the flight controls / pitch first; the style swap below restores
+  // the flat 2D map.
   if (prevMode === 'world3d' && mode !== 'world3d') {
     try {
       const { deactivateWorld3D } = await import('../world3d/index.js');
-      deactivateWorld3D();
+      deactivateWorld3D(map);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[cart] Failed to deactivate world3d:', err);
@@ -765,18 +779,21 @@ export async function applyMapMode(map, mode) {
   }
 
   // --- Entering world3d -----------------------------------------------
+  // Build the immersive Cart+terrain style on the SAME map, then flip the
+  // camera into the 3D fly state (pitch + WASD flight + HUD).
   if (mode === 'world3d') {
-    // Update internal state so the rest of the app knows the mode.
-    if (map._cart) map._cart.mode = mode;
-    saveMapMode(mode);
     try {
+      await applyStyle(map, { mode });
+      saveMapMode(mode);
       const { activateWorld3D } = await import('../world3d/index.js');
       await activateWorld3D(map);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[cart] Failed to activate world3d:', err);
-      // Fall back to Cart so the user isn't stuck on a blank screen.
-      if (map._cart) map._cart.mode = prevMode;
+      // Fall back to the previous mode so the user isn't stuck.
+      try {
+        await applyStyle(map, { mode: prevMode });
+      } catch { /* best effort */ }
       saveMapMode(prevMode);
       throw err;
     }

@@ -33,6 +33,39 @@ export const VIEW = Object.freeze({
   ],
 });
 
+/**
+ * Real World 3D ("3D Мир") immersive mode.
+ *
+ * Path B (2026-06): world3d is no longer a separate CesiumJS globe — it
+ * is the SAME MapLibre map flipped into an immersive, terrain-3D fly
+ * state. The Cart vector style is drawn per-pixel onto the AWS
+ * `terrain-dem` mesh (the exact technique the reference TikTok uses),
+ * which means crisp vectors, native labels, real elevations and no
+ * raster smear.
+ *
+ *  @property {number} exaggeration  Fixed terrain exaggeration while in
+ *                                   3D mode (1.0 = true scale). A touch
+ *                                   above 1 reads as dramatic but real.
+ *  @property {number} enterPitch    Camera pitch (deg) on entering 3D.
+ *  @property {number} maxPitch      Pitch ceiling raised for low-angle
+ *                                   mountain shots (MapLibre default 60).
+ */
+export const WORLD3D = Object.freeze({
+  exaggeration: 1.5,
+  enterPitch: 68,
+  enterBearing: 0,
+  maxPitch: 80,
+  // Flight tuning — see src/world3d/flight.js.
+  flight: Object.freeze({
+    // Pixels-per-second of ground travel at multiplier 1. Scaled by the
+    // current metres-per-pixel so speed auto-adapts to altitude.
+    basePxPerSec: 420,
+    boostFactor: 5,
+    // Zoom delta per second for ascend / descend (E·Space / Q·Shift).
+    climbZoomPerSec: 0.9,
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // Tile sources
 // ---------------------------------------------------------------------------

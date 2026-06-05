@@ -31,7 +31,7 @@
  * have one place to import from.
  */
 
-import { TERRAIN } from '../config.js';
+import { TERRAIN, WORLD3D } from '../config.js';
 import {
   evalExaggeration,
 } from '../style/terrain.js';
@@ -231,6 +231,15 @@ function installTerrainLifecycle(map, { reduceMotion }) {
 
     const hasDem = typeof map.getSource === 'function' && !!map.getSource('terrain-dem');
     if (!hasDem) return;
+
+    // Immersive "3D Мир" mode: terrain stays on at every zoom, at a fixed
+    // dramatic exaggeration (the 2D zoom-threshold suppression does not
+    // apply). The user-controllable slider still multiplies it.
+    if (cart.world3dActive) {
+      const exaggeration = WORLD3D.exaggeration * userMul;
+      map.setTerrain({ source: 'terrain-dem', exaggeration });
+      return;
+    }
 
     const terrainEnabled =
       !reduceMotion &&
