@@ -1,0 +1,177 @@
+/* ===================================================================
+   Real World 3D Mode — styles.
+   =================================================================== */
+
+/* ---- Container ---------------------------------------------------- */
+
+.cesium-container {
+  position: absolute;
+  inset: 0;
+  z-index: 0;       /* same plane as #map */
+  overflow: hidden;
+  background: #0a0a12;
+}
+
+/* CesiumJS injects its own canvas + widget DOM; make sure the viewer
+   fills the container completely. */
+.cesium-container .cesium-viewer,
+.cesium-container .cesium-viewer-cesiumWidgetContainer,
+.cesium-container .cesium-widget,
+.cesium-container .cesium-widget canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Attribution — keep it tiny and out of the way. */
+.cesium-credit-host {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  pointer-events: auto;
+  z-index: 1;
+  max-width: 50vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cesium-credit-host a {
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+}
+
+/* Hide the default Cesium credit logo styling — we use our own. */
+.cesium-container .cesium-viewer-bottom {
+  display: none !important;
+}
+
+/* ---- Loading overlay --------------------------------------------- */
+
+.world3d-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 18, 0.92);
+  z-index: 100;
+  transition: opacity 0.35s ease-out;
+}
+
+.world3d-loading--fade {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.world3d-loading-inner {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.world3d-loading-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 14px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  animation: world3d-spin 0.8s linear infinite;
+}
+
+@keyframes world3d-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Flight HUD -------------------------------------------------- */
+
+.world3d-hud {
+  position: absolute;
+  bottom: 24px;
+  right: 16px;
+  padding: 10px 14px;
+  background: rgba(10, 12, 20, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code',
+    ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  pointer-events: none;
+  user-select: none;
+  z-index: 10;
+  transition: opacity 0.3s ease;
+  min-width: 180px;
+}
+
+.world3d-hud-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.world3d-hud-label {
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  min-width: 30px;
+}
+
+.world3d-hud-value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.world3d-hud-hint {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.35);
+  font-family: inherit;
+  font-size: 10px;
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+
+/* ---- Mode-specific overrides ------------------------------------- */
+
+/* When world3d is active, hide the dock panels that are MapLibre-only
+   (relief, hypso, draw). Layers and Places could potentially work in
+   future — hide them for now. Keep settings visible. */
+[data-map-mode="world3d"] .dock-root [data-panel="layers"],
+[data-map-mode="world3d"] .dock-root [data-panel="relief"],
+[data-map-mode="world3d"] .dock-root [data-panel="hypso"],
+[data-map-mode="world3d"] .dock-root [data-panel="places"],
+[data-map-mode="world3d"] .dock-root [data-panel="draw"] {
+  display: none;
+}
+
+/* Scale bar is meaningless in true-3D — hide it. */
+[data-map-mode="world3d"] .cart-scale-host {
+  display: none;
+}
+
+/* ---- Responsive -------------------------------------------------- */
+
+@media (max-width: 600px) {
+  .world3d-hud {
+    bottom: 12px;
+    right: 8px;
+    font-size: 11px;
+    padding: 8px 10px;
+    min-width: 150px;
+  }
+
+  .world3d-hud-hint {
+    display: none;
+  }
+}

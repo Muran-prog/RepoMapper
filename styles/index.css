@@ -77,3 +77,7 @@
  *     and on-canvas overlays. Imported last so the panel primitives
  *     can lean on every layer above without `!important` overrides. */
 @import url("./draw.css");
+
+/* 13. Real World 3D mode — CesiumJS container, loading overlay, flight
+ *     HUD, mode-specific hide rules. */
+@import url("./world3d.css");

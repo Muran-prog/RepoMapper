@@ -37,6 +37,7 @@ import {
   MAP_MODES,
   DEFAULT_MAP_MODE,
   STANDARD_STYLE_URL,
+  CESIUM,
 } from '../config.js';
 import { composeLayers, getTokens } from '../style/index.js';
 import {
@@ -737,15 +738,52 @@ async function buildModeStyle(opts) {
  * false })` — MapLibre keeps the transform across the swap. Persisted
  * to localStorage so a reload restores the user's choice.
  *
+ * The `world3d` mode is special: it doesn't swap a MapLibre style.
+ * Instead it hides the MapLibre canvas and activates a full CesiumJS
+ * viewer via the `src/world3d/` module. The 2D map stays alive so
+ * switching back is instant.
+ *
  * @param {maplibregl.Map} map
- * @param {'cart'|'standard'|'satellite'} mode
+ * @param {'cart'|'standard'|'satellite'|'world3d'} mode
  * @returns {Promise<maplibregl.Map>}
  */
 export async function applyMapMode(map, mode) {
   if (!MAP_MODES.includes(mode)) return map;
   const prev = map._cart ?? {};
   if (prev.mode === mode) return map;
+  const prevMode = prev.mode;
 
+  // --- Leaving world3d → returning to a MapLibre mode ----------------
+  if (prevMode === 'world3d' && mode !== 'world3d') {
+    try {
+      const { deactivateWorld3D } = await import('../world3d/index.js');
+      deactivateWorld3D();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[cart] Failed to deactivate world3d:', err);
+    }
+  }
+
+  // --- Entering world3d -----------------------------------------------
+  if (mode === 'world3d') {
+    // Update internal state so the rest of the app knows the mode.
+    if (map._cart) map._cart.mode = mode;
+    saveMapMode(mode);
+    try {
+      const { activateWorld3D } = await import('../world3d/index.js');
+      await activateWorld3D(map);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[cart] Failed to activate world3d:', err);
+      // Fall back to Cart so the user isn't stuck on a blank screen.
+      if (map._cart) map._cart.mode = prevMode;
+      saveMapMode(prevMode);
+      throw err;
+    }
+    return map;
+  }
+
+  // --- Normal MapLibre mode switch ------------------------------------
   // Run the next style build through the same plumbing as a regular
   // style rebuild. theme / features / profile carry over so the user
   // doesn't lose them across a mode swap.

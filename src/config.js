@@ -828,7 +828,7 @@ export const DEFAULT_THEME = 'light'; // 'light' | 'dark'
  * Available modes. Order is significant — it drives the visual segment
  * order in the UI control.
  */
-export const MAP_MODES = Object.freeze(['cart', 'standard', 'satellite']);
+export const MAP_MODES = Object.freeze(['cart', 'standard', 'satellite', 'world3d']);
 
 /** Cold-boot mode, before any `localStorage` lookup. */
 export const DEFAULT_MAP_MODE = 'cart';
@@ -954,6 +954,7 @@ export const MAP_MODE_LABELS = Object.freeze({
   cart: 'Карта',
   standard: 'Стандарт',
   satellite: 'Спутник',
+  world3d: '3D Мир',
 });
 
 /**
@@ -963,4 +964,44 @@ export const MAP_MODE_HINTS = Object.freeze({
   cart: 'Премиум-карта Cart со свечением и акцентами',
   standard: 'Стандартная карта (OpenFreeMap Liberty)',
   satellite: 'EOX Sentinel-2 + Mapbox Satellite с Esri fallback',
+  world3d: 'Реальный 3D-мир · CesiumJS · WASD-полёт',
+});
+
+// ---------------------------------------------------------------------------
+// CesiumJS — Real World 3D mode configuration.
+// ---------------------------------------------------------------------------
+//
+// The "3D Мир" mode renders a true three-dimensional digital twin of
+// the real world using CesiumJS. It is loaded lazily on first activation
+// so the 2D map starts without extra payload.
+//
+// To enable full functionality:
+//   1. Create a free account at https://cesium.com/ion
+//   2. Copy your default access token
+//   3. Paste it into CESIUM.ionToken below
+//
+// Without a token, the mode falls back to EOX Sentinel-2 imagery on a
+// bare ellipsoid (no terrain mesh, no buildings).
+
+/** CesiumJS CDN version. Bump this when updating. */
+const CESIUM_CDN_VERSION = '1.121';
+
+export const CESIUM = Object.freeze({
+  cdnVersion: CESIUM_CDN_VERSION,
+  cdnBase: `https://cesium.com/downloads/cesiumjs/releases/${CESIUM_CDN_VERSION}/Build/Cesium`,
+
+  /**
+   * Cesium Ion access token. Get yours free at https://cesium.com/ion.
+   * Required for: World Terrain, Bing Imagery, OSM Buildings.
+   */
+  ionToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2YWZlYTIwYy1lY2RhLTQ5ZWYtOGIzOS0wYTJhZDAwMTJiMGMiLCJpZCI6NDQwNjAxLCJpc3MiOiJodHRwczovL2FwaS5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3ODA2MzQ3Nzd9.1pNYZ0BAwTjCV7-3wS8z_1Xa6jMZrRtg3iG5076r-Ro',
+
+  /** Cesium World Terrain — real DEM, 1:1 scale, water mask. */
+  ionTerrainAssetId: 1,
+
+  /** Bing Maps Aerial imagery via Cesium Ion. */
+  ionBingAssetId: 2,
+
+  /** OSM Buildings — full 3D geometry as Cesium 3D Tiles. */
+  ionOsmBuildingsAssetId: 96188,
 });

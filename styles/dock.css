@@ -437,6 +437,9 @@
 .seg.seg-3 {
   grid-template-columns: 1fr 1fr 1fr;
 }
+.seg.seg-4 {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
 .seg button {
   appearance: none;
   border: 0;

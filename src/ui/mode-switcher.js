@@ -61,7 +61,8 @@ export function mountModeSwitcher({ host, activeMode, onChange }) {
 
   // Single root so the radiogroup semantics live on a known node.
   const group = document.createElement('div');
-  group.className = 'mode-switcher seg seg-3';
+  const segClass = MAP_MODES.length === 4 ? 'seg-4' : 'seg-3';
+  group.className = `mode-switcher seg ${segClass}`;
   group.setAttribute('role', 'radiogroup');
   group.setAttribute('aria-label', 'Режим карты');
 
