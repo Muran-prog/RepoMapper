@@ -6,8 +6,9 @@
  *
  *   • Cesium World Terrain — high-resolution DEM mesh, 1:1 scale,
  *     with water mask and vertex normals for realistic lighting
- *   • Satellite imagery — Bing Maps Aerial via Cesium Ion (with token)
- *     or EOX Sentinel-2 cloudless (without token)
+ *   • Vector drape — the SAME MapLibre vector style as the 2D map,
+ *     rendered tile-by-tile onto the globe (single source of truth,
+ *     NO satellite imagery)
  *   • OSM Buildings — full 3D geometry via Cesium 3D Tiles
  *   • Realistic atmosphere, sun lighting, and sky
  *
@@ -19,6 +20,8 @@
  */
 
 import { CESIUM, UKRAINE_CENTER, VIEW } from '../config.js';
+import { createVectorDrapeProvider } from './vector-drape.js';
+import { createLabelOverlay } from './label-overlay.js';
 
 // ---------------------------------------------------------------------------
 // Camera helpers — MapLibre ↔ Cesium conversion.
@@ -170,34 +173,62 @@ export async function createWorld3DViewer(Cesium, el, opts = {}) {
     }
   }
 
-  // ----- Imagery -------------------------------------------------------
-  if (hasToken) {
-    // Bing Maps Aerial from Cesium Ion — highest-quality imagery.
+  // ----- Imagery: vector drape (NO satellite) --------------------------
+  // The globe's base imagery is the SAME MapLibre vector style as the 2D
+  // map (single source of truth), rendered tile-by-tile by an offscreen
+  // MapLibre map. No Bing / satellite texture.
+  if (opts.map) {
     try {
-      const bingProvider = await Cesium.IonImageryProvider.fromAssetId(
-        CESIUM.ionBingAssetId,
+      const { provider, destroy } = await createVectorDrapeProvider(
+        Cesium,
+        opts.map,
       );
-      viewer.imageryLayers.addImageryProvider(bingProvider);
-    } catch {
-      // Fallback to EOX Sentinel-2 (free, no key).
-      addFallbackImagery(Cesium, viewer);
+      const layer = viewer.imageryLayers.addImageryProvider(provider);
+      // Slightly brighten so the clean style reads well under lighting.
+      layer.brightness = 1.0;
+      viewer._cart3dDrapeDestroy = destroy;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[world3d] Vector drape failed:', err);
+    }
+
+    // ----- Labels: crisp camera-facing Cesium labels (not baked) -------
+    // The drape hides all symbol layers; we re-render the same labels here
+    // as real 3D labels so they never distort over the relief.
+    try {
+      const overlay = createLabelOverlay(Cesium, viewer, opts.map);
+      viewer._cart3dLabelDestroy = overlay.destroy;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[world3d] Label overlay failed:', err);
     }
   } else {
-    await addFallbackImagery(Cesium, viewer);
+    // eslint-disable-next-line no-console
+    console.warn('[world3d] No 2D map provided — globe has no vector drape.');
   }
 
-  // ----- OSM Buildings -------------------------------------------------
+  // ----- OSM Buildings (real 3D, full height, clean white) -------------
   if (hasToken) {
     try {
       const buildings = await Cesium.Cesium3DTileset.fromIonAssetId(
         CESIUM.ionOsmBuildingsAssetId,
         {
-          // Aggressive screen-space error for performance at distance.
-          maximumScreenSpaceError: 16,
-          // Don't cast shadows (heavy on GPU).
-          shadows: Cesium.ShadowMode.DISABLED,
+          // Tighter SSE → buildings resolve at full height further out.
+          maximumScreenSpaceError: 12,
+          // Cast + receive shadows for real volume.
+          shadows: Cesium.ShadowMode.ENABLED,
         },
       );
+
+      // Clean, near-white facades so the skyline reads against the white
+      // vector ground — matches the "everything clean/white like standard
+      // mode" goal. (The 3D-Tiles styling DSL has no `defined()` and
+      // throws on undefined height comparisons, so we keep a flat tone;
+      // depth/volume comes from shadows + lighting, not colour.)
+      buildings.style = new Cesium.Cesium3DTileStyle({
+        color: "color('#F2F2EF')",
+      });
+
       scene.primitives.add(buildings);
       viewer._cart3dBuildings = buildings;
     } catch (err) {
@@ -208,6 +239,17 @@ export async function createWorld3DViewer(Cesium, el, opts = {}) {
 
   // ----- Scene tuning --------------------------------------------------
   configureScene(Cesium, scene, globe);
+
+  // Fix the sun to mid-morning summer so lighting/shadows are consistent
+  // and give buildings + relief pleasant volume (instead of whatever the
+  // real wall-clock time happens to be).
+  try {
+    const t = Cesium.JulianDate.fromIso8601('2024-06-21T08:30:00Z');
+    viewer.clock.currentTime = t;
+    viewer.clock.shouldAnimate = false;
+  } catch {
+    /* clock unavailable */
+  }
 
   // ----- Initial camera ------------------------------------------------
   if (opts.map) {
@@ -232,56 +274,34 @@ export async function createWorld3DViewer(Cesium, el, opts = {}) {
 }
 
 /**
- * Add fallback imagery when no Cesium Ion token is available.
- *
- * Uses CesiumJS's bundled Natural Earth II as the base (always
- * available, no network/CORS issues) and overlays OpenStreetMap
- * tiles for detail at higher zoom levels. Free, no API key needed.
- */
-async function addFallbackImagery(Cesium, viewer) {
-  // Natural Earth II — low-res satellite-like imagery bundled with CesiumJS.
-  try {
-    const naturalEarth = await Cesium.TileMapServiceImageryProvider.fromUrl(
-      Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII'),
-    );
-    viewer.imageryLayers.addImageryProvider(naturalEarth);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[world3d] Natural Earth imagery unavailable:', err);
-  }
-
-  // OpenStreetMap tiles on top for detailed roads/labels.
-  try {
-    const osm = new Cesium.OpenStreetMapImageryProvider({
-      url: 'https://tile.openstreetmap.org/',
-      maximumLevel: 19,
-      credit: new Cesium.Credit(
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        true,
-      ),
-    });
-    viewer.imageryLayers.addImageryProvider(osm);
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[world3d] OSM tiles unavailable:', err);
-  }
-}
-
-/**
  * Configure scene-level rendering parameters for realism and performance.
  */
 function configureScene(Cesium, scene, globe) {
   // Enable atmospheric effects.
   scene.skyAtmosphere.show = true;
   scene.fog.enabled = true;
-  scene.fog.density = 2.0e-4;
-  scene.fog.minimumBrightness = 0.03;
+  // Lighter fog so distant mountains stay crisp (the clean style relies on
+  // readable far terrain, unlike a hazy satellite look).
+  scene.fog.density = 1.0e-4;
+  scene.fog.minimumBrightness = 0.05;
 
   // Globe rendering quality.
   globe.enableLighting = true;
   globe.showGroundAtmosphere = true;
   globe.atmosphereLightIntensity = 10.0;
   globe.maximumScreenSpaceError = 1.5; // Higher quality terrain mesh.
+
+  // Make the mountains read at "full height" — exaggerate the real DEM.
+  // Cesium 1.121: scene-level vertical exaggeration applies to terrain,
+  // imagery drape and 3D tiles consistently.
+  try {
+    // 4.5 makes the Carpathians/Tatras read as genuinely huge with real
+    // depth (valleys stay open, peaks tower) instead of plastic bumps.
+    scene.verticalExaggeration = 4.5;
+    scene.verticalExaggerationRelativeHeight = 0.0;
+  } catch {
+    /* older Cesium — ignore */
+  }
 
   // Depth testing against terrain — objects behind terrain are hidden.
   globe.depthTestAgainstTerrain = true;
@@ -293,6 +313,17 @@ function configureScene(Cesium, scene, globe) {
   globe.preloadAncestors = true;
   globe.preloadSiblings = true;
   globe.tileCacheSize = 1000;
+
+  // Shadows — give buildings and terrain real cast shadows for volume.
+  try {
+    scene.shadowMap.enabled = true;
+    scene.shadowMap.softShadows = true;
+    scene.shadowMap.size = 2048;
+    scene.shadowMap.maximumDistance = 20000;
+    scene.shadowMap.darkness = 0.45;
+  } catch {
+    /* shadow map unavailable */
+  }
 
   // Anti-aliasing.
   scene.postProcessStages.fxaa.enabled = true;
@@ -314,6 +345,18 @@ function configureScene(Cesium, scene, globe) {
  */
 export function destroyWorld3DViewer(viewer) {
   if (!viewer || viewer.isDestroyed()) return;
+  try {
+    if (typeof viewer._cart3dDrapeDestroy === 'function') {
+      viewer._cart3dDrapeDestroy();
+      viewer._cart3dDrapeDestroy = null;
+    }
+    if (typeof viewer._cart3dLabelDestroy === 'function') {
+      viewer._cart3dLabelDestroy();
+      viewer._cart3dLabelDestroy = null;
+    }
+  } catch {
+    /* noop */
+  }
   try {
     viewer.destroy();
   } catch {
