@@ -651,6 +651,22 @@ export const FEATURES = Object.freeze({
   carpathian: true,
 
   /**
+   * Per-segment SAC trail web — the bold RED hiking-trail lines (marked
+   * trails by sac_scale, informal social paths, via-ferrata, steps,
+   * trail furniture and trail labels) drawn from the `trail` source-layer
+   * of `carpathian-osm.pmtiles`. NESTED inside the umbrella `carpathian`
+   * block: it only renders when `carpathian` is also on, but can be turned
+   * off on its own so a user keeps the rest of the Carpathian detail
+   * (peaks, cableways, forest roads) while hiding the red trail clutter.
+   *
+   * Default ON — preserves the previous always-on behaviour. Turn off via
+   * the "Горные тропы" toggle in the Layers panel. Does NOT gate
+   * `forestRoadLayers` (those stay with the umbrella). See the block 16
+   * gating in src/style/index.js.
+   */
+  carpathianTrails: true,
+
+  /**
    * Hiking-route ribbons — paints OSM `route=hiking` relations from
    * the `hiking_route` source-layer of `carpathian-osm.pmtiles` as
    * continuous coloured underlay-ribbons (per-network red/blue/yellow/

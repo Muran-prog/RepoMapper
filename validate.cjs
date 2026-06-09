@@ -218,6 +218,7 @@ async function main() {
       ridgeOverlay: effectiveFeatures.ridgeOverlay,
       hasRidgesSource: has.ridges,
       carpathian: effectiveFeatures.carpathian,
+      carpathianTrails: effectiveFeatures.carpathianTrails,
       hasCarpathianOsmSource: has.carpathianOsm,
       forestLeafType: effectiveFeatures.forestLeafType,
       hasForestPolygonSource: has.forestPolygon,
@@ -292,6 +293,7 @@ async function main() {
     { name: 'no-hypso', flags: { hypsometricTint: false } },
     { name: 'no-ridge', flags: { ridgeOverlay: false } },
     { name: 'no-carpathian', flags: { carpathian: false } },
+    { name: 'no-carpathian-trails', flags: { carpathian: true, carpathianTrails: false } },
     { name: 'no-settlement-outline', flags: { settlementOutline: false } },
     {
       name: 'minimal',
@@ -1675,6 +1677,76 @@ async function main() {
   }
   console.log(`Forest-mode markup invariants: ${forestMarkupFails === 0 ? 'all OK' : `${forestMarkupFails} FAILED`}`);
   if (forestMarkupFails > 0) failed += forestMarkupFails;
+
+  // ---------------------------------------------------------------------
+  // Carpathian trail-web toggle invariants — the `carpathianTrails` flag
+  // gates the bold RED per-segment trail web (informal paths, marked
+  // trails, via-ferrata, steps, furniture, trail labels) NESTED inside the
+  // umbrella `carpathian` block. Invariants:
+  //   • carpathian + carpathianTrails + source → trail web emits.
+  //   • carpathian + !carpathianTrails + source → trail web ABSENT, but
+  //     the forest roads (NOT part of the trail web) STILL emit.
+  //   • !carpathian + carpathianTrails → trail web absent (umbrella wins).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Carpathian trail-web toggle invariants:');
+  let trailToggleFails = 0;
+  const trailWebIds = [
+    'carpathian_trail_informal',
+    'carpathian_trail_glow',
+    'carpathian_trail_casing',
+    'carpathian_trail_inline',
+    'carpathian_trail_steps',
+    'carpathian_trail_bridge',
+    'carpathian_trail_label',
+  ];
+  const forestRoadIds = ['carpathian_forest_road', 'carpathian_forest_road_4wd'];
+  const carpOsmStub = {
+    'carpathian-osm': {
+      type: 'vector',
+      url: 'pmtiles://https://example.com/carpathian-osm.pmtiles',
+    },
+  };
+  const buildTrail = (carpathian, carpathianTrails) =>
+    buildStyle({
+      theme: 'light',
+      profile: 'high',
+      features: { ...FEATURES, carpathian, carpathianTrails },
+      sourceStubs: carpOsmStub,
+    }).layers.map((l) => l.id);
+
+  // 1) Both on → trail web present.
+  const trailsOnIds = buildTrail(true, true);
+  const trailsPresent = trailWebIds.every((id) => trailsOnIds.includes(id));
+  if (trailsPresent) {
+    console.log('  OK   trail web emits with carpathian + carpathianTrails on');
+  } else {
+    trailToggleFails++;
+    const missing = trailWebIds.filter((id) => !trailsOnIds.includes(id));
+    console.log(`  FAIL trail web missing layers: ${missing.join(', ')}`);
+  }
+
+  // 2) Trails off (umbrella on) → trail web absent, forest roads STILL present.
+  const trailsOffIds = buildTrail(true, false);
+  const trailsAbsent = trailWebIds.every((id) => !trailsOffIds.includes(id));
+  const roadsKept = forestRoadIds.every((id) => trailsOffIds.includes(id));
+  if (trailsAbsent && roadsKept) {
+    console.log('  OK   carpathianTrails off hides the trail web but keeps forest roads');
+  } else {
+    trailToggleFails++;
+    console.log(`  FAIL trails-off independence broken (trailsAbsent=${trailsAbsent}, roadsKept=${roadsKept})`);
+  }
+
+  // 3) Umbrella off → trail web absent regardless of carpathianTrails.
+  const umbrellaOffIds = buildTrail(false, true);
+  if (trailWebIds.every((id) => !umbrellaOffIds.includes(id))) {
+    console.log('  OK   carpathian off → trail web absent even with carpathianTrails on (umbrella wins)');
+  } else {
+    trailToggleFails++;
+    console.log('  FAIL trail web leaked with umbrella carpathian off');
+  }
+  console.log(`Carpathian trail-web toggle invariants: ${trailToggleFails === 0 ? 'all OK' : `${trailToggleFails} FAILED`}`);
+  if (trailToggleFails > 0) failed += trailToggleFails;
 
   // ---------------------------------------------------------------------
   // Hazardous-terrain LAYER invariants — graceful fallback + emission

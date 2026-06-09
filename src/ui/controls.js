@@ -126,6 +126,9 @@ const FOREST_COVER_PREF_KEY = 'cart:features:forestCover';
 // Defaults to ON and the user choice persists so a user who turns the
 // "danger" markers off doesn't see them re-appear after every reload.
 const HAZARDOUS_TERRAIN_PREF_KEY = 'cart:features:hazardousTerrain';
+// Carpathian trail web (the bold red trail lines) — default ON; the user's
+// "off" choice must outlive the page like the other operator-hosted overlays.
+const CARPATHIAN_TRAILS_PREF_KEY = 'cart:features:carpathianTrails';
 // Forest-mode markup accents — independent sub-toggles that only act
 // while forestCover is on. They persist alongside the forestCover choice
 // so a user's customised forest view survives a reload. Keyed by feature
@@ -707,6 +710,10 @@ function renderReliefPanelBody() {
         <small class="row-hint" id="hazard-hint">Труднодоступные пики (≥1500 м), обрывы, опасные перевалы</small>
         <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
         <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
+        <label class="row" data-ctl-row="carpathianTrails" title="Жирные красные линии горных троп (маркированные тропы, виа-феррата, ступени). Видны только при включённой «Карпатской детализации»">
+          <span>Горные тропы (красные)</span>
+          <input type="checkbox" data-ctl="carpathianTrails">
+        </label>
       </div>
     </div>
     <div class="panel-group">
@@ -1171,6 +1178,13 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
+      // Carpathian trail web — bold red trail lines, on by default; the
+      // user's choice persists under `cart:features:carpathianTrails` so an
+      // "off" decision (hide the red clutter) outlives the page.
+      carpathianTrails: loadBoolPref(
+        CARPATHIAN_TRAILS_PREF_KEY,
+        FEATURES.carpathianTrails,
+      ),
       // Hazardous-terrain overlay — on by default; user choice persists
       // under `cart:features:hazardousTerrain` for the same reason
       // worldcover/canopy/forestLeaf do (operator-side data is hosted,
@@ -1376,6 +1390,9 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // (especially "off") needs to outlive the page so the markers
       // don't reappear on every reload.
       if (key === 'hazardousTerrain') saveHazardousTerrainPref(el.checked);
+      // Carpathian trail web defaults to ON; persist the user's choice
+      // (especially "off") so the red trail lines don't reappear on reload.
+      if (key === 'carpathianTrails') saveBoolPref(CARPATHIAN_TRAILS_PREF_KEY, el.checked);
       // Forest-mode markup accents — persist each independent sub-toggle
       // so a customised forest view survives a reload. The flags only
       // emit layers inside the forestCover block, so toggling them while
@@ -1412,6 +1429,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
   wireToggle('hazardousTerrain');
+  wireToggle('carpathianTrails');
   wireToggle('settlementOutline');
 
   // ----- Forest-mode markup sub-panel ----------------------------------
@@ -1467,6 +1485,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     'forestRoadsBold',
     'forestRoadsOrange',
     'hazardousTerrain',
+    'carpathianTrails',
   ];
   if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {
     rebuildStyle().catch(() => {

@@ -391,6 +391,13 @@ function profileToLayerOpts(profileConfig, features) {
       features.ridgeOverlay && profileConfig.enableRidgeOverlay,
     carpathian:
       features.carpathian && profileConfig.enableCarpathianOverlay,
+    // Per-segment SAC trail web (informal paths, marked trails, via-ferrata,
+    // steps, furniture, trail labels). Pure user preference NESTED inside the
+    // umbrella `carpathian` block in composeLayers — it lets a user keep the
+    // Carpathian detail (peaks, cableways, forest roads) while hiding the
+    // bold red trail lines. No device-profile knob; the umbrella `carpathian`
+    // already AND's the capability, so we pass the raw flag straight through.
+    carpathianTrails: features.carpathianTrails,
     // Forest leaf-type biom polygons are gated by the same Carpathian
     // capability (the data lives in carpathian-osm.pmtiles) — there's
     // no separate device-profile knob, the renderer just AND's the

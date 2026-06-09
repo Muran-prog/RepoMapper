@@ -165,6 +165,14 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [ridgeOverlay=false]
  * @property {boolean} [hasRidgesSource=false]
  * @property {boolean} [carpathian=false]
+ * @property {boolean} [carpathianTrails=true]
+ *           Per-segment SAC trail web (informal paths, marked trails by
+ *           sac_scale, via-ferrata, steps, trail furniture and labels) —
+ *           the bold RED trail lines. Nested inside the umbrella
+ *           `carpathian` block: only emitted when `carpathian` is also on,
+ *           but can be turned off independently to hide the red trail
+ *           clutter while keeping peaks / cableways / forest roads. Does
+ *           NOT gate `forestRoadLayers`.
  * @property {boolean} [hasCarpathianOsmSource=false]
  * @property {boolean} [forestLeafType=false]
  *           Carpathian forest leaf-type biom polygons (landuse=forest /
@@ -269,6 +277,7 @@ export function composeLayers(opts = {}) {
     ridgeOverlay = false,
     hasRidgesSource = false,
     carpathian = false,
+    carpathianTrails = true,
     hasCarpathianOsmSource = false,
     forestLeafType = false,
     hasForestPolygonSource = false,
@@ -558,13 +567,20 @@ export function composeLayers(opts = {}) {
   //       f. bridges/ladders/fords (structural symbols on top)
   //       g. trail labels          (above their geometry)
   if (carpathian && hasCarpathianOsmSource) {
+    // Forest roads stay with the umbrella — they're not part of the trail
+    // web the `carpathianTrails` toggle controls.
     stack.push(...forestRoadLayers(t));
-    stack.push(...informalTrailLayers(t));
-    stack.push(...trailLayers(t));
-    stack.push(...viaFerrataLayers(t));
-    stack.push(...steepStepsLayers(t));
-    stack.push(...trailFurnitureLayers(t));
-    stack.push(...trailLabels(t));
+    // The bold RED trail web. Gated by its own `carpathianTrails` flag so a
+    // user can hide the trail clutter while keeping the rest of the
+    // Carpathian detail (peaks, cableways, forest roads).
+    if (carpathianTrails) {
+      stack.push(...informalTrailLayers(t));
+      stack.push(...trailLayers(t));
+      stack.push(...viaFerrataLayers(t));
+      stack.push(...steepStepsLayers(t));
+      stack.push(...trailFurnitureLayers(t));
+      stack.push(...trailLabels(t));
+    }
   }
 
   // 16a: Slope-warning overlay. Sits ABOVE the Carpathian trails so
