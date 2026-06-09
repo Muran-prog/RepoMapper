@@ -916,7 +916,19 @@ export const SATELLITE_PROVIDERS = Object.freeze({
       `https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90?access_token=${MAPBOX_TOKEN}`,
     tileSize: 256,
     minzoom: 0,
-    maxzoom: 22,
+    // Native-resolution ceiling, NOT the tileset's advertised max.
+    //
+    // The `mapbox.satellite` raster tileset advertises maxzoom 22, but
+    // the underlying imagery (mostly Maxar Vivid, ~30–50 cm/px over this
+    // map's extent) only carries genuine detail to ~z18–19. Requesting
+    // z20–22 returns server-upscaled tiles: empirically a z22 @2x tile is
+    // ~8 KB vs ~19 KB at z19 for comparable scenes — i.e. smooth, blurry
+    // upsampling, not new detail. Because `resolveSatelliteImageryPlan()`
+    // derives both the source `maxzoom` and the camera `maxZoom` cap from
+    // this value, pinning it to 19 stops the camera from overzooming past
+    // real imagery and removes the soft "fake detail" the user reported.
+    // @2x retina (forced via SATELLITE_RETINA_DPR=1) keeps z14–19 crisp.
+    maxzoom: 19,
     resampling: 'linear',
     attribution:
       'Satellite imagery © <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noopener">Mapbox</a>',

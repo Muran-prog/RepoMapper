@@ -1493,7 +1493,11 @@ async function main() {
   ];
   const expectedSatSources = [
     ['satellite-imagery-base-eox', 14],
-    ['satellite-imagery-primary-mapbox', 22],
+    // Mapbox is pinned to its native-resolution ceiling (19), not the
+    // tileset's advertised 22 — see SATELLITE_PROVIDERS.mapbox in config.js.
+    // This is what stops the camera from overzooming into blurry upsampled
+    // imagery above native detail.
+    ['satellite-imagery-primary-mapbox', 19],
   ];
 
   for (let i = 0; i < expectedSatLayers.length; i++) {
@@ -1524,7 +1528,7 @@ async function main() {
 
   const zoomChecks = [
     [satelliteStyle1x.layers.find((l) => l.id === 'satellite_imagery_base_eox'), 'base', 0, 14.01],
-    [satelliteStyle1x.layers.find((l) => l.id === 'satellite_imagery_primary_mapbox'), 'primary', 14, 22.01],
+    [satelliteStyle1x.layers.find((l) => l.id === 'satellite_imagery_primary_mapbox'), 'primary', 14, 19.01],
   ];
   for (const [layer, label, minzoom, maxzoom] of zoomChecks) {
     if (!layer) continue;
@@ -1556,11 +1560,11 @@ async function main() {
   } else {
     console.log('  OK   DPR=2 Mapbox URL uses @2x tiles');
   }
-  if (satellitePlan1x.maxZoom !== 22 || satelliteStyle1x.metadata?.maxZoom !== 22) {
+  if (satellitePlan1x.maxZoom !== 19 || satelliteStyle1x.metadata?.maxZoom !== 19) {
     satelliteFails++;
-    console.log(`  FAIL satellite maxZoom expected 22, got plan=${satellitePlan1x.maxZoom}, metadata=${satelliteStyle1x.metadata?.maxZoom}`);
+    console.log(`  FAIL satellite maxZoom expected 19, got plan=${satellitePlan1x.maxZoom}, metadata=${satelliteStyle1x.metadata?.maxZoom}`);
   } else {
-    console.log('  OK   satellite maxZoom is capped at 22');
+    console.log('  OK   satellite maxZoom is capped at 19 (Mapbox native ceiling)');
   }
   if (satellitePlan1x.fallbackProviderId !== null) {
     satelliteFails++;
