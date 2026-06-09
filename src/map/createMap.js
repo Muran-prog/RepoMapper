@@ -247,6 +247,11 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
     // emit decision still depends on `forestLeafType` (via
     // profileToLayerOpts).
     hasForestPolygonSource: has.forestPolygon,
+    // High-detail 10 m forest vector (Carpathian-only). When present,
+    // forestCover paints crisp 10 m stand boundaries inside the bbox on
+    // top of the global landcover forest; when absent it falls back to
+    // the global landcover forest alone.
+    hasForest10mSource: has.forest10m,
     hasContoursSource,
     contoursSourceId,
     contoursMinzoom: CONTOURS.minzoom,

@@ -354,6 +354,35 @@ export const TERRAIN = Object.freeze({
     attribution:
       '<a href="https://langnico.github.io/globalcanopyheight/" target="_blank" rel="noopener">ETH Global Canopy Height 10m (Lang et al. 2023)</a> · CC BY 4.0',
   }),
+
+  /**
+   * High-detail 10 m forest VECTOR overlay for the Carpathians, derived
+   * from ESA WorldCover 10 m 2021 v200 (class 10 = Tree cover). Built
+   * offline by `tools/build-forest10m.sh`: the tree class is masked,
+   * polygonised, then tiled with tippecanoe into a vector PMTiles archive
+   * (source-layer `forest`).
+   *
+   * Purpose: `forestCover` normally paints the GLOBAL OpenMapTiles
+   * `landcover` source, which is capped at z14 and generalised. Inside the
+   * Carpathian bbox this archive supplies far crisper, satellite-accurate
+   * 10 m stand boundaries up to z14. Source-gated like the other PMTiles
+   * overlays — `url === null` (or a missing archive) makes the composer
+   * skip the high-detail layers and fall back to the global landcover
+   * forest, so cold-boot stays turn-key.
+   *
+   * Hosting: committed to the repo's gh-pages branch — same model as
+   * carpathian-osm.pmtiles / carpathian-worldcover.pmtiles.
+   * ~bbox 22.0,47.6,27.0,49.5, zoom 6-14.
+   *
+   * License: ESA WorldCover 10 m 2021 v200 — CC BY 4.0.
+   */
+  forest10m: Object.freeze({
+    url: 'pmtiles://https://raw.githubusercontent.com/Muran-prog/RepoMapper/gh-pages/carpathian-forest-10m.pmtiles',
+    minzoom: 6,
+    maxzoom: 14,
+    attribution:
+      '<a href="https://esa-worldcover.org" target="_blank" rel="noopener">ESA WorldCover 10m 2021 v200</a> · CC BY 4.0',
+  }),
 });
 
 /**

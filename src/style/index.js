@@ -91,7 +91,7 @@ import {
   forestPolygonLayers,
 } from './carpathian.js';
 import { hikingRouteLayers } from './hiking-routes.js';
-import { forestCoverLayers } from './forest-cover.js';
+import { forestCoverLayers, forestCoverHiDetailLayers } from './forest-cover.js';
 import { hazardLayers } from './hazards.js';
 import { getTokens } from './tokens.js';
 
@@ -179,6 +179,12 @@ import { getTokens } from './tokens.js';
  *           of every OpenMapTiles `landcover` class=wood polygon, painted
  *           from the always-present base vector source (no `has*Source`
  *           gate). Emit-gated by the feature flag alone.
+ * @property {boolean} [hasForest10mSource=false]
+ *           High-detail 10 m forest vector archive (`forest-10m`) is
+ *           reachable. When true AND `forestCover` is on, crisp 10 m
+ *           Carpathian stand boundaries are painted on top of the global
+ *           landcover forest; when false the overlay uses the global
+ *           landcover forest alone (graceful fallback).
  * @property {boolean} [hazardousTerrain=false]
  *           Hazardous-terrain overlay (extreme peaks, cliffs,
  *           dangerous passes). Backed by the same carpathian-osm
@@ -251,6 +257,7 @@ export function composeLayers(opts = {}) {
     hasCarpathianOsmSource = false,
     forestLeafType = false,
     hasForestPolygonSource = false,
+    hasForest10mSource = false,
     forestCover = false,
     hazardousTerrain = false,
     hikingRoutes = false,
@@ -432,6 +439,14 @@ export function composeLayers(opts = {}) {
   //     feature flag ALONE — the base vector source is always present.
   if (forestCover) {
     stack.push(...forestCoverLayers(t));
+    // High-detail 10 m forest (Carpathian-only) sits ON TOP of the global
+    // landcover forest above. Source-gated: only when the forest-10m
+    // vector archive is reachable. Inside the bbox the near-opaque 10 m
+    // fill supersedes the coarse z14-capped landcover; outside it there is
+    // no data, so the global forest remains the visible surface.
+    if (hasForest10mSource) {
+      stack.push(...forestCoverHiDetailLayers(t));
+    }
   }
 
   // 8: Sky-View Factor multiplicative overlay. Emitted between

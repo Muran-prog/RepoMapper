@@ -222,6 +222,7 @@ async function main() {
       forestLeafType: effectiveFeatures.forestLeafType,
       hasForestPolygonSource: has.forestPolygon,
       forestCover: effectiveFeatures.forestCover,
+      hasForest10mSource: has.forest10m,
       hazardousTerrain: effectiveFeatures.hazardousTerrain,
       hikingRoutes: effectiveFeatures.hikingRoutes,
     };
@@ -477,6 +478,20 @@ async function main() {
         textureShading: true,
       },
       hypso: { mode: 'native' },
+    },
+    // High-detail 10 m forest vector (Carpathian-only). With the real
+    // config URL the forest-10m source is present, so the crisp
+    // `forestcover_hi_*` layers ride on top of the global landcover
+    // forest. The "no-source" pack blanks the URL to prove the overlay
+    // falls back cleanly to the global forest alone.
+    {
+      name: 'forest-cover-10m-detail',
+      flags: { forestCover: true },
+    },
+    {
+      name: 'forest-cover-no-10m-source',
+      flags: { forestCover: true },
+      disableForest10mUrl: true,
     },
     // Hazardous-terrain overlay — extreme peaks / cliffs / dangerous
     // passes. Without a carpathian-osm source the layers must not
@@ -811,6 +826,15 @@ async function main() {
       terrainOverride = {
         ...TERRAIN,
         carpathianOsm: { ...TERRAIN.carpathianOsm, url: null },
+      };
+    }
+    // Blank the high-detail 10 m forest archive URL to exercise the
+    // graceful-fallback path: forestCover stays on the global landcover
+    // forest and the `forestcover_hi_*` layers must not emit.
+    if (pack.disableForest10mUrl) {
+      terrainOverride = {
+        ...(terrainOverride ?? TERRAIN),
+        forest10m: { ...TERRAIN.forest10m, url: null },
       };
     }
     return buildStyle({ theme, profile, features, hypso, sourceStubs, terrainOverride });
@@ -1377,6 +1401,93 @@ async function main() {
   }
   console.log(`Forest-cover overlay invariants: ${forestCoverFails === 0 ? 'all OK' : `${forestCoverFails} FAILED`}`);
   if (forestCoverFails > 0) failed += forestCoverFails;
+
+  // ---------------------------------------------------------------------
+  // High-detail 10 m forest invariants — the Carpathian-only vector
+  // upgrade layered ON TOP of the global landcover forestCover. Asserts:
+  //   • source-gated: forestCover ON + forest-10m archive present → the
+  //     `forestcover_hi_fill` / `forestcover_hi_edge` layers emit, reading
+  //     the `forest-10m` vector source / `forest` source-layer.
+  //   • graceful fallback: forestCover ON but archive URL null → the hi
+  //     layers must NOT emit, while the base forestcover layers stay.
+  //   • the hi layers paint AFTER the base landcover forestcover layers
+  //     (so the crisp 10 m mass supersedes the coarse forest inside the
+  //     bbox) and BEFORE the first road (legibility).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('High-detail 10 m forest invariants:');
+  let forest10mFails = 0;
+  const forest10mIds = ['forestcover_hi_fill', 'forestcover_hi_edge'];
+
+  // Source present (real config URL) → hi layers emit.
+  const forest10mOnStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, forestCover: true },
+    sourceStubs: {},
+  });
+  const f10Layers = forest10mOnStyle.layers;
+  for (const id of forest10mIds) {
+    const layer = f10Layers.find((l) => l.id === id);
+    if (!layer) {
+      forest10mFails++;
+      console.log(`  FAIL ${id} not emitted with forest-10m source present`);
+    } else if (layer.source === 'forest-10m' && layer['source-layer'] === 'forest') {
+      console.log(`  OK   ${id} reads forest-10m/forest`);
+    } else {
+      forest10mFails++;
+      console.log(`  FAIL ${id} wrong source: ${layer.source}/${layer['source-layer']}`);
+    }
+  }
+  // Hi layers paint AFTER the base landcover forestcover layers.
+  const baseFillIdx = f10Layers.findIndex((l) => l.id === 'forestcover_fill');
+  const hiFillIdx = f10Layers.findIndex((l) => l.id === 'forestcover_hi_fill');
+  const hiEdgeIdx = f10Layers.findIndex((l) => l.id === 'forestcover_hi_edge');
+  if (baseFillIdx >= 0 && hiFillIdx > baseFillIdx && hiEdgeIdx > hiFillIdx) {
+    console.log(`  OK   hi layers paint after base forest (base=${baseFillIdx}, hiFill=${hiFillIdx}, hiEdge=${hiEdgeIdx})`);
+  } else {
+    forest10mFails++;
+    console.log(`  FAIL hi layers order wrong (base=${baseFillIdx}, hiFill=${hiFillIdx}, hiEdge=${hiEdgeIdx})`);
+  }
+  // Hi layers paint BEFORE the first road layer.
+  const f10FirstRoadIdx = f10Layers.findIndex((l) => /^road/.test(l.id));
+  if (f10FirstRoadIdx !== -1 && hiEdgeIdx >= 0 && hiEdgeIdx < f10FirstRoadIdx) {
+    console.log(`  OK   hi edge (idx ${hiEdgeIdx}) paints before first road (idx ${f10FirstRoadIdx})`);
+  } else if (f10FirstRoadIdx !== -1) {
+    forest10mFails++;
+    console.log(`  FAIL hi layers must paint BEFORE roads (hiEdge=${hiEdgeIdx}, road=${f10FirstRoadIdx})`);
+  }
+
+  // Source absent (URL blanked) → hi layers must NOT emit; base stays.
+  const forest10mOffStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, forestCover: true },
+    sourceStubs: {},
+    terrainOverride: { ...TERRAIN, forest10m: { ...TERRAIN.forest10m, url: null } },
+  });
+  const f10OffEmitted = forest10mOffStyle.layers.filter((l) => forest10mIds.includes(l.id));
+  if (f10OffEmitted.length === 0) {
+    console.log('  OK   no forest-10m source → hi layers suppressed (fallback)');
+  } else {
+    forest10mFails++;
+    console.log(`  FAIL hi layers emitted without source: ${f10OffEmitted.map((l) => l.id).join(', ')}`);
+  }
+  if (forest10mOffStyle.layers.some((l) => l.id === 'forestcover_fill')) {
+    console.log('  OK   base forestcover_fill still present in fallback');
+  } else {
+    forest10mFails++;
+    console.log('  FAIL base forestcover_fill missing in fallback');
+  }
+  // And the source itself must be absent when the URL is null.
+  if (!forest10mOffStyle.sources['forest-10m']) {
+    console.log('  OK   forest-10m source omitted when URL null');
+  } else {
+    forest10mFails++;
+    console.log('  FAIL forest-10m source present despite null URL');
+  }
+  console.log(`High-detail 10 m forest invariants: ${forest10mFails === 0 ? 'all OK' : `${forest10mFails} FAILED`}`);
+  if (forest10mFails > 0) failed += forest10mFails;
 
   // ---------------------------------------------------------------------
   // Hazardous-terrain LAYER invariants — graceful fallback + emission

@@ -206,6 +206,16 @@ export function composeSources({
     if (carpOsm) sources['carpathian-osm'] = carpOsm;
   }
 
+  // High-detail 10 m forest vector (ESA WorldCover tree class) for the
+  // Carpathians. Source-gated like the other PMTiles overlays: when the
+  // archive isn't configured the composer skips the high-detail forest
+  // layers and `forestCover` falls back to the global OpenMapTiles
+  // landcover forest (always present). Only added when forestCover is on.
+  if (features.forestCover) {
+    const forest10m = toVectorPmtilesSource(terrain.forest10m);
+    if (forest10m) sources['forest-10m'] = forest10m;
+  }
+
   // Static contour archive (only when mode='static' or 'hybrid').
   if (
     features.contours &&
@@ -252,6 +262,10 @@ export function sourceAvailability(sources) {
     // in src/style/index.js — this just signals that the data is
     // reachable in principle.
     forestPolygon: 'carpathian-osm' in sources,
+    // High-detail 10 m forest vector archive (Carpathian-only). Gates the
+    // crisp forestCover layers in src/style/index.js; when absent the
+    // overlay falls back to the global OpenMapTiles landcover forest.
+    forest10m: 'forest-10m' in sources,
     contoursStatic: 'contours-static' in sources,
   };
 }

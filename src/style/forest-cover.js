@@ -105,3 +105,59 @@ export function forestCoverLayers(t) {
     },
   ];
 }
+
+/**
+ * High-detail 10 m forest layers (Carpathian-only), painted from the
+ * `forest-10m` vector PMTiles archive (ESA WorldCover tree class,
+ * source-layer `forest`). These sit ON TOP of the global-landcover
+ * forestCover layers above: inside the Carpathian bbox the near-opaque
+ * 10 m fill visually replaces the coarser z14-capped landcover forest with
+ * satellite-accurate stand boundaries up to z14 (overzoomed beyond), while
+ * outside the bbox there is no data and the global forest shows through.
+ *
+ * Source-gated: emitted by `composeLayers` only when both `forestCover` is
+ * on AND `hasForest10mSource` is true (see src/style/index.js). The archive
+ * carries a single `forest` layer whose every feature IS forest, so no
+ * class filter is needed.
+ *
+ * @param {object} t Theme tokens (`getTokens(theme)`). Reads `t.forestCover`.
+ * @returns {Array<object>} Ordered MapLibre layer specs (fill → edge).
+ */
+export function forestCoverHiDetailLayers(t) {
+  return [
+    {
+      id: 'forestcover_hi_fill',
+      type: 'fill',
+      source: 'forest-10m',
+      'source-layer': 'forest',
+      paint: {
+        'fill-color': t.forestCover.fill,
+        'fill-antialias': true,
+        'fill-opacity': 0.95,
+      },
+    },
+    {
+      id: 'forestcover_hi_edge',
+      type: 'line',
+      source: 'forest-10m',
+      'source-layer': 'forest',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': t.forestCover.edge,
+        'line-opacity': linZoom([
+          [8, 0],
+          [10, 0.45],
+          [13, 0.65],
+        ]),
+        'line-width': linZoom([
+          [9, 0.2],
+          [13, 0.8],
+          [15, 1.4],
+        ]),
+      },
+    },
+  ];
+}
