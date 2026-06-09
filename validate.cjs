@@ -229,6 +229,7 @@ async function main() {
       forestCities: effectiveFeatures.forestCities,
       forestWaterAccent: effectiveFeatures.forestWaterAccent,
       forestRoadsBold: effectiveFeatures.forestRoadsBold,
+      forestRoadsOrange: effectiveFeatures.forestRoadsOrange,
       hazardousTerrain: effectiveFeatures.hazardousTerrain,
       hikingRoutes: effectiveFeatures.hikingRoutes,
     };
@@ -510,6 +511,7 @@ async function main() {
         forestCities: true,
         forestWaterAccent: true,
         forestRoadsBold: true,
+        forestRoadsOrange: true,
       },
     },
     {
@@ -519,6 +521,17 @@ async function main() {
         forestCities: true,
         forestWaterAccent: false,
         forestRoadsBold: false,
+        forestRoadsOrange: false,
+      },
+    },
+    {
+      name: 'forest-markup-roads-orange',
+      flags: {
+        forestCover: true,
+        forestCities: false,
+        forestWaterAccent: false,
+        forestRoadsBold: false,
+        forestRoadsOrange: true,
       },
     },
     {
@@ -528,6 +541,7 @@ async function main() {
         forestCities: true,
         forestWaterAccent: true,
         forestRoadsBold: true,
+        forestRoadsOrange: true,
       },
     },
     // Hazardous-terrain overlay — extreme peaks / cliffs / dangerous
@@ -1542,6 +1556,7 @@ async function main() {
     forestCities: ['forest_city_dot', 'forest_city_label'],
     forestWaterAccent: ['forest_water_accent_line', 'forest_water_accent_label'],
     forestRoadsBold: ['forest_roads_bold'],
+    forestRoadsOrange: ['forest_roads_orange_casing', 'forest_roads_orange'],
   };
   const allMarkupIds = Object.values(markupIds).flat();
 
@@ -1555,6 +1570,7 @@ async function main() {
       forestCities: true,
       forestWaterAccent: true,
       forestRoadsBold: true,
+      forestRoadsOrange: true,
     },
     sourceStubs: {},
   });
@@ -1576,6 +1592,7 @@ async function main() {
       forestCities: true,
       forestWaterAccent: true,
       forestRoadsBold: true,
+      forestRoadsOrange: true,
     },
     sourceStubs: {},
   });
@@ -1599,18 +1616,51 @@ async function main() {
       forestCities: true,
       forestWaterAccent: false,
       forestRoadsBold: false,
+      forestRoadsOrange: false,
     },
     sourceStubs: {},
   });
   const citiesOnlyIds = markupCitiesOnly.layers.map((l) => l.id);
   const cityPresent = markupIds.forestCities.every((id) => citiesOnlyIds.includes(id));
-  const othersAbsent = [...markupIds.forestWaterAccent, ...markupIds.forestRoadsBold]
-    .every((id) => !citiesOnlyIds.includes(id));
+  const othersAbsent = [
+    ...markupIds.forestWaterAccent,
+    ...markupIds.forestRoadsBold,
+    ...markupIds.forestRoadsOrange,
+  ].every((id) => !citiesOnlyIds.includes(id));
   if (cityPresent && othersAbsent) {
     console.log('  OK   sub-flags are independent (cities on, water/roads off)');
   } else {
     forestMarkupFails++;
     console.log(`  FAIL sub-flag independence broken (cityPresent=${cityPresent}, othersAbsent=${othersAbsent})`);
+  }
+
+  // Independence (mirror case): roads-orange-only must emit the orange
+  // road ids and NOT the cities/water/dark-roads ids.
+  const markupRoadsOrangeOnly = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: {
+      ...FEATURES,
+      forestCover: true,
+      forestCities: false,
+      forestWaterAccent: false,
+      forestRoadsBold: false,
+      forestRoadsOrange: true,
+    },
+    sourceStubs: {},
+  });
+  const orangeOnlyIds = markupRoadsOrangeOnly.layers.map((l) => l.id);
+  const orangePresent = markupIds.forestRoadsOrange.every((id) => orangeOnlyIds.includes(id));
+  const orangeOthersAbsent = [
+    ...markupIds.forestCities,
+    ...markupIds.forestWaterAccent,
+    ...markupIds.forestRoadsBold,
+  ].every((id) => !orangeOnlyIds.includes(id));
+  if (orangePresent && orangeOthersAbsent) {
+    console.log('  OK   sub-flags are independent (orange roads on, others off)');
+  } else {
+    forestMarkupFails++;
+    console.log(`  FAIL orange-roads independence broken (present=${orangePresent}, othersAbsent=${orangeOthersAbsent})`);
   }
 
   // On-top ordering: the bold-blue city label paints AFTER the base

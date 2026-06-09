@@ -197,6 +197,9 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [forestRoadsBold=false]
  *           Forest-mode markup: bold near-black casing on the major road
  *           network (motorway/trunk/primary). Forest-mode only.
+ * @property {boolean} [forestRoadsOrange=false]
+ *           Forest-mode markup: bold orange accent over the road network
+ *           (motorway→tertiary) with a light casing. Forest-mode only.
  * @property {boolean} [hazardousTerrain=false]
  *           Hazardous-terrain overlay (extreme peaks, cliffs,
  *           dangerous passes). Backed by the same carpathian-osm
@@ -277,6 +280,7 @@ export function composeLayers(opts = {}) {
     forestCities = true,
     forestWaterAccent = false,
     forestRoadsBold = false,
+    forestRoadsOrange = false,
     hazardousTerrain = false,
     hikingRoutes = false,
 
@@ -651,6 +655,7 @@ export function composeLayers(opts = {}) {
         forestCities,
         forestWaterAccent,
         forestRoadsBold,
+        forestRoadsOrange,
       }),
     );
   }

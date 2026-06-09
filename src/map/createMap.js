@@ -412,6 +412,7 @@ function profileToLayerOpts(profileConfig, features) {
     forestCities: features.forestCities,
     forestWaterAccent: features.forestWaterAccent,
     forestRoadsBold: features.forestRoadsBold,
+    forestRoadsOrange: features.forestRoadsOrange,
     // Hazardous-terrain overlay shares the umbrella Carpathian
     // capability (data lives in carpathian-osm.pmtiles), but is a
     // SEPARATE user-facing toggle so a user can render the hazard

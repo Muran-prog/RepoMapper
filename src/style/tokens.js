@@ -185,6 +185,8 @@ const LIGHT = {
   forestWaterAccentHalo: '#eef4ff',
   forestRoadBold: '#1e293b',
   forestRoadBoldHalo: '#ffffff',
+  forestRoadOrange: '#ea580c',
+  forestRoadOrangeHalo: '#ffffff',
 
   // ---------------------------------------------------------------------
   // Relief & atmosphere — Swiss-cartography inspired light-day palette.
@@ -536,6 +538,8 @@ const DARK = {
   forestWaterAccentHalo: '#0d1f2a',
   forestRoadBold: '#e2e8f0',
   forestRoadBoldHalo: '#0c1115',
+  forestRoadOrange: '#fb923c',
+  forestRoadOrangeHalo: '#0c1115',
 
   // ---------------------------------------------------------------------
   // Relief & atmosphere — inverted twilight palette. Shadow is deep cold

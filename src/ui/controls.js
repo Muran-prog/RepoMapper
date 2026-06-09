@@ -136,6 +136,7 @@ const FOREST_MARKUP_PREF_KEYS = Object.freeze({
   forestCities: 'cart:features:forestCities',
   forestWaterAccent: 'cart:features:forestWaterAccent',
   forestRoadsBold: 'cart:features:forestRoadsBold',
+  forestRoadsOrange: 'cart:features:forestRoadsOrange',
 });
 
 function loadWorldcoverTintPref(fallback) {
@@ -674,8 +675,16 @@ function renderReliefPanelBody() {
               <span>Главные дороги — жирным</span>
               <input type="checkbox" data-ctl="forestRoadsBold">
             </label>
+            <label class="row" data-ctl-row="forestRoadsOrange" title="Дороги ярким оранжевым жирным цветом (магистрали → второстепенные)">
+              <span>Дороги — оранжевым жирным</span>
+              <input type="checkbox" data-ctl="forestRoadsOrange">
+            </label>
+            <label class="row" data-ctl-row="settlementOutline" title="Фиолетовая обводка вокруг сёл, посёлков и городов (та же, что в панели «Слои»)">
+              <span>Обводка поселений (фиолетовая)</span>
+              <input type="checkbox" data-ctl="settlementOutline">
+            </label>
           </div>
-          <small class="row-hint">Эти переключатели работают только во включённом «Лесном покрове».</small>
+          <small class="row-hint">Эти переключатели работают только во включённом «Лесном покрове» (кроме «Обводки поселений» — она общая со «Слоями»).</small>
         </div>
         <label class="row" data-ctl-row="slopeWarning">
           <span class="slope-warn-label">
@@ -1155,6 +1164,10 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         FOREST_MARKUP_PREF_KEYS.forestRoadsBold,
         FEATURES.forestRoadsBold,
       ),
+      forestRoadsOrange: loadBoolPref(
+        FOREST_MARKUP_PREF_KEYS.forestRoadsOrange,
+        FEATURES.forestRoadsOrange,
+      ),
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
@@ -1307,11 +1320,22 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   }
 
   const wireToggle = (selector, key = selector) => {
-    const el = panelsHost.querySelector(`[data-ctl=${selector}]`);
-    if (!el) return;
-    el.checked = !!state.layerFeatures[key];
-    el.addEventListener('change', async () => {
+    // A control may be MIRRORED across panels (e.g. `settlementOutline`
+    // lives both in the Layers panel and in the forest-mode markup
+    // sub-panel). Wire every matching checkbox to the same feature flag
+    // and keep them visually in sync so toggling one updates the other.
+    const els = [...panelsHost.querySelectorAll(`[data-ctl=${selector}]`)];
+    if (!els.length) return;
+    const seed = !!state.layerFeatures[key];
+    els.forEach((node) => {
+      node.checked = seed;
+    });
+    els.forEach((el) => el.addEventListener('change', async () => {
       state.layerFeatures[key] = el.checked;
+      // Mirror the new state onto any sibling checkboxes for this flag.
+      els.forEach((other) => {
+        if (other !== el && other.checked !== el.checked) other.checked = el.checked;
+      });
       // The Land cover toggle is the one feature whose user choice
       // outlives the page — persist it through `cart:features:*`
       // keys so a refresh restores the user's selection. Other
@@ -1364,7 +1388,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // the computed predicate handles that automatically here.
       if (FLAT_HYPSO_KEYS.includes(key)) syncFlatHypsoCheckbox();
       await rebuildStyle();
-    });
+    }));
   };
   wireToggle('labels');
   wireToggle('pois');
@@ -1383,6 +1407,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('forestCities');
   wireToggle('forestWaterAccent');
   wireToggle('forestRoadsBold');
+  wireToggle('forestRoadsOrange');
   wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
@@ -1440,6 +1465,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     'forestCities',
     'forestWaterAccent',
     'forestRoadsBold',
+    'forestRoadsOrange',
     'hazardousTerrain',
   ];
   if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {

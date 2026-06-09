@@ -199,10 +199,72 @@ function forestRoadLayers(t) {
 }
 
 /**
+ * Bold ORANGE road accent. A vivid amber/orange line over the wider road
+ * network (motorway → tertiary) with a light halo casing so the road
+ * skeleton reads warm and heavy against the green — the orange counterpart
+ * to {@link forestRoadLayers}' near-black version. Independent toggle, so
+ * the two road styles can be mixed or used separately.
+ */
+function forestRoadOrangeLayers(t) {
+  const classes = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'];
+  const filter = ['in', ['get', 'class'], ['literal', classes]];
+  const widthFor = (cas) => [
+    'interpolate', ['linear'], ['zoom'],
+    5, cas ? 1.4 : 0.8,
+    9, [
+      'match', ['get', 'class'],
+      'motorway', cas ? 4.0 : 2.6,
+      'trunk', cas ? 3.4 : 2.2,
+      'primary', cas ? 2.8 : 1.8,
+      'secondary', cas ? 2.2 : 1.4,
+      cas ? 1.8 : 1.0,
+    ],
+    14, [
+      'match', ['get', 'class'],
+      'motorway', cas ? 7.5 : 5.2,
+      'trunk', cas ? 6.5 : 4.4,
+      'primary', cas ? 5.2 : 3.4,
+      'secondary', cas ? 4.2 : 2.6,
+      cas ? 3.4 : 2.0,
+    ],
+  ];
+  return [
+    {
+      // Light halo casing under the orange line for contrast on green.
+      id: 'forest_roads_orange_casing',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': 'transportation',
+      filter,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': t.forestRoadOrangeHalo,
+        'line-opacity': 0.7,
+        'line-width': widthFor(true),
+      },
+    },
+    {
+      id: 'forest_roads_orange',
+      type: 'line',
+      source: SOURCE,
+      'source-layer': 'transportation',
+      filter,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': t.forestRoadOrange,
+        'line-opacity': 0.95,
+        'line-width': widthFor(false),
+      },
+    },
+  ];
+}
+
+/**
  * @typedef {object} ForestMarkupOpts
  * @property {boolean} [forestCities=true]       Bold blue city/town accent.
  * @property {boolean} [forestWaterAccent=false] Brighter rivers + water labels.
- * @property {boolean} [forestRoadsBold=false]   Bold casing on major roads.
+ * @property {boolean} [forestRoadsBold=false]   Bold near-black casing on major roads.
+ * @property {boolean} [forestRoadsOrange=false] Bold orange accent over the road network.
  */
 
 /**
@@ -220,12 +282,14 @@ export function forestMarkupLayers(t, opts = {}) {
     forestCities = true,
     forestWaterAccent = false,
     forestRoadsBold = false,
+    forestRoadsOrange = false,
   } = opts;
 
   const layers = [];
   // Water + roads first so the bold city labels stay on top of them.
   if (forestWaterAccent) layers.push(...forestWaterLayers(t));
   if (forestRoadsBold) layers.push(...forestRoadLayers(t));
+  if (forestRoadsOrange) layers.push(...forestRoadOrangeLayers(t));
   if (forestCities) layers.push(...forestCityLayers(t));
   return layers;
 }

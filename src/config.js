@@ -793,11 +793,13 @@ export const FEATURES = Object.freeze({
    *                         (the headline accent: settlements pop on the
    *                         flat green canvas).
    *   • forestWaterAccent — brighter rivers + water labels. OFF by default.
-   *   • forestRoadsBold   — bold casing on the major road skeleton. OFF.
+   *   • forestRoadsBold   — bold near-black casing on the major road skeleton. OFF.
+   *   • forestRoadsOrange — bold orange accent over the road network. OFF.
    */
   forestCities: true,
   forestWaterAccent: false,
   forestRoadsBold: false,
+  forestRoadsOrange: false,
 
   /**
    * Hazardous terrain overlay — high-visibility "danger" markers for
