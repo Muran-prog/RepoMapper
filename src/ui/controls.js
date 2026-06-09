@@ -70,6 +70,12 @@ const ICONS = {
   // glyph (single tall conifer), so the three forest-related toggles
   // remain visually unambiguous.
   forestLeaf: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17 L9 8 L12 17 Z"/><line x1="9" y1="17" x2="9" y2="20"/><circle cx="16" cy="12" r="4"/><line x1="16" y1="16" x2="16" y2="20"/></svg>`,
+  // FILLED two-conifer glyph for the Forest-cover overlay toggle. Unlike
+  // the outline-only `landcover` (WorldCover) and `forestLeaf` glyphs, the
+  // solid fill communicates "paint the whole forest mass green" — the
+  // Google-Earth-style highlight this overlay produces — so the three
+  // forest-related toggles stay visually distinct at a glance.
+  forestCover: `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M5 15 L8 8 L11 15 Z"/><rect x="7.4" y="15" width="1.2" height="3.2" stroke="none"/><path d="M13 16 L16.5 7 L20 16 Z"/><rect x="15.9" y="16" width="1.2" height="3.2" stroke="none"/></svg>`,
   // Mountain-with-warning glyph for the Hazardous-terrain toggle:
   // a sharp peak silhouette with an exclamation mark inside, calling
   // out "danger / hard-to-reach". Keeps the same single-stroke
@@ -111,6 +117,11 @@ const CANOPY_HEIGHT_TINT_PREF_KEY = 'cart:features:canopyHeightTint';
 // outlive the page. Stored under the same `cart:features:*` namespace
 // so the persistence shape stays consistent.
 const FOREST_LEAF_TYPE_PREF_KEY = 'cart:features:forestLeafType';
+// Forest-cover overlay (vivid green highlight of every wooded polygon).
+// Pure stylistic preference with no operator-side data, but we still
+// persist it so a user who turns this Google-Earth-style overlay ON sees
+// it survive a reload — same `cart:features:*` namespace as the rest.
+const FOREST_COVER_PREF_KEY = 'cart:features:forestCover';
 // Hazardous-terrain overlay (extreme peaks, cliffs, dangerous passes).
 // Defaults to ON and the user choice persists so a user who turns the
 // "danger" markers off doesn't see them re-appear after every reload.
@@ -174,6 +185,27 @@ function saveForestLeafTypePref(value) {
   try {
     if (typeof window === 'undefined') return;
     window.localStorage?.setItem(FOREST_LEAF_TYPE_PREF_KEY, value ? '1' : '0');
+  } catch {
+    /* quota / serialise — best-effort */
+  }
+}
+
+function loadForestCoverPref(fallback) {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = window.localStorage?.getItem(FOREST_COVER_PREF_KEY);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveForestCoverPref(value) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage?.setItem(FOREST_COVER_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -582,6 +614,14 @@ function renderReliefPanelBody() {
           <input type="checkbox" data-ctl="forestLeafType" aria-describedby="forest-leaf-hint">
         </label>
         <small class="row-hint" id="forest-leaf-hint">Хвойний / листяний / мішаний ліс по OSM leaf_type</small>
+        <label class="row" data-ctl-row="forestCover" title="Зелёная подсветка лесных массивов по всей стране">
+          <span class="forest-cover-label">
+            ${ICONS.forestCover}
+            <span>Лесной покров</span>
+          </span>
+          <input type="checkbox" data-ctl="forestCover" aria-describedby="forest-cover-hint">
+        </label>
+        <small class="row-hint" id="forest-cover-hint">Плоский режим: леса зелёным по всей стране (как в Google Earth). Рельеф, 3D и тени скрываются.</small>
         <label class="row" data-ctl-row="slopeWarning">
           <span class="slope-warn-label">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1041,6 +1081,10 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // forest_polygon source-layer; once they flip the toggle on
       // (here or via the UI) the choice survives reload.
       forestLeafType: loadForestLeafTypePref(FEATURES.forestLeafType),
+      // Forest-cover overlay — vivid green forest highlight from the
+      // global base vector source. Pure stylistic preference, but the
+      // user's ON choice persists under `cart:features:forestCover`.
+      forestCover: loadForestCoverPref(FEATURES.forestCover),
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
@@ -1202,6 +1246,24 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // source-layer, the user's on/off choice persists across
       // reloads under `cart:features:forestLeafType`.
       if (key === 'forestLeafType') saveForestLeafTypePref(el.checked);
+      // Forest-cover overlay — persist the user's choice so the green
+      // forest highlight survives a reload once enabled.
+      if (key === 'forestCover') {
+        saveForestCoverPref(el.checked);
+        // Enabling the flat forest view: level the camera to a top-down
+        // pitch so the map reads truly flat (no oblique pseudo-3D), to
+        // match the Google-Earth landcover reference. The relief/3D
+        // layers themselves are dropped by resolveFeatures().
+        if (el.checked && typeof map.getPitch === 'function' && map.getPitch() > 0.5) {
+          if (caps?.prefersReducedMotion) map.jumpTo({ pitch: 0 });
+          else map.easeTo({ pitch: 0, duration: 300 });
+        }
+        // The hypsometric elevation legend is meaningless in the flat
+        // preset (hypso tint is suppressed), so hide it while forest-cover
+        // is on and restore it when the user switches back.
+        const legendEl = document.getElementById('hypso-legend-host');
+        if (legendEl) legendEl.hidden = el.checked;
+      }
       // Hazardous-terrain overlay defaults to ON; the user's choice
       // (especially "off") needs to outlive the page so the markers
       // don't reappear on every reload.
@@ -1226,11 +1288,41 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('worldcoverTint');
   wireToggle('canopyHeightTint');
   wireToggle('forestLeafType');
+  wireToggle('forestCover');
   wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
   wireToggle('hazardousTerrain');
   wireToggle('settlementOutline');
+
+  // ----- Cold-load reconcile of persisted layer prefs ------------------
+  //
+  // createMap() paints the first frame straight from the FEATURES
+  // defaults (main.js passes no featureOverrides). Several layer toggles,
+  // however, persist the user's choice across reloads via the
+  // `cart:features:*` keys, and `state.layerFeatures` is seeded from those
+  // restored prefs above. When a restored pref diverges from its default,
+  // the first paint would show the DEFAULT while the checkbox shows the
+  // RESTORED value — a silent map/control mismatch (e.g. forest-cover
+  // toggled ON last session renders OFF until the user clicks it again).
+  //
+  // Re-apply the restored feature state exactly once so the rendered map
+  // matches the controls. rebuildStyle() routes through resolveFeatures()
+  // (so reduced-motion / profile guards still win) and is idempotent, and
+  // the guard means a user whose prefs equal the defaults pays no extra
+  // style build.
+  const PERSISTED_FEATURE_KEYS = [
+    'worldcoverTint',
+    'canopyHeightTint',
+    'forestLeafType',
+    'forestCover',
+    'hazardousTerrain',
+  ];
+  if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {
+    rebuildStyle().catch(() => {
+      /* first-paint reconcile is best-effort — never break boot */
+    });
+  }
 
   // ----- Flat hypsometric preset --------------------------------------
   //
@@ -1412,6 +1504,14 @@ function installHypsoUI(map, panelsHost, { caps, profile } = {}) {
 
   if (profileLauncherBtn && profileEnabled) {
     profileLauncherBtn.addEventListener('click', () => handle.openProfile());
+  }
+
+  // Cold-load: if forest-cover restored ON, the flat preset is active, so
+  // the elevation legend must start hidden to match (the wired change
+  // handler keeps it in sync on subsequent toggles). Read the persisted
+  // pref directly — this runs in installHypsoUI, which has no `state`.
+  if (loadForestCoverPref(FEATURES.forestCover)) {
+    legendHost.hidden = true;
   }
 
   if (typeof window !== 'undefined') {

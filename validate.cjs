@@ -103,6 +103,9 @@ async function main() {
       // umbrella enableCarpathianOverlay capability gates emission.
       forestLeafType:
         features.forestLeafType && cfg.enableCarpathianOverlay,
+      // Forest-cover overlay reads the global base vector source, so it
+      // has no Carpathian/device-profile gate — the raw user flag wins.
+      forestCover: features.forestCover,
       // Hazardous-terrain overlay also rides the umbrella Carpathian
       // capability since the data lives in carpathian-osm.pmtiles.
       hazardousTerrain:
@@ -115,6 +118,24 @@ async function main() {
       globeProjection: features.globeProjection && cfg.enableGlobeProjection,
       hypsoRampId: hypso?.rampId ?? HYPSO.defaultRampId,
     };
+
+    // Mirror the flat-preset coupling from resolveFeatures() in
+    // createMap.js: forest-cover forces a deliberately flat, Google-Earth
+    // style view, so every relief / 3D / elevation cue is suppressed while
+    // the overlay is on. Kept in sync here so the harness models the same
+    // effective feature set the runtime composes.
+    if (effectiveFeatures.forestCover) {
+      effectiveFeatures.terrain3D = false;
+      effectiveFeatures.hillshade = false;
+      effectiveFeatures.hypsometricTint = false;
+      effectiveFeatures.textureShading = false;
+      effectiveFeatures.skyViewFactor = false;
+      effectiveFeatures.ridgeOverlay = false;
+      effectiveFeatures.slopeWarning = false;
+      effectiveFeatures.contours = false;
+      effectiveFeatures.worldcoverTint = false;
+      effectiveFeatures.canopyHeightTint = false;
+    }
 
     const sources = composeSources({
       vectorSource,
@@ -200,6 +221,7 @@ async function main() {
       hasCarpathianOsmSource: has.carpathianOsm,
       forestLeafType: effectiveFeatures.forestLeafType,
       hasForestPolygonSource: has.forestPolygon,
+      forestCover: effectiveFeatures.forestCover,
       hazardousTerrain: effectiveFeatures.hazardousTerrain,
       hikingRoutes: effectiveFeatures.hikingRoutes,
     };
@@ -432,6 +454,29 @@ async function main() {
       stubCarpathianOsmUrl: true,
       stubWorldcoverUrl: true,
       stubCanopyHeightUrl: true,
+    },
+    // Forest-cover overlay — flat green forest highlight from the GLOBAL
+    // base vector source. No `has*Source` gate, so it emits on the
+    // feature flag ALONE (the openmaptiles source is always there).
+    // Exercise it standalone, and also with every relief flag flipped on
+    // so the flat-preset coupling (relief suppressed) stays exercised by
+    // the full validity sweep.
+    {
+      name: 'forest-cover-on',
+      flags: { forestCover: true },
+    },
+    {
+      name: 'forest-cover-flattens-relief',
+      flags: {
+        forestCover: true,
+        hillshade: true,
+        hypsometricTint: true,
+        colorRelief: true,
+        contours: true,
+        terrain3D: true,
+        textureShading: true,
+      },
+      hypso: { mode: 'native' },
     },
     // Hazardous-terrain overlay — extreme peaks / cliffs / dangerous
     // passes. Without a carpathian-osm source the layers must not
@@ -1216,6 +1261,122 @@ async function main() {
   }
   console.log(`Forest leaf-type layer invariants: ${forestLayerFails === 0 ? 'all OK' : `${forestLayerFails} FAILED`}`);
   if (forestLayerFails > 0) failed += forestLayerFails;
+
+  // ---------------------------------------------------------------------
+  // Forest-cover overlay invariants — the toggleable Google-Earth-style
+  // green forest highlight. Unlike every other forest treatment it reads
+  // the GLOBAL base vector source, so:
+  //   • feature flag OFF → none of the three layers emit.
+  //   • feature flag ON  → fill / edge / rim all emit, in paint order,
+  //     with NO source stub required (the base source is always there).
+  //   • the fill paints AFTER water_fill (so it never bleeds under a
+  //     lake) and BEFORE the first road layer (so the road network and
+  //     labels stay legible on top of the canopy).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Forest-cover overlay invariants:');
+  let forestCoverFails = 0;
+  const forestCoverIds = ['forestcover_fill', 'forestcover_edge'];
+
+  // Flag OFF — nothing emits.
+  const forestCoverOffStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, forestCover: false },
+    sourceStubs: {},
+  });
+  const offEmitted = forestCoverOffStyle.layers.filter((l) =>
+    forestCoverIds.includes(l.id),
+  );
+  if (offEmitted.length === 0) {
+    console.log('  OK   flag OFF → no forest-cover layers emitted');
+  } else {
+    forestCoverFails++;
+    console.log(`  FAIL flag OFF but emitted: ${offEmitted.map((l) => l.id).join(', ')}`);
+  }
+
+  // Flag ON — both layers emit with NO source stub (global base source).
+  const forestCoverOnStyle = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: { ...FEATURES, forestCover: true },
+    sourceStubs: {},
+  });
+  const fcLayers = forestCoverOnStyle.layers;
+  for (const id of forestCoverIds) {
+    if (fcLayers.some((l) => l.id === id)) {
+      console.log(`  OK   ${id} present`);
+    } else {
+      forestCoverFails++;
+      console.log(`  FAIL ${id} not emitted with feature flag on`);
+    }
+  }
+  // Every forest-cover layer must reference the global openmaptiles
+  // source-layer `landcover` (never a hosted archive).
+  for (const id of forestCoverIds) {
+    const layer = fcLayers.find((l) => l.id === id);
+    if (layer && layer.source === 'openmaptiles' && layer['source-layer'] === 'landcover') {
+      console.log(`  OK   ${id} reads openmaptiles/landcover`);
+    } else if (layer) {
+      forestCoverFails++;
+      console.log(`  FAIL ${id} wrong source: ${layer.source}/${layer['source-layer']}`);
+    }
+  }
+  // Paint order: fill → edge.
+  const fcPos = forestCoverIds.map((id) => fcLayers.findIndex((l) => l.id === id));
+  if (fcPos.every((p) => p >= 0) && fcPos[0] < fcPos[1]) {
+    console.log('  OK   fill → edge order');
+  } else {
+    forestCoverFails++;
+    console.log(`  FAIL forest-cover layers not in expected order: ${JSON.stringify(fcPos)}`);
+  }
+
+  // Flat preset: with forest-cover ON, every relief / 3D / elevation cue
+  // must be suppressed (resolveFeatures coupling) — the Google-Earth flat
+  // read. Assert the relief layers are absent AND no 3D terrain block.
+  const reliefAbsent = (label, pred) => {
+    const hit = fcLayers.find(pred);
+    if (!hit) {
+      console.log(`  OK   flat preset: no ${label} layer with forest-cover on`);
+    } else {
+      forestCoverFails++;
+      console.log(`  FAIL flat preset: ${label} layer "${hit.id}" emitted with forest-cover on`);
+    }
+  };
+  reliefAbsent('hillshade', (l) => /^hillshade_/.test(l.id));
+  reliefAbsent('hypso-tint', (l) => l.id === 'hypso_tint');
+  reliefAbsent('contour', (l) => /^contour_/.test(l.id));
+  reliefAbsent('texture-shading', (l) => l.id === 'texture_shading');
+  reliefAbsent('worldcover-tint', (l) => l.id === 'worldcover-tint');
+  if (!forestCoverOnStyle.terrain) {
+    console.log('  OK   flat preset: no 3D terrain block with forest-cover on');
+  } else {
+    forestCoverFails++;
+    console.log('  FAIL flat preset: style.terrain present with forest-cover on');
+  }
+  // Z-order: fill AFTER water_fill, BEFORE the first road layer.
+  const fcWaterIdx = fcLayers.findIndex((l) => l.id === 'water_fill');
+  const fcFillIdx = fcPos[0];
+  const fcFirstRoadIdx = fcLayers.findIndex((l) => /^road/.test(l.id));
+  if (fcWaterIdx === -1 || fcFillIdx === -1) {
+    forestCoverFails++;
+    console.log(`  FAIL water_fill or forestcover_fill not found (water=${fcWaterIdx}, fill=${fcFillIdx})`);
+  } else if (fcFillIdx > fcWaterIdx) {
+    console.log(`  OK   forestcover_fill (idx ${fcFillIdx}) paints after water_fill (idx ${fcWaterIdx})`);
+  } else {
+    forestCoverFails++;
+    console.log(`  FAIL forestcover_fill (idx ${fcFillIdx}) must paint AFTER water_fill (idx ${fcWaterIdx})`);
+  }
+  if (fcFirstRoadIdx !== -1 && fcPos[1] >= 0) {
+    if (fcPos[1] < fcFirstRoadIdx) {
+      console.log(`  OK   forest-cover edge (idx ${fcPos[1]}) paints before first road (idx ${fcFirstRoadIdx})`);
+    } else {
+      forestCoverFails++;
+      console.log(`  FAIL forest-cover layers must paint BEFORE roads (edge=${fcPos[1]}, road=${fcFirstRoadIdx})`);
+    }
+  }
+  console.log(`Forest-cover overlay invariants: ${forestCoverFails === 0 ? 'all OK' : `${forestCoverFails} FAILED`}`);
+  if (forestCoverFails > 0) failed += forestCoverFails;
 
   // ---------------------------------------------------------------------
   // Hazardous-terrain LAYER invariants — graceful fallback + emission

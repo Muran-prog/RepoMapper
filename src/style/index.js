@@ -91,6 +91,7 @@ import {
   forestPolygonLayers,
 } from './carpathian.js';
 import { hikingRouteLayers } from './hiking-routes.js';
+import { forestCoverLayers } from './forest-cover.js';
 import { hazardLayers } from './hazards.js';
 import { getTokens } from './tokens.js';
 
@@ -173,6 +174,11 @@ import { getTokens } from './tokens.js';
  *           availability.forestPolygon in sources.js — true iff the
  *           carpathian-osm vector source is present (the layer lives
  *           inside that pmtiles).
+ * @property {boolean} [forestCover=false]
+ *           Forest-cover overlay — vivid Google-Earth-style green highlight
+ *           of every OpenMapTiles `landcover` class=wood polygon, painted
+ *           from the always-present base vector source (no `has*Source`
+ *           gate). Emit-gated by the feature flag alone.
  * @property {boolean} [hazardousTerrain=false]
  *           Hazardous-terrain overlay (extreme peaks, cliffs,
  *           dangerous passes). Backed by the same carpathian-osm
@@ -245,6 +251,7 @@ export function composeLayers(opts = {}) {
     hasCarpathianOsmSource = false,
     forestLeafType = false,
     hasForestPolygonSource = false,
+    forestCover = false,
     hazardousTerrain = false,
     hikingRoutes = false,
 
@@ -411,6 +418,20 @@ export function composeLayers(opts = {}) {
   //     `−area` key).
   if (forestLeafType && hasForestPolygonSource) {
     stack.push(...forestPolygonLayers(t));
+  }
+
+  // 7c: Forest-cover overlay — vivid green highlight of every wooded
+  //     polygon, read from the GLOBAL OpenMapTiles `landcover` source the
+  //     base map already uses (so it works country-wide with no hosted
+  //     archive — unlike worldcover / canopy / forest-leaf). Sits ABOVE
+  //     the water_fill mask (so it never bleeds under a lake) and ABOVE
+  //     the relief stack (so the canopy reads clearly), but BELOW
+  //     texture-shading / contours / trails / roads / labels so terrain
+  //     structure and the network still paint on top. Opacity stays < 1
+  //     so the hillshade gives the forest mass volume. Emit-gated by the
+  //     feature flag ALONE — the base vector source is always present.
+  if (forestCover) {
+    stack.push(...forestCoverLayers(t));
   }
 
   // 8: Sky-View Factor multiplicative overlay. Emitted between

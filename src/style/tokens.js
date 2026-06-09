@@ -54,6 +54,20 @@ const LIGHT = {
   // Land cover
   forest: '#cadcb4',
   forestEdge: '#bcd1a2',
+  // Forest-cover overlay — a vivid, Google-Earth-style green highlight of
+  // every wooded polygon, painted as a SEPARATE toggleable layer (not the
+  // pale base `forest` wash above). `fill` is a rich leaf-green read at a
+  // Forest-cover overlay — a deliberately FLAT, Google-Earth-style two-tone
+  // read: `fill` is a saturated near-opaque forest green that becomes the
+  // dominant surface colour, and `edge` is a darker casing that crisps every
+  // stand boundary so the mass reads sharper than the soft raster reference.
+  // No relief/3D shows through (forest-cover forces the flat preset), so the
+  // fill no longer needs to be translucent. Consumed exclusively by
+  // `src/style/forest-cover.js`.
+  forestCover: Object.freeze({
+    fill: '#2f7d54',
+    edge: '#1c5536',
+  }),
   grass: '#dfe6c8',
   scrub: '#d8e0bd',
   wetland: '#cad9c2',
@@ -407,6 +421,13 @@ const DARK = {
 
   forest: '#1c2a1e',
   forestEdge: '#243321',
+  // Forest-cover overlay — dark variant. Same saturated two-tone read as
+  // LIGHT but L* pulled down so the near-opaque fill sits on the deep slate
+  // canvas without glaring. See LIGHT for the per-slot rationale.
+  forestCover: Object.freeze({
+    fill: '#245038',
+    edge: '#143524',
+  }),
   grass: '#1f2a1d',
   scrub: '#21291b',
   wetland: '#1a2622',

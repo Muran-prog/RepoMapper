@@ -392,6 +392,13 @@ function profileToLayerOpts(profileConfig, features) {
     // user flag with the umbrella Carpathian-overlay capability.
     forestLeafType:
       features.forestLeafType && profileConfig.enableCarpathianOverlay,
+    // Forest-cover overlay reads the GLOBAL OpenMapTiles `landcover`
+    // source the base map already consumes, so there's no Carpathian /
+    // device-profile capability to AND against — the renderer emits it
+    // on the raw user flag alone (the base vector source is always
+    // present). See src/style/forest-cover.js + the 7c block in
+    // src/style/index.js.
+    forestCover: features.forestCover,
     // Hazardous-terrain overlay shares the umbrella Carpathian
     // capability (data lives in carpathian-osm.pmtiles), but is a
     // SEPARATE user-facing toggle so a user can render the hazard
@@ -441,10 +448,37 @@ function syncMapZoomLimits(map, mode, caps) {
  * produces a fully-gated `features` object for buildStyle.
  */
 function resolveFeatures(features, caps) {
+  let resolved = features;
   if (caps?.prefersReducedMotion) {
-    return { ...features, terrain3D: false };
+    resolved = { ...resolved, terrain3D: false };
   }
-  return features;
+  // Forest-cover is a deliberately FLAT, Google-Earth-style landcover view:
+  // the green forest mass is the whole story, so every relief / 3D /
+  // elevation cue is suppressed while the overlay is on. This is the
+  // single source of truth for the flat preset — both the initial paint
+  // and every applyStyle() rebuild route through here, and the runtime
+  // terrain lifecycle (interactions.js) reads the same resolved
+  // `terrain3D=false` so zoom events never re-add 3D terrain.
+  //
+  // Non-destructive: the user's stored relief prefs live in the control
+  // state (state.layerFeatures), not here, so toggling forest-cover back
+  // off restores them on the next rebuild.
+  if (resolved.forestCover) {
+    resolved = {
+      ...resolved,
+      terrain3D: false,
+      hillshade: false,
+      hypsometricTint: false,
+      textureShading: false,
+      skyViewFactor: false,
+      ridgeOverlay: false,
+      slopeWarning: false,
+      contours: false,
+      worldcoverTint: false,
+      canopyHeightTint: false,
+    };
+  }
+  return resolved;
 }
 
 // ---------------------------------------------------------------------------

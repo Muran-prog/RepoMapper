@@ -734,6 +734,22 @@ export const FEATURES = Object.freeze({
   forestLeafType: false,
 
   /**
+   * Forest-cover overlay — a dedicated, toggleable "лесной покров" layer
+   * that highlights every wooded polygon in a vivid Google-Earth-style
+   * green. Unlike worldcoverTint / canopyHeightTint / forestLeafType
+   * (all backed by a hosted Carpathian PMTiles archive), this overlay
+   * reads the GLOBAL OpenMapTiles `landcover` class=wood polygons the
+   * base map already consumes, so it works country-wide with NO new data
+   * dependency and is always available.
+   *
+   * Off by default — it's an optional thematic overlay the user enables
+   * from the Relief panel. The choice is persisted under
+   * `cart:features:forestCover` so it survives a reload. See
+   * `src/style/forest-cover.js` for the fill → edge → rim treatment.
+   */
+  forestCover: false,
+
+  /**
    * Hazardous terrain overlay — high-visibility "danger" markers for
    * truly hard-to-reach mountains, sharp cliffs and dangerous high
    * passes inside the Carpathian bbox. Driven entirely by the
