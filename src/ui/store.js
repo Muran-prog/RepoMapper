@@ -126,7 +126,10 @@ export function loadMapMode() {
   try {
     const raw = storage.getItem(MAP_MODE_STORAGE_KEY);
     if (typeof raw !== 'string') return DEFAULT_MAP_MODE;
-    if (!MAP_MODES.includes(raw)) return DEFAULT_MAP_MODE;
+    if (!MAP_MODES.includes(raw)) {
+      storage.removeItem(MAP_MODE_STORAGE_KEY);
+      return DEFAULT_MAP_MODE;
+    }
     return raw;
   } catch {
     return DEFAULT_MAP_MODE;

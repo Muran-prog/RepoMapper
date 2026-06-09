@@ -31,14 +31,12 @@ import {
   PERF,
   FEATURES,
   TERRAIN,
-  WORLD3D,
   CONTOURS,
   HYPSO,
   DEFAULT_THEME,
   MAP_MODES,
   DEFAULT_MAP_MODE,
   STANDARD_STYLE_URL,
-  CESIUM,
 } from '../config.js';
 import { composeLayers, getTokens } from '../style/index.js';
 import {
@@ -185,7 +183,7 @@ async function resolveVectorTriple() {
 // and produces a full spec-valid style object ready for `map.setStyle`.
 // ---------------------------------------------------------------------------
 
-async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState, map, immersive3d = false }) {
+async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hypsoState, map }) {
   const { vectorSource, glyphs, sprite } = await resolveVectorTriple();
 
   // hypso ramp id is forwarded to composeSources so it pre-adds the
@@ -284,15 +282,10 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
     TERRAIN.exaggerationStops,
     profileConfig.terrainExaggerationMul ?? 1,
   );
-  // In the immersive "3D Мир" mode we force terrain on (if a DEM exists)
-  // at a fixed dramatic exaggeration — it stays on at every zoom, unlike
-  // the 2D lifecycle which suppresses terrain below TERRAIN.terrain3DMinZoom.
   const terrain = composeTerrain({
-    enable: immersive3d
-      ? has.primaryDem
-      : features.terrain3D && profileConfig.enableTerrain3D && !finalLayerOpts.reduceMotion,
+    enable: features.terrain3D && profileConfig.enableTerrain3D && !finalLayerOpts.reduceMotion,
     hasPrimaryDem: has.primaryDem,
-    initialExaggeration: immersive3d ? WORLD3D.exaggeration : initialExaggeration,
+    initialExaggeration,
   });
   if (terrain) style.terrain = terrain;
 
@@ -736,69 +729,23 @@ async function buildModeStyle(opts) {
   if (mode === 'satellite') {
     return composeSatelliteStyle({ pixelRatio: opts.caps?.dpr });
   }
-  // world3d uses the SAME Cart composition, but with terrain forced on
-  // (immersive flag) so the relief is always present regardless of zoom.
-  if (mode === 'world3d') {
-    return buildStyle({ ...opts, immersive3d: true });
-  }
   return buildStyle(opts);
 }
+
 /**
  * Switch the live map to a new visual mode. Camera (centre / zoom /
  * pitch / bearing) is preserved automatically by `setStyle({ diff:
  * false })` — MapLibre keeps the transform across the swap. Persisted
  * to localStorage so a reload restores the user's choice.
  *
- * The `world3d` mode is special: it doesn't swap a MapLibre style.
- * Instead it hides the MapLibre canvas and activates a full CesiumJS
- * viewer via the `src/world3d/` module. The 2D map stays alive so
- * switching back is instant.
- *
  * @param {maplibregl.Map} map
- * @param {'cart'|'standard'|'satellite'|'world3d'} mode
+ * @param {'cart'|'standard'|'satellite'} mode
  * @returns {Promise<maplibregl.Map>}
  */
 export async function applyMapMode(map, mode) {
   if (!MAP_MODES.includes(mode)) return map;
   const prev = map._cart ?? {};
   if (prev.mode === mode) return map;
-  const prevMode = prev.mode;
-
-  // --- Leaving world3d → returning to a MapLibre mode ----------------
-  // world3d is now a native-MapLibre immersive state (no Cesium). Tear
-  // down the flight controls / pitch first; the style swap below restores
-  // the flat 2D map.
-  if (prevMode === 'world3d' && mode !== 'world3d') {
-    try {
-      const { deactivateWorld3D } = await import('../world3d/index.js');
-      deactivateWorld3D(map);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('[cart] Failed to deactivate world3d:', err);
-    }
-  }
-
-  // --- Entering world3d -----------------------------------------------
-  // Build the immersive Cart+terrain style on the SAME map, then flip the
-  // camera into the 3D fly state (pitch + WASD flight + HUD).
-  if (mode === 'world3d') {
-    try {
-      await applyStyle(map, { mode });
-      saveMapMode(mode);
-      const { activateWorld3D } = await import('../world3d/index.js');
-      await activateWorld3D(map);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[cart] Failed to activate world3d:', err);
-      // Fall back to the previous mode so the user isn't stuck.
-      try {
-        await applyStyle(map, { mode: prevMode });
-      } catch { /* best effort */ }
-      saveMapMode(prevMode);
-      throw err;
-    }
-    return map;
-  }
 
   // --- Normal MapLibre mode switch ------------------------------------
   // Run the next style build through the same plumbing as a regular
