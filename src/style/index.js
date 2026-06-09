@@ -92,6 +92,7 @@ import {
 } from './carpathian.js';
 import { hikingRouteLayers } from './hiking-routes.js';
 import { forestCoverLayers, forestCoverHiDetailLayers } from './forest-cover.js';
+import { forestMarkupLayers } from './forest-markup.js';
 import { hazardLayers } from './hazards.js';
 import { getTokens } from './tokens.js';
 
@@ -185,6 +186,17 @@ import { getTokens } from './tokens.js';
  *           Carpathian stand boundaries are painted on top of the global
  *           landcover forest; when false the overlay uses the global
  *           landcover forest alone (graceful fallback).
+ * @property {boolean} [forestCities=true]
+ *           Forest-mode markup: bold blue city/town accent (label + dot).
+ *           Only emitted when `forestCover` is on. Reads the base `place`
+ *           source-layer; supersedes the muted base label via the global
+ *           symbol collision index.
+ * @property {boolean} [forestWaterAccent=false]
+ *           Forest-mode markup: brighter waterway lines + water labels so
+ *           rivers/lakes pop against the forest fill. Forest-mode only.
+ * @property {boolean} [forestRoadsBold=false]
+ *           Forest-mode markup: bold near-black casing on the major road
+ *           network (motorway/trunk/primary). Forest-mode only.
  * @property {boolean} [hazardousTerrain=false]
  *           Hazardous-terrain overlay (extreme peaks, cliffs,
  *           dangerous passes). Backed by the same carpathian-osm
@@ -259,6 +271,12 @@ export function composeLayers(opts = {}) {
     hasForestPolygonSource = false,
     hasForest10mSource = false,
     forestCover = false,
+    // Forest-mode markup accents — only emitted inside the forestCover
+    // block (block 23). Each is an independent sub-flag surfaced through
+    // the forest-mode sub-panel; defaults mirror src/config.js FEATURES.
+    forestCities = true,
+    forestWaterAccent = false,
+    forestRoadsBold = false,
     hazardousTerrain = false,
     hikingRoutes = false,
 
@@ -614,6 +632,27 @@ export function composeLayers(opts = {}) {
   //     — that's why we don't AND with `carpathian` here.
   if (hazardousTerrain && hasCarpathianOsmSource) {
     stack.push(...hazardLayers(t));
+  }
+
+  // 23: Forest-mode markup accents — OPTIONAL highlights that exist ONLY
+  //     inside the flat "Лесной покров" view. Emitted dead-last so the
+  //     accents (bold blue cities, brighter rivers, bold road skeleton)
+  //     sit on top of everything, and guarded by `forestCover` so they
+  //     vanish entirely the moment the user leaves forest mode — there is
+  //     no other call site, so "forest-mode only" is structural, not a
+  //     runtime guard. Each accent is driven by its own independent
+  //     sub-flag (see src/style/forest-markup.js + the forest-mode
+  //     sub-panel in src/ui/controls.js). Because every place symbol
+  //     shares the global collision index, the bold-blue city label wins
+  //     against the muted base label instead of double-printing it.
+  if (forestCover) {
+    stack.push(
+      ...forestMarkupLayers(t, {
+        forestCities,
+        forestWaterAccent,
+        forestRoadsBold,
+      }),
+    );
   }
 
   return stack;

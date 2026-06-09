@@ -779,6 +779,27 @@ export const FEATURES = Object.freeze({
   forestCover: false,
 
   /**
+   * Forest-mode markup accents — a family of OPTIONAL highlight toggles
+   * that only have an effect while `forestCover` is on. They are surfaced
+   * through a collapsible sub-panel that is revealed only in forest mode
+   * (see src/ui/controls.js) and emitted dead-last in composeLayers,
+   * guarded by `forestCover` (src/style/forest-markup.js + block 23 of
+   * src/style/index.js), so "forest-mode only" is structural.
+   *
+   * Each is independent and persisted (`cart:features:forest*`) so the
+   * user's selection survives a reload alongside the forestCover choice:
+   *
+   *   • forestCities      — bold blue city/town label + dot. ON by default
+   *                         (the headline accent: settlements pop on the
+   *                         flat green canvas).
+   *   • forestWaterAccent — brighter rivers + water labels. OFF by default.
+   *   • forestRoadsBold   — bold casing on the major road skeleton. OFF.
+   */
+  forestCities: true,
+  forestWaterAccent: false,
+  forestRoadsBold: false,
+
+  /**
    * Hazardous terrain overlay — high-visibility "danger" markers for
    * truly hard-to-reach mountains, sharp cliffs and dangerous high
    * passes inside the Carpathian bbox. Driven entirely by the

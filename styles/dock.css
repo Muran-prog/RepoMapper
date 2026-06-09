@@ -1023,3 +1023,77 @@
     font-size: 11.5px;
   }
 }
+
+/* =====================================================================
+ * Forest-mode markup sub-panel
+ * ---------------------------------------------------------------------
+ * A nested, collapsible block of forest-mode-only accent toggles. It is
+ * revealed (via the `hidden` attribute, toggled in controls.js) only
+ * while "Лесной покров" is on, and reads as a clearly grouped child of
+ * the forest-cover row — indented with an accent rail so the user sees
+ * it belongs to that mode.
+ * ================================================================== */
+.forest-markup-panel {
+  margin: 4px 0 2px 6px;
+  padding: 8px 10px 6px;
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg-side-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.forest-markup-panel[hidden] {
+  display: none;
+}
+.forest-markup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.forest-markup-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.forest-markup-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .forest-markup-collapse:hover {
+    background: var(--bg-side);
+    color: var(--fg);
+  }
+}
+.forest-markup-collapse[aria-expanded="false"] {
+  transform: rotate(-90deg);
+}
+.forest-markup-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.forest-markup-rows[hidden] {
+  display: none;
+}
+.forest-markup-panel .row-hint {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}

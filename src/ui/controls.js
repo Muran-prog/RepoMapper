@@ -126,6 +126,17 @@ const FOREST_COVER_PREF_KEY = 'cart:features:forestCover';
 // Defaults to ON and the user choice persists so a user who turns the
 // "danger" markers off doesn't see them re-appear after every reload.
 const HAZARDOUS_TERRAIN_PREF_KEY = 'cart:features:hazardousTerrain';
+// Forest-mode markup accents — independent sub-toggles that only act
+// while forestCover is on. They persist alongside the forestCover choice
+// so a user's customised forest view survives a reload. Keyed by feature
+// name under the same `cart:features:*` namespace and read/written through
+// the generic loadBoolPref/saveBoolPref helpers below (no need for a
+// bespoke function pair per flag).
+const FOREST_MARKUP_PREF_KEYS = Object.freeze({
+  forestCities: 'cart:features:forestCities',
+  forestWaterAccent: 'cart:features:forestWaterAccent',
+  forestRoadsBold: 'cart:features:forestRoadsBold',
+});
 
 function loadWorldcoverTintPref(fallback) {
   try {
@@ -227,6 +238,29 @@ function saveHazardousTerrainPref(value) {
   try {
     if (typeof window === 'undefined') return;
     window.localStorage?.setItem(HAZARDOUS_TERRAIN_PREF_KEY, value ? '1' : '0');
+  } catch {
+    /* quota / serialise — best-effort */
+  }
+}
+
+/** Generic tri-state boolean pref read ('1' → true, '0' → false, else fallback). */
+function loadBoolPref(key, fallback) {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = window.localStorage?.getItem(key);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Generic boolean pref write — best-effort, swallows quota errors. */
+function saveBoolPref(key, value) {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage?.setItem(key, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -622,6 +656,27 @@ function renderReliefPanelBody() {
           <input type="checkbox" data-ctl="forestCover" aria-describedby="forest-cover-hint">
         </label>
         <small class="row-hint" id="forest-cover-hint">Плоский режим: леса зелёным по всей стране (как в Google Earth). Рельеф, 3D и тени скрываются.</small>
+        <div class="forest-markup-panel" data-forest-markup-panel hidden aria-hidden="true">
+          <div class="forest-markup-head">
+            <span class="forest-markup-title">Разметка лесного режима</span>
+            <button type="button" class="forest-markup-collapse" data-ctl="forestMarkupCollapse" aria-expanded="true" aria-controls="forest-markup-rows" title="Свернуть / развернуть">${ICONS.chevron ?? ICONS.controlsChev ?? ''}</button>
+          </div>
+          <div class="forest-markup-rows" id="forest-markup-rows" data-forest-markup-rows>
+            <label class="row" data-ctl-row="forestCities" title="Города и посёлки жирным синим — видно сразу на зелёном фоне">
+              <span>Города — жирным синим</span>
+              <input type="checkbox" data-ctl="forestCities">
+            </label>
+            <label class="row" data-ctl-row="forestWaterAccent" title="Реки и водоёмы более ярким синим">
+              <span>Реки и водоёмы</span>
+              <input type="checkbox" data-ctl="forestWaterAccent">
+            </label>
+            <label class="row" data-ctl-row="forestRoadsBold" title="Жирная тёмная обводка главных дорог (автомагистрали, трассы)">
+              <span>Главные дороги — жирным</span>
+              <input type="checkbox" data-ctl="forestRoadsBold">
+            </label>
+          </div>
+          <small class="row-hint">Эти переключатели работают только во включённом «Лесном покрове».</small>
+        </div>
         <label class="row" data-ctl-row="slopeWarning">
           <span class="slope-warn-label">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1085,6 +1140,21 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // global base vector source. Pure stylistic preference, but the
       // user's ON choice persists under `cart:features:forestCover`.
       forestCover: loadForestCoverPref(FEATURES.forestCover),
+      // Forest-mode markup accents — independent sub-toggles that only act
+      // while forestCover is on. Persisted alongside the forestCover choice
+      // so a customised forest view survives a reload.
+      forestCities: loadBoolPref(
+        FOREST_MARKUP_PREF_KEYS.forestCities,
+        FEATURES.forestCities,
+      ),
+      forestWaterAccent: loadBoolPref(
+        FOREST_MARKUP_PREF_KEYS.forestWaterAccent,
+        FEATURES.forestWaterAccent,
+      ),
+      forestRoadsBold: loadBoolPref(
+        FOREST_MARKUP_PREF_KEYS.forestRoadsBold,
+        FEATURES.forestRoadsBold,
+      ),
       slopeWarning: FEATURES.slopeWarning,
       ridgeOverlay: FEATURES.ridgeOverlay,
       carpathian: FEATURES.carpathian,
@@ -1225,6 +1295,17 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     if (flatHypsoEl.checked !== next) flatHypsoEl.checked = next;
   };
 
+  // Forest-mode markup sub-panel handle + reveal helper. Declared ahead
+  // of wireToggle so the forest-cover change handler (which lives inside
+  // wireToggle) can call the helper. The panel element is resolved after
+  // the toggles are wired; the helper no-ops until then.
+  let forestMarkupPanel = null;
+  function setForestMarkupPanelVisible(visible) {
+    if (!forestMarkupPanel) return;
+    forestMarkupPanel.hidden = !visible;
+    forestMarkupPanel.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
   const wireToggle = (selector, key = selector) => {
     const el = panelsHost.querySelector(`[data-ctl=${selector}]`);
     if (!el) return;
@@ -1263,11 +1344,21 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         // is on and restore it when the user switches back.
         const legendEl = document.getElementById('hypso-legend-host');
         if (legendEl) legendEl.hidden = el.checked;
+        // Reveal the forest-mode markup sub-panel only while forest-cover
+        // is on — its toggles have no effect outside this mode.
+        setForestMarkupPanelVisible(el.checked);
       }
       // Hazardous-terrain overlay defaults to ON; the user's choice
       // (especially "off") needs to outlive the page so the markers
       // don't reappear on every reload.
       if (key === 'hazardousTerrain') saveHazardousTerrainPref(el.checked);
+      // Forest-mode markup accents — persist each independent sub-toggle
+      // so a customised forest view survives a reload. The flags only
+      // emit layers inside the forestCover block, so toggling them while
+      // forest-cover is off simply stores the preference for next time.
+      if (key in FOREST_MARKUP_PREF_KEYS) {
+        saveBoolPref(FOREST_MARKUP_PREF_KEYS[key], el.checked);
+      }
       // Any user-driven change to one of the four managed flags is
       // the natural deactivation signal for the Flat hypso preset —
       // the computed predicate handles that automatically here.
@@ -1289,11 +1380,41 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('canopyHeightTint');
   wireToggle('forestLeafType');
   wireToggle('forestCover');
+  wireToggle('forestCities');
+  wireToggle('forestWaterAccent');
+  wireToggle('forestRoadsBold');
   wireToggle('slopeWarning');
   wireToggle('ridgeOverlay');
   wireToggle('carpathian');
   wireToggle('hazardousTerrain');
   wireToggle('settlementOutline');
+
+  // ----- Forest-mode markup sub-panel ----------------------------------
+  //
+  // The sub-panel of forest-mode-only accent toggles is revealed only
+  // while forest-cover is on (its checkboxes have no effect otherwise),
+  // and can be collapsed independently. Seed both states on mount so a
+  // refresh that restored forestCover=ON shows the panel immediately.
+  forestMarkupPanel = panelsHost.querySelector('[data-forest-markup-panel]');
+  const forestMarkupRows = panelsHost.querySelector('[data-forest-markup-rows]');
+  const forestMarkupCollapseBtn = panelsHost.querySelector(
+    '[data-ctl=forestMarkupCollapse]',
+  );
+  if (forestMarkupCollapseBtn && forestMarkupRows) {
+    forestMarkupCollapseBtn.addEventListener('click', () => {
+      const collapsed = forestMarkupRows.hidden;
+      forestMarkupRows.hidden = !collapsed;
+      forestMarkupCollapseBtn.setAttribute(
+        'aria-expanded',
+        collapsed ? 'true' : 'false',
+      );
+      if (forestMarkupPanel) {
+        forestMarkupPanel.dataset.collapsed = collapsed ? 'false' : 'true';
+      }
+    });
+  }
+  // Initial reveal mirrors the restored forest-cover state.
+  setForestMarkupPanelVisible(!!state.layerFeatures.forestCover);
 
   // ----- Cold-load reconcile of persisted layer prefs ------------------
   //
@@ -1316,6 +1437,9 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     'canopyHeightTint',
     'forestLeafType',
     'forestCover',
+    'forestCities',
+    'forestWaterAccent',
+    'forestRoadsBold',
     'hazardousTerrain',
   ];
   if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {

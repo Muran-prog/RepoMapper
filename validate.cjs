@@ -223,6 +223,12 @@ async function main() {
       hasForestPolygonSource: has.forestPolygon,
       forestCover: effectiveFeatures.forestCover,
       hasForest10mSource: has.forest10m,
+      // Forest-mode markup accents — passed straight through; the style
+      // builder only emits them inside the forestCover block, so they're
+      // structurally forest-mode-only.
+      forestCities: effectiveFeatures.forestCities,
+      forestWaterAccent: effectiveFeatures.forestWaterAccent,
+      forestRoadsBold: effectiveFeatures.forestRoadsBold,
       hazardousTerrain: effectiveFeatures.hazardousTerrain,
       hikingRoutes: effectiveFeatures.hikingRoutes,
     };
@@ -492,6 +498,37 @@ async function main() {
       name: 'forest-cover-no-10m-source',
       flags: { forestCover: true },
       disableForest10mUrl: true,
+    },
+    // Forest-mode markup accents — only act inside forest mode. The
+    // "all" pack flips every accent on with forestCover; the "off-mode"
+    // pack proves the accents stay absent when forestCover is off even
+    // with all sub-flags set (structural forest-mode gating).
+    {
+      name: 'forest-markup-all',
+      flags: {
+        forestCover: true,
+        forestCities: true,
+        forestWaterAccent: true,
+        forestRoadsBold: true,
+      },
+    },
+    {
+      name: 'forest-markup-cities-only',
+      flags: {
+        forestCover: true,
+        forestCities: true,
+        forestWaterAccent: false,
+        forestRoadsBold: false,
+      },
+    },
+    {
+      name: 'forest-markup-off-mode',
+      flags: {
+        forestCover: false,
+        forestCities: true,
+        forestWaterAccent: true,
+        forestRoadsBold: true,
+      },
     },
     // Hazardous-terrain overlay — extreme peaks / cliffs / dangerous
     // passes. Without a carpathian-osm source the layers must not
@@ -1488,6 +1525,106 @@ async function main() {
   }
   console.log(`High-detail 10 m forest invariants: ${forest10mFails === 0 ? 'all OK' : `${forest10mFails} FAILED`}`);
   if (forest10mFails > 0) failed += forest10mFails;
+
+  // ---------------------------------------------------------------------
+  // Forest-mode markup invariants — the independent accent toggles that
+  // only act inside the flat "Лесной покров" view. Asserts:
+  //   • forest-mode only: with forestCover OFF none of the accent layers
+  //     emit, even when every sub-flag is ON (structural gating).
+  //   • independence: each sub-flag emits ONLY its own layer ids.
+  //   • on-top ordering: the accents paint AFTER the base label stack so
+  //     the highlight semantics hold (bold-blue city wins the collision).
+  // ---------------------------------------------------------------------
+  console.log();
+  console.log('Forest-mode markup invariants:');
+  let forestMarkupFails = 0;
+  const markupIds = {
+    forestCities: ['forest_city_dot', 'forest_city_label'],
+    forestWaterAccent: ['forest_water_accent_line', 'forest_water_accent_label'],
+    forestRoadsBold: ['forest_roads_bold'],
+  };
+  const allMarkupIds = Object.values(markupIds).flat();
+
+  // Forest mode OFF + every sub-flag ON → no accent layer may emit.
+  const markupOffMode = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: {
+      ...FEATURES,
+      forestCover: false,
+      forestCities: true,
+      forestWaterAccent: true,
+      forestRoadsBold: true,
+    },
+    sourceStubs: {},
+  });
+  const leakedOff = markupOffMode.layers.filter((l) => allMarkupIds.includes(l.id));
+  if (leakedOff.length === 0) {
+    console.log('  OK   forestCover OFF → no markup accents emitted (forest-mode only)');
+  } else {
+    forestMarkupFails++;
+    console.log(`  FAIL markup accents leaked outside forest mode: ${leakedOff.map((l) => l.id).join(', ')}`);
+  }
+
+  // Forest mode ON + all accents ON → every accent id emits exactly once.
+  const markupAllOn = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: {
+      ...FEATURES,
+      forestCover: true,
+      forestCities: true,
+      forestWaterAccent: true,
+      forestRoadsBold: true,
+    },
+    sourceStubs: {},
+  });
+  for (const id of allMarkupIds) {
+    const n = markupAllOn.layers.filter((l) => l.id === id).length;
+    if (n === 1) {
+      console.log(`  OK   ${id} emitted once with forestCover + accents on`);
+    } else {
+      forestMarkupFails++;
+      console.log(`  FAIL ${id} emitted ${n} times (expected 1)`);
+    }
+  }
+
+  // Independence: cities-only must emit the city ids and NOT the others.
+  const markupCitiesOnly = buildStyle({
+    theme: 'light',
+    profile: 'high',
+    features: {
+      ...FEATURES,
+      forestCover: true,
+      forestCities: true,
+      forestWaterAccent: false,
+      forestRoadsBold: false,
+    },
+    sourceStubs: {},
+  });
+  const citiesOnlyIds = markupCitiesOnly.layers.map((l) => l.id);
+  const cityPresent = markupIds.forestCities.every((id) => citiesOnlyIds.includes(id));
+  const othersAbsent = [...markupIds.forestWaterAccent, ...markupIds.forestRoadsBold]
+    .every((id) => !citiesOnlyIds.includes(id));
+  if (cityPresent && othersAbsent) {
+    console.log('  OK   sub-flags are independent (cities on, water/roads off)');
+  } else {
+    forestMarkupFails++;
+    console.log(`  FAIL sub-flag independence broken (cityPresent=${cityPresent}, othersAbsent=${othersAbsent})`);
+  }
+
+  // On-top ordering: the bold-blue city label paints AFTER the base
+  // city label so the global symbol collision favours the accent.
+  const baseCityIdx = markupAllOn.layers.findIndex((l) => l.id === 'label_city_large');
+  const accentCityIdx = markupAllOn.layers.findIndex((l) => l.id === 'forest_city_label');
+  if (baseCityIdx >= 0 && accentCityIdx > baseCityIdx) {
+    console.log(`  OK   forest_city_label (idx ${accentCityIdx}) paints after base label_city_large (idx ${baseCityIdx})`);
+  } else {
+    forestMarkupFails++;
+    console.log(`  FAIL city accent must paint after base city label (accent=${accentCityIdx}, base=${baseCityIdx})`);
+  }
+  console.log(`Forest-mode markup invariants: ${forestMarkupFails === 0 ? 'all OK' : `${forestMarkupFails} FAILED`}`);
+  if (forestMarkupFails > 0) failed += forestMarkupFails;
 
   // ---------------------------------------------------------------------
   // Hazardous-terrain LAYER invariants — graceful fallback + emission

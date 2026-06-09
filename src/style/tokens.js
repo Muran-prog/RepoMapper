@@ -170,6 +170,22 @@ const LIGHT = {
   placeDotStroke: '#ffffff',
   placeDotGlow: 'rgba(217, 119, 6, 0.34)',
 
+  // Forest-mode markup accents — only consumed inside the flat
+  // "Лесной покров" view (see src/style/forest-markup.js). A vivid,
+  // saturated blue family that pops against the flat green forest mass:
+  //   • city accent — bold blue text + matching dot so settlements read
+  //     instantly on the green canvas (the headline forest-mode toggle).
+  //   • water accent — a brighter, heavier waterway/label blue so rivers
+  //     and lakes stand out from the forest fill.
+  //   • road accent — a near-black bold casing on the road skeleton so
+  //     the major network reads cleanly over the green.
+  forestCityAccent: '#1d4ed8',
+  forestCityAccentHalo: '#ffffff',
+  forestWaterAccent: '#2563eb',
+  forestWaterAccentHalo: '#eef4ff',
+  forestRoadBold: '#1e293b',
+  forestRoadBoldHalo: '#ffffff',
+
   // ---------------------------------------------------------------------
   // Relief & atmosphere — Swiss-cartography inspired light-day palette.
   // Shadow is a deep warm umber for pronounced ridge contrast (matches
@@ -510,6 +526,16 @@ const DARK = {
   placeDot: '#f0a850',
   placeDotStroke: '#0e131a',
   placeDotGlow: 'rgba(240, 168, 80, 0.40)',
+
+  // Forest-mode markup accents — dark-theme counterparts. Lighter blues
+  // so the city/water accents stay luminous against the deep forest fill,
+  // and a near-white bold road casing for the same reason.
+  forestCityAccent: '#60a5fa',
+  forestCityAccentHalo: '#0c1115',
+  forestWaterAccent: '#7cb8f5',
+  forestWaterAccentHalo: '#0d1f2a',
+  forestRoadBold: '#e2e8f0',
+  forestRoadBoldHalo: '#0c1115',
 
   // ---------------------------------------------------------------------
   // Relief & atmosphere — inverted twilight palette. Shadow is deep cold

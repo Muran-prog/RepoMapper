@@ -404,6 +404,14 @@ function profileToLayerOpts(profileConfig, features) {
     // present). See src/style/forest-cover.js + the 7c block in
     // src/style/index.js.
     forestCover: features.forestCover,
+    // Forest-mode markup accents — independent sub-flags surfaced through
+    // the forest-mode sub-panel. They are pure user preferences (no
+    // device-profile knob) and only have an effect inside the forestCover
+    // block in composeLayers, so we pass the raw flags straight through;
+    // "forest-mode only" is enforced structurally by the style builder.
+    forestCities: features.forestCities,
+    forestWaterAccent: features.forestWaterAccent,
+    forestRoadsBold: features.forestRoadsBold,
     // Hazardous-terrain overlay shares the umbrella Carpathian
     // capability (data lives in carpathian-osm.pmtiles), but is a
     // SEPARATE user-facing toggle so a user can render the hazard
