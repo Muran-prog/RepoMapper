@@ -1,58 +1,34 @@
 /**
- * Heads-up display — a small, premium glass chip that surfaces map
- * telemetry without crowding the canvas:
+ * Status bar (formerly the floating HUD).
  *
- *   • FPS                — live frame rate (colour-tiered green/amber/red)
- *   • ZOOM               — current camera zoom, 2 decimals
- *   • TILES              — outstanding tile fetches
- *   • LAT / LON / ELEV   — appended on hover-capable pointers; tracks
- *                          the cursor and shows DEM elevation under it
+ * Block UI redesign (v0.5): the telemetry is no longer a floating,
+ * collapsible chip. It is a FIXED status bar pinned to the bottom row of
+ * the app grid (spanning the sidebar + map columns), at a single height,
+ * VS Code-style. Everything reads inline, left-to-right:
  *
- * Visual model
- * ------------
- * The HUD is built around a 40 px square anchor button (same family
- * as the MapLibre native controls and the hypso legend toggle). The
- * anchor doubles as an FPS health-pulse — its dot indicator is
- * coloured by the current FPS tier so the user gets an at-a-glance
- * signal even with the panel collapsed. Clicking the anchor expands
- * the full telemetry panel that slides out alongside it:
+ *   [●fps]  МАСШТ z  ·  ЦЕНТР lat,lon  ·  ШИР  ·  ДОЛ  ·  ВЫС  ·····  МАСШТАБ bar
  *
- *    Collapsed:   [●]
- *    Expanded:    [●][ FPS  · ZOOM · TILES · LAT · LON · ELEV ]
- *
- * On narrow viewports the expanded panel switches to a vertical
- * stack so it doesn't fight the dock for horizontal space.
- *
- * Persistence
- * -----------
- * Open/closed state survives reload via `src/ui/store.js`. The
- * default is collapsed on touch / narrow viewports (the chrome would
- * otherwise eat too much of an already-tight canvas).
- *
- * Elevation source: `map.queryTerrainElevation(lngLat)`. When terrain
- * is disabled or unloaded the API returns null/NaN — the HUD shows an
- * em-dash instead of an error.
+ * • FPS survives only as a small colour dot (green/amber/red).
+ * • ZOOM + CENTER update on every move (useful on all devices).
+ * • LAT / LON / ELEV track the cursor on hover-capable pointers and dim
+ *   when the pointer leaves the map.
+ * • The map scale (distance bar) is integrated on the right so there is
+ *   no separate floating scale widget any more.
+ * • Two docked buttons sit beside the scale: "Высота" (toggles the
+ *   elevation legend) and a data-sources (attribution) toggle.
  */
 
-import { loadUiPrefs, saveUiPrefs } from './store.js';
+import { rampToCssGradient } from '../style/hypso/index.js';
 
 const FMT_COORD = new Intl.NumberFormat('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const FMT_ZOOM = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const FMT_ELEV = new Intl.NumberFormat('uk-UA', { maximumFractionDigits: 0 });
 
-const CHEV_SVG = `
-  <svg class="hud-chev" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M6 4 L10 8 L6 12" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
-`;
-
-/** Build the HTML for a single stat cell. */
-function statHTML(key, label, initialValue = '—') {
+function cell(key, label, initial = '—', extra = '') {
   return `
-    <div class="hud-stat" data-hud-stat="${key}">
-      <span class="hud-stat-label">${label}</span>
-      <span class="hud-stat-value" data-hud="${key}">${initialValue}</span>
+    <div class="status-cell" data-status-cell="${key}"${extra}>
+      <span class="status-label">${label}</span>
+      <span class="status-value" data-hud="${key}">${initial}</span>
     </div>
   `;
 }
@@ -60,183 +36,182 @@ function statHTML(key, label, initialValue = '—') {
 export function mountHUD(map, perf, root, { caps } = {}) {
   const showCursor = !!caps?.hasHover && !!caps?.hasFinePointer;
 
-  // First-run UX: collapsed by default on narrow viewports + touch
-  // pointers so the HUD doesn't crowd the dock on phones. Once the
-  // user toggles it, that choice is persisted and wins over the
-  // default on every subsequent reload.
-  const defaultCollapsed = !!(caps?.narrow || caps?.isCoarse);
-  const prefs = loadUiPrefs({ hudCollapsed: defaultCollapsed });
-  const initiallyCollapsed = prefs.hudCollapsed;
-
-  // The cursor-driven stats (LAT/LON/ELEV) live in a separately
-  // styleable group so we can fade them in / out as a unit when the
-  // pointer enters or leaves the canvas.
-  const cursorCells = showCursor
-    ? `
-      <div class="hud-stat-group" data-hud-group="cursor" data-state="idle">
-        ${statHTML('lat', 'ШИР', '—')}
-        ${statHTML('lon', 'ДОЛ', '—')}
-        ${statHTML('elev', 'ВЫС', '—')}
-      </div>
-    `
-    : '';
-
+  root.classList.add('statusbar');
   root.innerHTML = `
-    <div class="hud"
-         data-mode="${showCursor ? 'full' : 'compact'}"
-         data-collapsed="${initiallyCollapsed ? 'true' : 'false'}"
-         role="status"
-         aria-live="off">
-      <button class="hud-toggle"
-              type="button"
-              data-ctl="hud-toggle"
-              aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
-              aria-controls="hud-panel"
-              aria-label="${initiallyCollapsed ? 'Развернуть HUD' : 'Свернуть HUD'}"
-              title="FPS">
-        <span class="hud-toggle-dot" data-hud="fps-dot" aria-hidden="true"></span>
-        ${CHEV_SVG}
-      </button>
-      <div class="hud-panel" id="hud-panel" aria-hidden="${initiallyCollapsed ? 'true' : 'false'}">
-        <div class="hud-stat-group hud-stat-group-primary">
-          ${statHTML('fps', 'FPS', '—')}
-          ${statHTML('zoom', 'МАСШТ', '—')}
-          ${statHTML('tiles', 'ТАЙЛЫ', '0')}
-        </div>
-        ${cursorCells}
-      </div>
+    <div class="status-cell" data-status-cell="fps" title="Частота кадров">
+      <span class="status-fps-dot" data-hud="fps-dot" aria-hidden="true"></span>
     </div>
+    ${cell('zoom', 'Масшт', '—')}
+    ${cell('center', 'Центр', '—')}
+    ${showCursor ? `
+      ${cell('lat', 'Шир', '—', ' data-state="idle"')}
+      ${cell('lon', 'Дол', '—', ' data-state="idle"')}
+      ${cell('elev', 'Выс', '—', ' data-state="idle"')}
+    ` : ''}
+    <div class="status-spacer status-cell"></div>
+    <div class="status-cell" data-status-cell="scale" title="Масштаб">
+      <span class="status-label">Масштаб</span>
+      <span class="status-scale-bar"><span class="status-scale-fill" data-hud="scale-fill"></span></span>
+      <span class="status-value" data-hud="scale">—</span>
+    </div>
+    <button class="status-btn" type="button" data-ctl="legend-toggle"
+            aria-pressed="false" title="Легенда высот">
+      <span class="status-legend-swatch" data-hud="legend-swatch" aria-hidden="true"></span>
+      <span class="status-label">Высота</span>
+    </button>
+    <button class="status-btn" type="button" data-ctl="attrib-toggle"
+            aria-pressed="false" aria-label="Источники данных" title="Источники данных">
+      <svg viewBox="0 0 16 16" aria-hidden="true" width="13" height="13">
+        <rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="8" y1="6.6" x2="8" y2="11.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="8" cy="4.3" r="0.9" fill="currentColor"/>
+      </svg>
+    </button>
   `;
 
-  const hud = root.querySelector('.hud');
   const refs = {
-    fps: root.querySelector('[data-hud=fps]'),
-    fpsDot: root.querySelector('[data-hud="fps-dot"]'),
     zoom: root.querySelector('[data-hud=zoom]'),
+    center: root.querySelector('[data-hud=center]'),
     lat: root.querySelector('[data-hud=lat]'),
     lon: root.querySelector('[data-hud=lon]'),
     elev: root.querySelector('[data-hud=elev]'),
-    tiles: root.querySelector('[data-hud=tiles]'),
-    cursorGroup: root.querySelector('[data-hud-group="cursor"]'),
-    fpsCell: root.querySelector('[data-hud-stat="fps"]'),
-    toggle: root.querySelector('[data-ctl="hud-toggle"]'),
-    panel: root.querySelector('.hud-panel'),
+    scale: root.querySelector('[data-hud=scale]'),
+    scaleFill: root.querySelector('[data-hud="scale-fill"]'),
+    cursorCells: [...root.querySelectorAll('[data-status-cell="lat"],[data-status-cell="lon"],[data-status-cell="elev"]')],
+    legendBtn: root.querySelector('[data-ctl="legend-toggle"]'),
+    legendSwatch: root.querySelector('[data-hud="legend-swatch"]'),
+    attribBtn: root.querySelector('[data-ctl="attrib-toggle"]'),
   };
 
-  // ------------------------------------------------------------------
-  // Collapse / expand. Stamps the same FPS tier onto the anchor button
-  // so the dot stays meaningful even when the panel is hidden.
-  // ------------------------------------------------------------------
-  const setCollapsed = (collapsed, { persist = true } = {}) => {
-    hud.dataset.collapsed = collapsed ? 'true' : 'false';
-    if (refs.toggle) {
-      refs.toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-      refs.toggle.setAttribute(
-        'aria-label',
-        collapsed ? 'Развернуть HUD' : 'Свернуть HUD',
-      );
-    }
-    if (refs.panel) refs.panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
-    if (collapsed && refs.cursorGroup) refs.cursorGroup.dataset.state = 'idle';
-    if (persist) saveUiPrefs({ hudCollapsed: collapsed });
+  // ----- Legend toggle (docks the elevation legend above the status bar)
+  //
+  // The legend is owned by the hypso subsystem; we stay decoupled by
+  // dispatching a window event it listens for. The button's pressed
+  // state mirrors `cart:legend-state` events the legend emits back.
+  refs.legendBtn?.addEventListener('click', () => {
+    const next = refs.legendBtn.getAttribute('aria-pressed') !== 'true';
+    window.dispatchEvent(new CustomEvent('cart:legend-toggle', { detail: { open: next } }));
+  });
+  window.addEventListener('cart:legend-state', (e) => {
+    const open = !!e?.detail?.open;
+    refs.legendBtn?.setAttribute('aria-pressed', open ? 'true' : 'false');
+  });
+  // Mirror the active ramp gradient onto the swatch (same source the
+  // legend uses, so the two never disagree).
+  const syncLegendSwatch = () => {
+    if (!refs.legendSwatch) return;
+    const cart = map._cart ?? {};
+    const rampId = cart.hypso?.rampId;
+    const theme = cart.theme ?? 'light';
+    if (!rampId) return;
+    try {
+      refs.legendSwatch.style.background = rampToCssGradient(rampId, theme);
+    } catch { /* ignore */ }
   };
-  refs.toggle?.addEventListener('click', () => {
-    setCollapsed(hud.dataset.collapsed !== 'true');
+  window.addEventListener('cart:hypso', syncLegendSwatch);
+  map.on('styledata', syncLegendSwatch);
+  requestAnimationFrame(syncLegendSwatch);
+
+  // ----- Attribution toggle (shows/hides the data-sources popover) -----
+  refs.attribBtn?.addEventListener('click', () => {
+    const next = refs.attribBtn.getAttribute('aria-pressed') !== 'true';
+    refs.attribBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+    const attrib = document.querySelector('.maplibregl-ctrl-attrib');
+    if (attrib) attrib.dataset.statusOpen = next ? '1' : '0';
   });
 
+  // ----- FPS dot + zoom + center (perf subscription) ------------------
   const stop = perf.subscribe((r) => {
-    if (refs.fps) refs.fps.textContent = String(r.fps);
     const tier = r.fps >= 50 ? 'good' : r.fps >= 30 ? 'mid' : 'low';
-    if (refs.fpsCell) refs.fpsCell.dataset.tier = tier;
-    // Mirror the FPS tier onto the HUD root so the anchor dot picks
-    // it up without an extra subscription. Cheap data-attribute set,
-    // no layout cost.
-    if (hud) hud.dataset.tier = tier;
+    root.dataset.tier = tier;
     if (refs.zoom) refs.zoom.textContent = FMT_ZOOM.format(r.zoom);
-    if (refs.tiles) refs.tiles.textContent = String(r.tilesLoading);
+    if (refs.center && r.center) {
+      refs.center.textContent =
+        `${FMT_COORD.format(r.center.lat)}, ${FMT_COORD.format(r.center.lng)}`;
+    }
   });
 
+  // ----- Scale bar ----------------------------------------------------
+  const BAR_PX = 48;
+  const getRoundNum = (n) => {
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    const pow10 = Math.pow(10, String(Math.floor(n)).length - 1);
+    let d = n / pow10;
+    if (d >= 10) d = 10; else if (d >= 5) d = 5; else if (d >= 3) d = 3;
+    else if (d >= 2) d = 2; else if (d >= 1) d = 1; else d = 0.5;
+    return pow10 * d;
+  };
+  const fmtDist = (m) => {
+    if (m >= 1000) {
+      const km = m / 1000;
+      const disp = km >= 10 ? Math.round(km) : km.toFixed(1).replace(/\.0$/, '');
+      return `${disp} км`;
+    }
+    return `${Math.round(m)} м`;
+  };
+  const updateScale = () => {
+    const canvas = map.getCanvas();
+    const w = canvas?.clientWidth ?? 0;
+    const h = canvas?.clientHeight ?? 0;
+    if (w <= 0 || h <= 0) return;
+    const cy = h / 2;
+    let mpb;
+    try {
+      const left = map.unproject([Math.max(0, w / 2 - BAR_PX / 2), cy]);
+      const right = map.unproject([Math.min(w, w / 2 + BAR_PX / 2), cy]);
+      mpb = left.distanceTo(right);
+    } catch { mpb = 0; }
+    if (!Number.isFinite(mpb) || mpb <= 0) {
+      if (refs.scale) refs.scale.textContent = '—';
+      if (refs.scaleFill) refs.scaleFill.style.width = '0px';
+      return;
+    }
+    const round = getRoundNum(mpb);
+    const ratio = Math.min(1, round / mpb);
+    if (refs.scale) refs.scale.textContent = fmtDist(round);
+    if (refs.scaleFill) refs.scaleFill.style.width = `${(BAR_PX * ratio).toFixed(1)}px`;
+  };
+  map.on('move', updateScale);
+  map.on('zoom', updateScale);
+  map.on('resize', updateScale);
+  requestAnimationFrame(updateScale);
+
+  // ----- Cursor lat/lon/elev (hover pointers) -------------------------
   let onMouseMove = null;
   let onMouseLeave = null;
-  let onHudLeave = null;
   let flushTimer = null;
 
+  const setCursorState = (state) => {
+    refs.cursorCells.forEach((c) => { c.dataset.state = state; });
+  };
+
   if (showCursor) {
-    // Throttle elevation sampling to ~30 Hz — `queryTerrainElevation`
-    // walks the live DEM source and is non-trivial under fast mouse
-    // movement. We coalesce intermediate samples and flush the latest
-    // when the pointer settles.
     let pendingLngLat = null;
     let lastSample = 0;
-
     const sampleElev = (lngLat) => {
       if (!map.queryTerrainElevation) return null;
-      try {
-        return map.queryTerrainElevation(lngLat);
-      } catch {
-        return null;
-      }
+      try { return map.queryTerrainElevation(lngLat); } catch { return null; }
     };
 
     onMouseMove = (e) => {
-      // Skip the cursor-group activation while collapsed; the cells
-      // aren't visible and we'd just be writing into a hidden DOM.
-      if (hud?.dataset.collapsed === 'true') return;
-      if (refs.cursorGroup) refs.cursorGroup.dataset.state = 'active';
+      setCursorState('active');
       if (refs.lat) refs.lat.textContent = `${FMT_COORD.format(e.lngLat.lat)}°`;
       if (refs.lon) refs.lon.textContent = `${FMT_COORD.format(e.lngLat.lng)}°`;
-
       const now = performance.now();
-      if (now - lastSample < 32) {
-        pendingLngLat = e.lngLat;
-        return;
-      }
+      if (now - lastSample < 32) { pendingLngLat = e.lngLat; return; }
       lastSample = now;
       pendingLngLat = null;
-
       const elev = sampleElev(e.lngLat);
       if (refs.elev) {
-        if (elev == null || !Number.isFinite(elev)) {
-          refs.elev.textContent = '—';
-        } else {
-          refs.elev.textContent = `${FMT_ELEV.format(elev)} м`;
-        }
+        refs.elev.textContent = (elev == null || !Number.isFinite(elev))
+          ? '—' : `${FMT_ELEV.format(elev)} м`;
       }
     };
-
-    onMouseLeave = (e) => {
-      // The HUD is overlaid on the map and captures pointer events, so
-      // crossing onto it makes MapLibre fire `mouseout` on the canvas.
-      // If we idled unconditionally the cursor group would collapse,
-      // the HUD would shrink out from under the pointer, the canvas
-      // would receive `mousemove` again, the group would re-expand,
-      // and we'd ping-pong — the visible flicker on the HUD's right
-      // edge. Detect that case via the original DOM event's
-      // relatedTarget and keep the stats stable when the pointer is
-      // simply hovering us.
-      const related = e?.originalEvent?.relatedTarget;
-      if (related instanceof Node && root.contains(related)) return;
-      if (refs.cursorGroup) refs.cursorGroup.dataset.state = 'idle';
-    };
-
-    // Symmetric guard: when the pointer leaves the HUD to anything
-    // that isn't the map canvas (the dock, the legend, the window
-    // chrome…) idle the cursor stats so stale coordinates don't sit
-    // on the chip. If it goes back to the map, the canvas's own
-    // `mousemove` will keep them fresh — no action needed here.
-    onHudLeave = (e) => {
-      const related = e.relatedTarget;
-      const mapEl = map.getContainer();
-      if (related instanceof Node && mapEl.contains(related)) return;
-      if (refs.cursorGroup) refs.cursorGroup.dataset.state = 'idle';
-    };
+    onMouseLeave = () => setCursorState('idle');
 
     map.on('mousemove', onMouseMove);
     map.on('mouseout', onMouseLeave);
-    hud.addEventListener('mouseleave', onHudLeave);
 
-    // Periodically flush coalesced samples so the readout settles when
-    // the mouse stops moving inside the throttle window.
     flushTimer = setInterval(() => {
       if (!pendingLngLat) return;
       onMouseMove({ lngLat: pendingLngLat });
@@ -245,9 +220,11 @@ export function mountHUD(map, perf, root, { caps } = {}) {
 
   return () => {
     stop();
+    map.off('move', updateScale);
+    map.off('zoom', updateScale);
+    map.off('resize', updateScale);
     if (onMouseMove) map.off('mousemove', onMouseMove);
     if (onMouseLeave) map.off('mouseout', onMouseLeave);
-    if (onHudLeave) hud.removeEventListener('mouseleave', onHudLeave);
     if (flushTimer) clearInterval(flushTimer);
   };
 }

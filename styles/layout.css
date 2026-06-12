@@ -1,20 +1,29 @@
 /* =====================================================================
- *  App layout — map fills the viewport, every UI surface floats on top.
+ *  App shell — docked VS Code-style layout (v0.5).
  *
- *  The previous version reserved a 320 px column for the sidebar via
- *  CSS Grid. The redesigned shell promotes the canvas to fullscreen
- *  and lets the dock, panels, HUD and brand chip overlay it as
- *  positioned children of <main id="canvas">.
+ *  REPLACES the old "fullscreen map + floating overlays" model. The
+ *  viewport is a CSS Grid: a fixed activity rail, a docked sidebar, the
+ *  map cell, and a full-width status bar. Nothing floats; every surface
+ *  is pinned to shared grid lines so the whole UI sits at one rhythm.
  *
- *  Stacking (z-index intent):
- *    1   map
- *    2   maplibre native controls
- *    3   chip / HUD / hypso legend
- *    4   scrim (when mobile sheet expanded)
- *    5   dock + popover panels
- *    6   modal overlays (editor, profile)
- *    10  splash
+ *    columns:  [rail] var(--rail-w)  [side] var(--side-w)  [map] 1fr
+ *    rows:     [body] 1fr  [status] var(--status-h)
+ *
+ *  When the sidebar is collapsed, --side-w -> 0 and the map reclaims the
+ *  space (a real reflow, not an overlay). On mobile the grid collapses
+ *  to a single column; the rail docks to the bottom and the sidebar
+ *  becomes a bottom sheet.
  * ===================================================================== */
+
+:root {
+  --rail-w: 52px;
+  --side-w: 320px;
+  --status-h: 30px;
+}
+[data-pointer="coarse"],
+:where([data-touch="1"]) {
+  --rail-w: 56px;
+}
 
 #app {
   position: relative;
@@ -22,28 +31,45 @@
   width: 100vw;
   overflow: hidden;
   isolation: isolate;
+
+  display: grid;
+  grid-template-columns: var(--rail-w) var(--side-w) 1fr;
+  grid-template-rows: 1fr var(--status-h);
+  grid-template-areas:
+    "rail side map"
+    "rail side status";
+  background: var(--bg-page);
+  transition: grid-template-columns var(--t-base) var(--ease-out);
+}
+
+/* Collapsed sidebar -- the column shrinks to 0 and the map reflows. */
+#app[data-side="collapsed"] {
+  --side-w: 0px;
 }
 
 @supports (height: 100svh) {
   body,
   #app {
-    height: 100svh; /* small viewport — never grows */
+    height: 100svh;
   }
 }
 
-#canvas {
-  position: absolute;
-  inset: 0;
+.rail   { grid-area: rail; }
+.sidebar { grid-area: side; }
+.canvas { grid-area: map; }
+.statusbar { grid-area: status; }
+
+.canvas {
+  position: relative;
   overflow: hidden;
   background: var(--bg-page);
+  min-width: 0;
 }
 
 .map {
   position: absolute;
   inset: 0;
   z-index: 1;
-  /* MapLibre sets touch-action itself but reaffirm to defeat platform
-     gestures (pull-to-refresh, scroll-up) over the canvas area. */
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -54,22 +80,11 @@
   outline-offset: -2px;
 }
 
-/* =====================================================================
- *  Page-level loading state.
- *
- *  While the map is booting we soften the bg with a subtle gradient
- *  so the splash overlay reads as the natural focus point. Once
- *  #app[data-state="ready"] flips, the gradient is dropped to avoid
- *  fighting the rendered tiles for visual attention.
- * ===================================================================== */
-#app[data-state="booting"] #canvas::before {
+#app[data-state="booting"] .canvas::before {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(60% 40% at 30% 20%, var(--accent-soft), transparent 60%),
-    radial-gradient(40% 30% at 70% 80%, var(--accent-soft), transparent 60%),
-    var(--bg-page);
+  background: var(--bg-page);
   z-index: 0;
   pointer-events: none;
 }

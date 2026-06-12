@@ -37,32 +37,31 @@
   position: relative;
   width: calc(var(--r) * 2);
   height: calc(var(--r) * 2);
-  border-radius: 50%;
-  background: var(--brand-grad);
+  /* Block UI: a flat ink square instead of the round brand gradient. */
+  border-radius: var(--r-xs);
+  background: var(--accent);
   display: grid;
   place-items: center;
-  color: white;
-  box-shadow:
-    0 12px 28px rgba(0, 91, 187, 0.32),
-    0 28px 56px rgba(255, 213, 0, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  color: var(--accent-fg);
+  box-shadow: var(--ring-strong);
 }
 .splash-loader::after {
-  /* Animated outer ring — pulses out at the page tempo. */
+  /* Animated outer square ring — pulses out at the page tempo. */
   content: "";
   position: absolute;
-  inset: -6px;
-  border-radius: 50%;
+  inset: -8px;
+  border-radius: var(--r-xs);
   border: 2px solid var(--accent);
   opacity: 0;
   animation: splash-pulse 1.6s var(--ease-out) infinite;
 }
 .splash-loader::before {
+  /* Square sweeping border — two adjacent edges rotate. */
   content: "";
   position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.65);
+  inset: 4px;
+  border-radius: var(--r-xs);
+  border: 2px solid var(--accent-fg);
   border-top-color: transparent;
   border-right-color: transparent;
   animation: spin 1.1s linear infinite;
@@ -101,7 +100,9 @@
 .fatal h1 {
   margin: 0 0 12px;
   font-size: 18px;
-  color: #c4402f;
+  color: var(--fg);
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
 }
 .fatal pre {
   font-family: var(--mono);

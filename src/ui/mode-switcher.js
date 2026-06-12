@@ -59,9 +59,24 @@ import {
 export function mountModeSwitcher({ host, activeMode, onChange }) {
   if (!host) return { setActive: () => {}, destroy: () => {} };
 
+  // Short, plain-language descriptions shown under each card label.
+  // These are intentionally simpler than the verbose MAP_MODE_HINTS
+  // (which stay as the title/aria text for the curious).
+  const MODE_DESC = {
+    cart: 'Детальная карта с рельефом',
+    standard: 'Привычная дорожная карта',
+    satellite: 'Спутниковые снимки',
+  };
+  // Square block icons (monochrome, currentColor) for each mode.
+  const MODE_ICONS = {
+    cart: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5.5 L7.5 3 L12.5 5.5 L17.5 3 V14.5 L12.5 17 L7.5 14.5 L2.5 17 Z"/><path d="M7.5 3 V14.5"/><path d="M12.5 5.5 V17"/></svg>',
+    standard: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 15 L8 5 L12 12 L17 6"/><rect x="2.5" y="2.5" width="15" height="15"/></svg>',
+    satellite: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15"/><path d="M2.5 8 H17.5 M2.5 13 H17.5 M8 2.5 V17.5 M13 2.5 V17.5" opacity="0.5"/></svg>',
+  };
+
   // Single root so the radiogroup semantics live on a known node.
   const group = document.createElement('div');
-  group.className = 'mode-switcher seg seg-3';
+  group.className = 'mode-switcher';
   group.setAttribute('role', 'radiogroup');
   group.setAttribute('aria-label', 'Режим карты');
 
@@ -71,14 +86,22 @@ export function mountModeSwitcher({ host, activeMode, onChange }) {
   for (const id of MAP_MODES) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'mode-switcher-btn';
+    btn.className = 'mode-card';
     btn.dataset.mode = id;
     btn.setAttribute('role', 'radio');
     btn.setAttribute('aria-checked', id === activeMode ? 'true' : 'false');
     btn.tabIndex = id === activeMode ? 0 : -1;
     btn.title = MAP_MODE_HINTS[id] ?? MAP_MODE_LABELS[id];
-    btn.setAttribute('aria-label', MAP_MODE_HINTS[id] ?? MAP_MODE_LABELS[id]);
-    btn.textContent = MAP_MODE_LABELS[id];
+    btn.setAttribute('aria-label', MAP_MODE_LABELS[id]);
+    btn.innerHTML = `
+      <span class="mode-card-icon">${MODE_ICONS[id] ?? ''}</span>
+      <span class="mode-card-text">
+        <span class="mode-card-title">${MAP_MODE_LABELS[id]}</span>
+        <span class="mode-card-desc">${MODE_DESC[id] ?? ''}</span>
+      </span>
+      <span class="mode-card-check" aria-hidden="true"></span>
+    `;
+    btn.classList.toggle('on', id === activeMode);
     buttons.set(id, btn);
     group.appendChild(btn);
   }

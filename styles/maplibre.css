@@ -17,12 +17,15 @@
 /* --- Container positioning + group spacing ------------------------ */
 
 .maplibregl-ctrl-top-right {
-  margin-top: max(var(--edge-inset), env(safe-area-inset-top));
-  margin-right: max(var(--edge-inset), env(safe-area-inset-right));
+  /* Flush to the top-right corner of the map cell, no edge inset — the
+     control column reads as docked to the map edge like the rail is
+     docked to the viewport. Groups stack with a small gap. */
+  margin-top: 0;
+  margin-right: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: var(--float-gap);
+  gap: 8px;
 }
 .maplibregl-ctrl-bottom-right {
   margin-bottom: max(var(--edge-inset), env(safe-area-inset-bottom));
@@ -41,58 +44,58 @@
   float: none !important;
 }
 
-/* --- Card / group ------------------------------------------------- */
+/* --- Block control group (v0.5) ----------------------------------- *
+ * Flat, squared, opaque card that reads as a peer of the activity rail
+ * and sidebar — NOT a floating glass pill. No blur, no shadow, no
+ * radius; structure carried by a single 1px border. Buttons stack with
+ * hairline dividers like a list. The whole right column is one block. */
 
 .maplibregl-ctrl-group {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--hairline) !important;
-  box-shadow: var(--shadow-md), var(--ring) !important;
-  border-radius: var(--float-radius) !important;
+  background: var(--bg-side) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--hairline-strong) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
   overflow: hidden;
-  padding: 4px;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
 .maplibregl-ctrl-group button {
   background: transparent !important;
-  color: var(--fg) !important;
+  color: var(--fg-soft) !important;
   width: var(--float-size) !important;
   height: var(--float-size) !important;
   border: 0 !important;
-  border-radius: var(--r-md) !important;
+  border-radius: 0 !important;
   cursor: pointer;
   position: relative;
   transition:
     background var(--t-fast) var(--ease-out),
-    transform var(--t-fast) var(--ease-out),
     color var(--t-fast) var(--ease-out) !important;
   -webkit-tap-highlight-color: transparent;
 }
-/* Kill the legacy hairline divider between stacked buttons. */
+/* Hairline divider between stacked buttons (list-like). */
 .maplibregl-ctrl-group button + button {
-  border-top: 0 !important;
+  border-top: 1px solid var(--hairline) !important;
 }
 
 @media (hover: hover) {
   .maplibregl-ctrl-group button:hover {
     background: var(--bg-side-soft) !important;
-    color: var(--accent) !important;
-  }
-  .maplibregl-ctrl-group button:hover .maplibregl-ctrl-icon {
-    transform: scale(1.08);
+    color: var(--fg) !important;
   }
 }
 .maplibregl-ctrl-group button:active {
-  background: var(--accent-soft) !important;
-  transform: scale(0.95);
+  background: var(--accent) !important;
+  color: var(--accent-fg) !important;
 }
 .maplibregl-ctrl-group button:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 /* Touch hitbox — 44 px on coarse pointers (Apple HIG). Driven by the
@@ -107,8 +110,8 @@
  * ===================================================================== */
 
 .ctrl-anchor {
-  /* The anchor is itself a `.maplibregl-ctrl-group` so it inherits the
-     glass card styling; we only need to tweak the hover affordance. */
+  /* The anchor inherits the flat block-group styling; only the hover
+     affordance differs. */
   cursor: pointer;
 }
 .ctrl-anchor .ctrl-anchor-btn {
@@ -117,12 +120,12 @@
   height: var(--float-size);
   border: 0;
   background: transparent;
-  color: var(--fg);
+  color: var(--fg-soft);
   display: grid;
   place-items: center;
   cursor: pointer;
   padding: 0;
-  border-radius: var(--r-md);
+  border-radius: 0;
   transition:
     background var(--t-fast) var(--ease-out),
     color var(--t-fast) var(--ease-out);
@@ -136,15 +139,16 @@
 @media (hover: hover) {
   .ctrl-anchor .ctrl-anchor-btn:hover {
     background: var(--bg-side-soft);
-    color: var(--accent);
+    color: var(--fg);
   }
 }
 .ctrl-anchor .ctrl-anchor-btn:active {
-  background: var(--accent-soft);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 .ctrl-anchor .ctrl-anchor-btn:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 /* Rotate the chevron when expanded so the anchor's affordance reads
    "collapse upward" / "expand downward". */
@@ -313,12 +317,12 @@
  * even when its main content is hidden. The dot picks up the accent
  * colour because the scale's only "tier" is "active". */
 .cart-scale-toggle-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+  width: 9px;
+  height: 9px;
+  /* Block UI: square indicator instead of a dot. */
+  border-radius: var(--r-xs);
   background: var(--accent);
-  flex: 0 0 10px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  flex: 0 0 9px;
   transition:
     transform var(--t-base) var(--ease-spring);
 }
@@ -386,7 +390,7 @@
   position: relative;
   height: 4px;
   width: 56px;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
   background: var(--hairline);
   overflow: visible;
   flex: 0 0 56px;
@@ -397,8 +401,9 @@
   left: 0;
   height: 100%;
   width: 56px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--accent) 0%, var(--accent-strong) 100%);
+  border-radius: var(--r-xs);
+  /* Block UI: flat ink fill (no accent gradient). */
+  background: var(--accent);
   transition: width var(--t-base) var(--ease-out);
 }
 .cart-scale-tick {
@@ -474,12 +479,15 @@
 .maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active,
 .maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-background,
 .maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-waiting {
-  background: var(--accent-soft) !important;
-  color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: var(--accent-fg) !important;
 }
 .maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active-error {
-  background: color-mix(in srgb, #d04839 14%, transparent) !important;
-  color: #d04839 !important;
+  /* Monochrome system: an error reads as a struck-through / dimmed
+     state rather than a red hue. */
+  background: var(--accent-soft) !important;
+  color: var(--fg-muted) !important;
+  opacity: 0.7;
 }
 .maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-waiting .maplibregl-ctrl-icon {
   animation: ctrl-pulse 1.2s var(--ease-out) infinite;
@@ -489,24 +497,38 @@
   50%      { opacity: 0.5; transform: scale(0.9); }
 }
 
-/* --- Attribution -------------------------------------------------- */
+/* --- Attribution (driven by the status-bar toggle) ---------------- *
+ * The native compact "ⓘ" toggle is hidden; the status-bar "Источники"
+ * button shows/hides the attribution text as a flat popover docked to
+ * the bottom-right of the map, flush above the status bar. */
+
+/* Hide MapLibre's own compact toggle button — we drive it ourselves. */
+.maplibregl-ctrl-attrib-button { display: none !important; }
 
 .maplibregl-ctrl-attrib {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--hairline) !important;
-  border-radius: var(--r-pill) !important;
-  padding: 4px 12px !important;
+  background: var(--bg-side) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--hairline-strong) !important;
+  border-radius: 0 !important;
+  padding: 6px 10px !important;
+  margin: 0 !important;
   color: var(--fg-soft) !important;
   font-size: 11px !important;
-  box-shadow: var(--shadow-xs), var(--ring) !important;
+  box-shadow: none !important;
+  max-width: min(80vw, 360px);
+  /* Hidden until the status-bar button flips data-status-open. */
+  display: none !important;
+}
+.maplibregl-ctrl-attrib[data-status-open="1"] {
+  display: block !important;
+}
+/* Force the inner text open regardless of MapLibre's compact state. */
+.maplibregl-ctrl-attrib.maplibregl-compact .maplibregl-ctrl-attrib-inner {
+  display: block !important;
 }
 .maplibregl-ctrl-attrib a {
   color: var(--accent) !important;
-  text-decoration: none;
-}
-.maplibregl-ctrl-attrib a:hover {
   text-decoration: underline;
 }
 

@@ -39,12 +39,24 @@
 /* 3. Fullscreen canvas + map element. */
 @import url("./layout.css");
 
-/* 4. Floating dock + popover panels + brand chip + form primitives. */
+/* 4. Docked shell — activity rail + sidebar + status bar. */
+@import url("./shell.css");
+
+/* 4a. Content primitives (rows, switches, sliders, segmented controls,
+ *     preset grids) reused inside the sidebar sections. The old floating
+ *     .dock/.panel/.chip rules in this file are now dead (no such DOM)
+ *     but the primitives below them are still the building blocks. */
 @import url("./dock.css");
 
-/* 4b. Legacy sidebar.css — kept as an empty pass-through so older
- *     bundles that may still reference it don't 404. */
+/* 4b. Legacy sidebar.css — empty pass-through. */
 @import url("./sidebar.css");
+
+/* 4c. Reusable accordion / disclosure category primitive. */
+@import url("./accordion.css");
+
+/* 4d. Per-parameter info popover + fuzzy settings search. Depends on the
+ *     dock/panel primitives above (rows, fields), so it follows dock.css. */
+@import url("./info-search.css");
 
 /* 5. Scrim (backdrop for mobile sheet). */
 @import url("./scrim.css");

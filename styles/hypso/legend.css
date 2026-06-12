@@ -25,11 +25,15 @@
  * leaving room for the panel to expand without occluding the
  * fullscreen control above it (max-height clamps the panel). */
 .hypso-legend-host {
+  /* Docked to the bottom-right corner of the map cell, flush against the
+     edges (the status bar sits just below the map). The visible "Высота"
+     toggle now lives in the status bar; this host only carries the
+     legend panel, which opens flush from the corner. */
   position: absolute;
   z-index: 3;
   pointer-events: none;
-  bottom: calc(var(--float-size) + var(--float-gap) + env(safe-area-inset-bottom));
-  right: max(var(--edge-inset), env(safe-area-inset-right));
+  bottom: 0;
+  right: 0;
 }
 .hypso-legend-host[data-position="bl"] {
   bottom: calc(var(--float-size) + var(--float-gap) + env(safe-area-inset-bottom));
@@ -67,69 +71,70 @@
  * — it carries the glass background, border and shadow directly
  * — so its own width must equal the OUTER card token, not the
  * INNER button token used inside MapLibre groups. */
+/* Block UI (v0.5): the toggle is a slim, flat, labelled bar — NOT an
+ * oversized floating glass square. A small gradient swatch + "Высота"
+ * label, docked flush to the map edge. Height matches a MapLibre cell
+ * (--float-size) so it reads as part of the same control family. */
 .hypso-legend-toggle {
   appearance: none;
-  width: var(--float-card);
-  height: var(--float-card);
-  border: 1px solid var(--hairline);
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  box-shadow: var(--shadow-md), var(--ring);
-  border-radius: var(--float-radius);
+  height: var(--float-size);
+  border: 1px solid var(--hairline-strong);
+  background: var(--bg-side);
+  box-shadow: none;
+  border-radius: 0;
   color: var(--fg);
   font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  flex: 0 0 var(--float-card);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  flex: 0 0 auto;
   transition:
     background var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out),
-    box-shadow var(--t-base) var(--ease-out),
-    transform var(--t-fast) var(--ease-out);
+    color var(--t-fast) var(--ease-out);
   pointer-events: auto;
   position: relative;
 }
+.hypso-legend-toggle-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+  white-space: nowrap;
+}
 @media (hover: hover) {
   .hypso-legend-toggle:hover {
-    background: var(--glass-bg-strong);
-    border-color: color-mix(in srgb, var(--accent) 32%, var(--hairline));
+    background: var(--bg-side-soft);
   }
-  .hypso-legend-toggle:hover .hypso-legend-glyph {
-    transform: scaleY(1.06);
+  .hypso-legend-toggle:hover .hypso-legend-toggle-label {
+    color: var(--fg);
   }
-}
-.hypso-legend-toggle:active {
-  transform: scale(0.94);
 }
 .hypso-legend-toggle:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 .hypso-legend[data-collapsed="false"] .hypso-legend-toggle {
-  /* Highlight the toggle while the panel is open so the user can
-     find their way back to the close affordance. */
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--hairline));
-  box-shadow:
-    var(--shadow-md),
-    0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.hypso-legend[data-collapsed="false"] .hypso-legend-toggle-label {
+  color: var(--accent-fg);
 }
 
-/* The gradient swatch is now the entire visual content of the toggle
-   — a tall narrow strip centered in the 40 px square. JS sets its
-   `background` to the active ramp's CSS gradient. */
+/* Small gradient swatch preview at the start of the toggle bar. JS sets
+   its `background` to the active ramp's CSS gradient. */
 .hypso-legend-glyph {
-  width: 6px;
-  height: 26px;
-  border-radius: 3px;
+  width: 5px;
+  height: 18px;
+  border-radius: var(--r-xs);
   background: linear-gradient(to top, #2da356, #d28f15, #d04839);
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.08),
-    0 1px 2px rgba(0, 0, 0, 0.06);
-  transition: transform var(--t-fast) var(--ease-spring);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+  flex: 0 0 5px;
 }
 
 /* The title / unit / chevron are no longer on the toggle — they live
@@ -167,12 +172,13 @@
 .hypso-legend-panel {
   position: absolute;
   width: var(--legend-panel-w, 168px);
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--hairline);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-md), var(--ring);
+  /* Block UI: flat opaque panel, square, single border, no glass/shadow. */
+  background: var(--bg-side);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 0;
+  box-shadow: none;
   pointer-events: auto;
   display: flex;
   flex-direction: column;
@@ -201,7 +207,7 @@
  * the toggle's OUTER size (--float-card), not the inner button. */
 .hypso-legend-host[data-position="br"] .hypso-legend-panel {
   right: 0;
-  bottom: calc(var(--float-card) + var(--float-gap));
+  bottom: 0;
   transform-origin: bottom right;
   transform: translateY(8px) scale(0.96);
 }
@@ -212,7 +218,7 @@
 /* Bottom-left: same as br but left edges aligned. */
 .hypso-legend-host[data-position="bl"] .hypso-legend-panel {
   left: 0;
-  bottom: calc(var(--float-card) + var(--float-gap));
+  bottom: 0;
   transform-origin: bottom left;
   transform: translateY(8px) scale(0.96);
 }
@@ -224,7 +230,7 @@
  * Slides down + fades in. */
 .hypso-legend-host[data-position="tr"] .hypso-legend-panel {
   right: 0;
-  top: calc(var(--float-card) + var(--float-gap));
+  top: calc(var(--float-size) + 6px);
   transform-origin: top right;
   transform: translateY(-8px) scale(0.96);
 }
@@ -235,7 +241,7 @@
 /* Top-left: same as tr but left edges aligned. */
 .hypso-legend-host[data-position="tl"] .hypso-legend-panel {
   left: 0;
-  top: calc(var(--float-card) + var(--float-gap));
+  top: calc(var(--float-size) + 6px);
   transform-origin: top left;
   transform: translateY(-8px) scale(0.96);
 }

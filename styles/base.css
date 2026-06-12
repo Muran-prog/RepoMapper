@@ -34,6 +34,35 @@ button {
   color: inherit;
 }
 
+/* Unified scrollbar baseline — scoped to the app chrome (not the map
+   canvas / MapLibre internals) so the OS default never shows through on
+   our own surfaces. Components layer their own ::-webkit-* rules on top;
+   this is the floor. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+#app :where(.sidebar, .sidebar-body, .section, .acc-body,
+            .settings-search-results, .info-pop, .rail-nav)::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+#app :where(.sidebar, .sidebar-body, .section, .acc-body,
+            .settings-search-results, .info-pop)::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+#app :where(.sidebar, .sidebar-body, .section, .acc-body,
+            .settings-search-results, .info-pop)::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+#app :where(.sidebar, .sidebar-body, .section, .acc-body,
+            .settings-search-results, .info-pop)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 html,
 body {
   height: 100%;

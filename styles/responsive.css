@@ -1,346 +1,131 @@
 /* =====================================================================
- *  Responsive overrides — tablet, mobile, ultrawide.
+ *  Responsive — docked shell breakpoints (v0.5).
  *
- *  Cascade-sensitive: keep this file AFTER the per-component modules so
- *  the breakpoint rules can override desktop defaults. Order is:
- *    tablet → mobile → ultrawide → environment-specific.
- *
- *  Form-factor swap summary (paired with dock.css):
- *
- *    Viewport           Dock                Panels          Chip
- *    ───────────────────────────────────────────────────────────────
- *    ≥ 960 px           vertical, left      popover         pill
- *    540–960 px         vertical, left      popover (slim)  pill
- *    < 540 px           horizontal, bottom  bottom-sheet    compact
- *
+ *  Desktop / tablet: the grid keeps rail + sidebar + map + status bar.
+ *  Mobile (< 720px): the sidebar becomes a bottom sheet, the rail docks
+ *  to the bottom as a horizontal bar, the map fills the screen.
  * ===================================================================== */
 
-/* =====================================================================
- *  TABLET — keep the vertical dock but shrink the panel width so the
- *  map gets more room.
- * ===================================================================== */
-
-@media (max-width: 960px) and (min-width: 540px) {
-  :root {
-    --panel-w: 288px;
-    --edge-inset: 12px;
-  }
-  .dock {
-    left: max(var(--edge-inset), env(safe-area-inset-left));
-  }
-  .panel {
-    /* Slightly tighter horizontal inset on tablets, but still leave
-     * room for the MapLibre control column on the right
-     * (--float-card = the OUTER footprint of a single-button group). */
-    max-width: calc(100vw - var(--dock-w) - var(--float-card) - var(--edge-inset) * 4 - var(--panel-gap));
-  }
-  /* The scale pill is anchored to the bottom-left next to the HUD
-   * chip, so tablets don't need a separate offset — the bottom
-   * inset already adapts to the safe-area. */
+/* ---- Tablet: a slightly narrower sidebar to give the map more room. */
+@media (max-width: 1024px) and (min-width: 721px) {
+  :root { --side-w: 280px; }
 }
 
-/* =====================================================================
- *  SHORT VIEWPORT — laptops and windowed desktops. The horizontal
- *  scale pill is short enough that the desktop default already clears
- *  the HUD chip on every realistic viewport. No nudge needed.
- * ===================================================================== */
-
-/* =====================================================================
- *  MOBILE — dock relocates to the bottom edge, panels slide up from the
- *  bottom as bottom-sheets with a drag handle.
- * ===================================================================== */
-
-@media (max-width: 540px) {
-  :root {
-    --panel-w: 100%;
-    --edge-inset: 10px;
+/* ---- Mobile: single-column, bottom rail + bottom-sheet sidebar. ---- */
+@media (max-width: 720px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr var(--status-h) var(--rail-w);
+    grid-template-areas:
+      "map"
+      "status"
+      "rail";
   }
 
-  .dock {
-    /* Horizontal pill at the bottom of the screen. */
-    top: auto;
-    bottom: max(var(--edge-inset), env(safe-area-inset-bottom));
-    left: 50%;
-    transform: translateX(-50%);
+  /* Rail becomes a horizontal bottom bar. */
+  .rail {
     flex-direction: row;
-    gap: 2px;
-    padding: 6px;
-    border-radius: var(--r-pill);
+    align-items: stretch;
+    border-right: 0;
+    border-top: 1px solid var(--hairline-strong);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
   }
-  /* On mobile the dock is a horizontal pill: brand sits on the left,
-     nav buttons in the middle, theme toggle on the right. Both edges
-     get a stronger hairline separator (mirrored) so the three groups
-     read as distinct sections within the pill. */
-  .dock-brand {
-    margin: 0 6px 0 0;
-    padding: 0 8px 0 2px;
-    border-right: 1px solid var(--hairline-strong);
-    width: auto;
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-brand {
+    height: auto;
+    width: var(--rail-w);
+    border-bottom: 0;
+    border-right: 1px solid var(--hairline);
+    flex: 0 0 var(--rail-w);
   }
-  .dock-foot {
-    margin: 0 0 0 6px;
-    padding: 0 2px 0 8px;
+  .rail-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .rail-foot {
+    flex-direction: row;
     border-top: 0;
-    border-left: 1px solid var(--hairline-strong);
-    width: auto;
+    border-left: 1px solid var(--hairline);
   }
-  /* Brand chip on mobile inherits the desktop base styles (36 px chip
-     + 22 px icon + 4-layer glossy shadow). No size override here — we
-     want the same compact chip on both form-factors. */
-  .dock-nav {
-    flex-direction: row;
-    gap: 2px;
+  .rail-btn {
+    width: var(--rail-w);
+    flex: 0 0 var(--rail-w);
   }
-  /* Tighten the per-button hitbox slightly so 6 buttons fit on
-     narrow phones (≥ 360 px viewport). */
-  .dock-btn {
-    width: calc(var(--dock-size) - 4px);
-    height: calc(var(--dock-size) - 4px);
+  /* Active indicator moves to the TOP edge of the button (rail is at
+     the bottom, sheet opens upward). */
+  .rail-btn[aria-selected="true"]::before {
+    left: 0; right: 0; top: 0; bottom: auto;
+    width: auto; height: 3px;
   }
-  /* Hide hover tooltips on mobile (touch devices never trigger hover). */
-  .dock-btn::after {
-    display: none !important;
-  }
-  /* The active-panel indicator pip moves ABOVE the button on the
-     mobile dock so it points up toward the bottom-sheet that opens. */
-  .dock-btn::before {
-    left: 50%;
-    top: -8px;
-    width: 18px;
-    height: 3px;
-    transform: translateX(-50%) scaleX(0);
-  }
-  .dock-btn[data-active="true"]::before {
-    transform: translateX(-50%) scaleX(1);
-  }
+  /* No hover tooltips on touch. */
+  .rail-btn[data-tip]::after { display: none !important; }
 
-  /* Panels become bottom-sheets — full width, slide up from the bottom.
-     They sit ABOVE the floating dock pill so the user can switch panels
-     without dismissing first. The transform timing matches the desktop
-     popover so panels feel like "the same UI, in a different form". */
-  .panel {
-    top: auto;
-    /* Park just above the floating dock pill at the bottom. */
-    bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
-    left: 8px;
-    right: 8px;
-    width: auto;
-    max-width: none;
-    max-height: calc(100dvh - var(--dock-size) - 80px - env(safe-area-inset-bottom));
-    transform-origin: bottom center;
-    transform: translateY(calc(100% + var(--dock-size) + 40px));
-    border-radius: var(--sheet-radius);
-    border: 1px solid var(--hairline);
-    transition:
-      transform var(--t-slow) var(--ease-out-soft),
-      visibility var(--t-slow);
+  /* Sidebar becomes a bottom sheet floating above the rail. It is the
+     ONLY element that overlays the map on mobile (small screens can't
+     afford a permanent docked column). */
+  .sidebar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: var(--rail-w);
+    z-index: 7;
+    max-height: min(70dvh, 560px);
+    border-right: 0;
+    border-top: 1px solid var(--hairline-strong);
+    transform: translateY(calc(100% + var(--rail-w)));
+    transition: transform var(--t-slow) var(--ease-out-soft);
   }
-  .panel[data-open="true"] {
+  /* Sheet is visible only when a section is selected (sidebar expanded). */
+  #app:not([data-side="collapsed"]) .sidebar {
     transform: translateY(0);
   }
-  .panel[data-anchor="top"],
-  .panel[data-anchor="bottom"] {
-    transform-origin: bottom center;
+  #app[data-side="collapsed"] .sidebar {
+    transform: translateY(calc(100% + var(--rail-w)));
   }
-  .panel[data-anchor="top"]:not([data-open="true"]),
-  .panel[data-anchor="bottom"]:not([data-open="true"]) {
-    transform: translateY(calc(100% + var(--dock-size) + 40px));
-  }
-  .panel[data-anchor="top"][data-open="true"],
-  .panel[data-anchor="bottom"][data-open="true"] {
-    transform: translateY(0);
+  /* Keep the sheet content interactive when shown. */
+  #app[data-side="collapsed"] .sidebar-head,
+  #app[data-side="collapsed"] .sidebar-body {
+    opacity: 1;
   }
 
-  /* Add a soft drag handle indicator on the panel head. The pointer-
-     events on the head itself power the drag-to-close gesture wired
-     in src/ui/controls.js. */
-  .panel-head::after {
+  /* Sheet drag handle on the header. */
+  .sidebar-head {
+    position: relative;
+    cursor: grab;
+  }
+  .sidebar-head::after {
     content: "";
     position: absolute;
-    top: 6px;
-    left: 50%;
+    top: 5px; left: 50%;
     transform: translateX(-50%);
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
+    width: 34px; height: 4px;
     background: var(--hairline-strong);
     pointer-events: none;
   }
-  .panel-head {
-    position: relative;
-    padding-top: 20px;
-    cursor: grab;
-  }
-  .panel[data-dragging="1"] .panel-head {
-    cursor: grabbing;
-  }
+  .sidebar[data-dragging="1"] { transition: none; }
+  .sidebar[data-dragging="1"] .sidebar-head { cursor: grabbing; }
 
-  /* Standard padding — the dock is now OUTSIDE the panel so we don't
-     need extra bottom padding for it. */
-  .panel-body {
-    padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  }
+  /* Status bar sits just above the rail, spanning full width. */
+  .statusbar { font-size: 10.5px; }
+  /* Drop the cursor cells on touch (no hover) + the scale to save room. */
+  .status-cell[data-status-cell="lat"],
+  .status-cell[data-status-cell="lon"],
+  .status-cell[data-status-cell="elev"] { display: none; }
 
-  /* Brand chip becomes a compact dot on phones to save real estate. */
-  .chip {
-    padding: 6px 10px 6px 6px;
-  }
-  .chip-sub {
-    display: none;
-  }
-
-  /* HUD sits at the top-left, below the brand chip but still in the
-     same column. The collapsible chip keeps its anchor visible while
-     the panel is folded so the FPS pulse remains a glanceable cue. */
-  .hud-host {
-    left: max(var(--edge-inset), env(safe-area-inset-left));
-    right: auto;
-    bottom: auto;
-    top: calc(58px + env(safe-area-inset-top));
-  }
-
-  /* The custom vertical scale is hidden on phones — there isn't enough
-     left-edge real estate to host both it and the dock without
-     crowding the canvas. The scale is informational rather than
-     interactive, so the loss is acceptable. */
-  .cart-scale-host {
-    display: none;
-  }
-
-  /* Native MapLibre attribution moves up and stays clear of the dock.
-     The bottom-left edge is now empty (scale hidden, dock at center). */
-  .maplibregl-ctrl-bottom-right {
-    margin-bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
-  }
-  .maplibregl-ctrl-bottom-left {
-    margin-bottom: calc(var(--dock-size) + 24px + env(safe-area-inset-bottom));
-  }
-
-  /* Slightly larger touch targets inside panels. */
-  .row {
-    gap: 14px;
-  }
+  /* Map controls: clear of nothing now (map is full-bleed above the
+     status bar); MapLibre's own margins handle the inset. */
 }
 
-/* =====================================================================
- *  Narrow phones (<= 400 px) — the 6-nav dock at the default 52 px size
- *  overflows the viewport on iPhone SE / Galaxy S22 class devices once
- *  the brand chip and theme toggle are factored in. We tighten the
- *  per-button hitbox a notch and drop the inter-button gap to 1 px so
- *  the dock pill stays a single horizontal stripe without clipping.
- *
- *  The reduction is small enough to remain WCAG-friendly:
- *    44 px ≥ 24 px AAA, ≥ 44 px Apple HIG, comfortably tappable.
- * ===================================================================== */
-
-@media (max-width: 400px) {
-  .dock {
-    padding: 4px;
-    gap: 1px;
-  }
-  .dock-nav {
-    gap: 1px;
-  }
-  .dock-btn {
-    width: 44px;
-    height: 44px;
-  }
-  .dock-brand {
-    margin-right: 4px;
-    padding: 0 6px 0 2px;
-  }
-  .dock-logo {
-    width: 32px;
-    height: 32px;
-  }
-  .dock-logo svg {
-    width: 18px;
-    height: 18px;
-  }
-  .dock-foot {
-    margin-left: 4px;
-    padding: 0 2px 0 6px;
-  }
+/* ---- Very narrow phones: shrink the rail a touch. ------------------ */
+@media (max-width: 380px) {
+  :root { --rail-w: 50px; }
+  .statusbar .status-cell[data-status-cell="scale"] { display: none; }
 }
 
-/* =====================================================================
- *  Very narrow phones (≤ 360 px) — Galaxy Fold inner display, older
- *  budget devices. The brand chip becomes optional here since the
- *  six-button nav is the priority.
- * ===================================================================== */
-
-@media (max-width: 360px) {
-  .dock-btn {
-    width: 40px;
-    height: 40px;
-  }
-  .dock-brand {
-    /* Brand chip collapses on the smallest phones — the panel content
-     * makes the brand redundant once the user is interacting with the
-     * tools. The home button remains accessible via the dock-logo
-     * tap target which the layout reduces but doesn't hide. */
-    margin-right: 2px;
-    padding: 0 3px 0 1px;
-  }
-  .dock-logo {
-    width: 28px;
-    height: 28px;
-  }
-}
-
-/* =====================================================================
- *  Short viewports — landscape phones, fold-out devices. We tighten
- *  the dock so it stays vertically centred without clipping.
- * ===================================================================== */
-
-@media (max-height: 620px) and (orientation: landscape) {
-  :root {
-    --dock-size: 40px;
-    --dock-icon: 18px;
-    --dock-pad: 4px;
-  }
-  .dock {
-    gap: 4px;
-  }
-  .dock-brand {
-    margin-bottom: 0;
-  }
-  .dock-foot {
-    margin-top: 2px;
-    padding-top: 6px;
-  }
-  .dock-logo {
-    width: 32px;
-    height: 32px;
-  }
-  .dock-logo svg {
-    width: 16px;
-    height: 16px;
-  }
-  .panel {
-    max-height: 88dvh;
-  }
-  /* Short viewports: nothing to do — the scale is anchored to the
-   * bottom-left right above the HUD chip, which already adapts via
-   * `bottom: env(safe-area-inset-bottom)`. */
-}
-
-/* =====================================================================
- *  ULTRAWIDE — slightly larger panel, more breathing room around the dock.
- * ===================================================================== */
-
+/* ---- Ultrawide: a wider sidebar for more breathing room. ----------- */
 @media (min-width: 1800px) {
-  :root {
-    --panel-w: 332px;
-    --dock-size: 56px;
-    --dock-icon: 22px;
-    --dock-w: 64px;
-    --edge-inset: 24px;
-  }
-  .dock {
-    left: max(var(--edge-inset), env(safe-area-inset-left));
-  }
-  .panel {
-    left: calc(max(var(--edge-inset), env(safe-area-inset-left)) + var(--dock-w) + var(--panel-gap));
-  }
+  :root { --side-w: 360px; --rail-w: 56px; }
 }

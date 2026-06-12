@@ -22,6 +22,39 @@
 }
 
 /* =====================================================================
+ *  Low-power performance profile — kill GPU-expensive backdrop blur.
+ *
+ *  Multiple stacked translucent cards (dock, panels, HUD, scale,
+ *  MapLibre groups, legend) each running `backdrop-filter: blur()` over
+ *  a continuously re-rendering WebGL map is a classic source of jank on
+ *  low-end phones. The device layer stamps `data-profile="low"` on
+ *  <html>; here we drop the blur and make every floating surface fully
+ *  opaque. The squared block UI reads cleanly without glass, so there's
+ *  no visual regression — just smoother panning on weak hardware.
+ *
+ *  We also disable blur globally on coarse pointers as a precaution,
+ *  since even mid-range phones stutter when blurring the live map. Fine-
+ *  pointer (desktop / laptop) devices keep the subtle glass.
+ * ===================================================================== */
+
+:where(html[data-profile="low"], html[data-pointer="coarse"]) :is(
+  .dock,
+  .panel,
+  .hud,
+  .chip,
+  .mode-switcher,
+  .cart-scale,
+  .maplibregl-ctrl-group,
+  .maplibregl-ctrl-attrib,
+  .hypso-legend-toggle,
+  .info-pop
+) {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--bg-elevated) !important;
+}
+
+/* =====================================================================
  *  Forced-colours / Windows high-contrast — keep the map visible.
  * ===================================================================== */
 
