@@ -500,12 +500,14 @@
    * as "things will be removed", complementing the .draw-danger button
    * styling on Очистити. Soft drop shadow + light fill make the disk
    * legible over both the bright and dark hypsometric ramps. */
-  border: 1.5px solid color-mix(in srgb, #c4402f 80%, transparent);
+  /* Monochrome system: the eraser cursor reads as a dashed ink ring
+     rather than a red disk. Round shape is kept — it represents the
+     brush radius, not chrome. */
+  border: 1.5px dashed var(--accent);
   border-radius: 50%;
-  background: color-mix(in srgb, #c4402f 12%, transparent);
+  background: var(--accent-soft);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.55) inset,
-    0 1px 2px rgba(0, 0, 0, 0.35);
+    0 0 0 1px var(--bg-elevated) inset;
   z-index: 4;
 }
 

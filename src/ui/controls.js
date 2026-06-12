@@ -37,6 +37,9 @@ import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
 import { DRAW_ICONS } from './draw/icons.js';
 import { mountMeasureTooltip } from './draw/tooltip.js';
 import { mountLineActionTooltip } from './draw/line-action.js';
+import { mountInfoTips } from './info-tip.js';
+import { mountSettingsSearch } from './settings-search.js';
+import { accordionMarkup, installAccordions, revealRow } from './accordion.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -83,6 +86,9 @@ const ICONS = {
   // reads as a peer of the slope-warning / hillshade / hypso toggles.
   hazard: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20 L10 7 L13 12 L16 8 L21 20 Z"/><line x1="12" y1="13" x2="12" y2="17"/><circle cx="12" cy="19" r="0.6" fill="currentColor"/></svg>`,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
+  // Magnifier glyph for the settings-search panel. Square block vocabulary
+  // (sharp corners) to match the redesigned block UI.
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><line x1="16" y1="16" x2="21" y2="21"/></svg>`,
   sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="6.5" y2="6.5"/><line x1="17.5" y1="17.5" x2="18.9" y2="18.9"/><line x1="5.1" y1="18.9" x2="6.5" y2="17.5"/><line x1="17.5" y1="6.5" x2="18.9" y2="5.1"/></svg>`,
   moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8 A9 9 0 1 1 11.2 3 a7 7 0 0 0 9.8 9.8 z"/></svg>`,
   close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/><line x1="6.5" y1="17.5" x2="17.5" y2="6.5"/></svg>`,
@@ -307,9 +313,14 @@ function installNativeControls(map, { caps }) {
     'top-right',
   );
 
-  map.addControl(new ml.AttributionControl({ compact: false }), 'bottom-right');
+  // Attribution collapses to a compact "ⓘ" toggle so it doesn't sit as a
+  // permanent text bar across the bottom — fewer always-on elements.
+  map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right');
 
-  map.addControl(new ml.FullscreenControl({}), 'top-right');
+  // NOTE: the native FullscreenControl is intentionally dropped in the
+  // block-UI redesign to reduce the right-side control count. Fullscreen
+  // remains reachable via the browser (F11 / OS chrome); a dedicated map
+  // button added little for the clutter it cost.
 
   // Inject the collapse anchor at the top of the top-right column.
   // Order matters — we want the anchor to render first so the cascade
@@ -535,86 +546,79 @@ function installVerticalScale(map, scaleHost, { caps } = {}) {
 // ---------------------------------------------------------------------------
 
 function renderChip(host) {
+  // The brand chip is gone in the docked shell — the rail owns the logo.
+  // Kept as a no-op so any stale caller doesn't throw.
+  if (host) host.innerHTML = '';
+}
+
+// Section metadata — single source of truth for the rail + sidebar.
+const SECTIONS = [
+  { id: 'search',   icon: 'search',   title: 'Поиск настроек' },
+  { id: 'layers',   icon: 'layers',   title: 'Слои' },
+  { id: 'relief',   icon: 'mountain', title: 'Рельеф' },
+  { id: 'hypso',    icon: 'waves',    title: 'Гипсометрия' },
+  { id: 'places',   icon: 'pin',      title: 'Места' },
+  { id: 'draw',     icon: 'draw',     title: 'Рисование' },
+  { id: 'settings', icon: 'sliders',  title: 'Настройки' },
+];
+
+/** Render the fixed activity rail (column 1). */
+function renderRail(host) {
   host.innerHTML = `
-    <div class="chip" role="presentation">
-      <span class="chip-logo">${ICONS.brand}</span>
-      <span><strong>Cart</strong></span>
-      <span class="chip-sub">· Украина</span>
+    <div class="rail-brand">
+      <button class="rail-logo" type="button" data-ctl="home" title="К центру Украины" aria-label="Перелететь к центру Украины">${ICONS.home}</button>
+    </div>
+    <nav class="rail-nav" role="tablist" aria-label="Разделы">
+      ${SECTIONS.map((s) => `
+        <button class="rail-btn" type="button" role="tab"
+                data-section="${s.id}" data-tip="${s.title}"
+                aria-label="${s.title}" aria-selected="false">
+          ${ICONS[s.icon]}
+        </button>`).join('')}
+    </nav>
+    <div class="rail-foot">
+      <button class="rail-btn theme-toggle" type="button" data-ctl="theme-toggle"
+              data-tip="Тема" aria-label="Переключить тему">${ICONS.moon}</button>
     </div>
   `;
 }
 
-function renderDock(host) {
-  host.classList.add('dock');
-  host.setAttribute('role', 'toolbar');
-  host.setAttribute('aria-label', 'Инструменты карты');
-  host.innerHTML = `
-    <header class="dock-brand">
-      <button class="dock-logo" type="button" data-ctl="home" title="К центру Украины" aria-label="Перелететь к центру Украины">${ICONS.home}</button>
-    </header>
-    <nav class="dock-nav" aria-label="Панели">
-      <button class="dock-btn" type="button" data-panel="layers"   data-tip="Слои"          aria-label="Слои"          aria-expanded="false">${ICONS.layers}</button>
-      <button class="dock-btn" type="button" data-panel="relief"   data-tip="Рельеф"        aria-label="Рельеф"        aria-expanded="false">${ICONS.mountain}</button>
-      <button class="dock-btn" type="button" data-panel="hypso"    data-tip="Гипсометрия"   aria-label="Гипсометрия"   aria-expanded="false">${ICONS.waves}</button>
-      <button class="dock-btn" type="button" data-panel="places"   data-tip="Места"         aria-label="Места"         aria-expanded="false">${ICONS.pin}</button>
-      <button class="dock-btn" type="button" data-panel="draw"     data-tip="Рисование"     aria-label="Рисование"     aria-expanded="false">${ICONS.draw}</button>
-      <button class="dock-btn" type="button" data-panel="settings" data-tip="Настройки"     aria-label="Настройки"     aria-expanded="false">${ICONS.sliders}</button>
-    </nav>
-    <footer class="dock-foot">
-      <button class="dock-btn theme-toggle" type="button" data-ctl="theme-toggle" data-tip="Тема" aria-label="Переключить тему">${ICONS.moon}</button>
-    </footer>
-  `;
-}
-
-function panelShell(id, title, iconKey, body, opts = {}) {
-  // `data-persistent="1"` opts a panel out of the controller's
-  // close-on-outside-pointer rule for clicks that land on the map
-  // canvas. Used by the drawing panel: tapping the map should drop a
-  // marker / start a stroke, NOT dismiss the panel that's hosting the
-  // active tool. The scrim, dock buttons, Esc key and the close
-  // button still dismiss as usual.
+/** Render one sidebar section body. Persistent sections (draw) flag it. */
+function sectionShell(id, body, opts = {}) {
   const persistent = opts.persistent ? ' data-persistent="1"' : '';
   return `
-    <section
-      class="panel"
-      data-panel-id="${id}"
-      data-open="false"${persistent}
-      role="dialog"
-      aria-modal="false"
-      aria-label="${title}"
-      aria-hidden="true"
-    >
-      <header class="panel-head">
-        <div class="panel-title">${ICONS[iconKey]}<span>${title}</span></div>
-        <button class="panel-close" type="button" aria-label="Закрыть панель" data-ctl="close-panel">${ICONS.close}</button>
-      </header>
-      <div class="panel-body">${body}</div>
-    </section>
+    <div class="section" data-panel-id="${id}" data-active="false"${persistent}
+         role="tabpanel" aria-label="${opts.title || id}">
+      ${body}
+    </div>
   `;
 }
 
 function renderLayersPanelBody() {
   return `
-    <div class="panel-group">
-      <h4 class="panel-group-title">Отображение</h4>
-      <div class="rows">
-        <label class="row"><span>Подписи</span><input type="checkbox" data-ctl="labels" checked></label>
-        <label class="row"><span>Точки интереса</span><input type="checkbox" data-ctl="pois" checked></label>
-        <label class="row"><span>3D-здания</span><input type="checkbox" data-ctl="b3d" checked></label>
-        <label class="row" data-ctl-row="roadsOrangeBold" title="Оранжевая заливка, свечение и увеличенная толщина главных дорог (магистрали → второстепенные)">
-          <span>Жирные оранжевые дороги</span>
-          <input type="checkbox" data-ctl="roadsOrangeBold" aria-describedby="roads-orange-bold-hint">
-        </label>
-        <small class="row-hint" id="roads-orange-bold-hint">Выключите — главные дороги (вместе с подписями и шильдиками) полностью исчезнут с карты</small>
-        <label class="row" data-ctl-row="settlementOutline" title="Жирная обводка вокруг сёл, посёлков, городов — видно даже без зума">
-          <span>Обводка поселений</span>
-          <input type="checkbox" data-ctl="settlementOutline" aria-describedby="settlement-outline-hint">
-        </label>
-        <small class="row-hint" id="settlement-outline-hint">Жирная рамка вокруг сёл, посёлков и городов — как у дорог</small>
-      </div>
-    </div>
-    <p class="panel-meta">Включайте визуальные слои поверх базовой карты. Изменения
-    применяются мгновенно без повторной загрузки тайлов.</p>
+    ${accordionMarkup({
+      id: 'layers-display',
+      title: 'Отображение',
+      open: true,
+      body: `
+        <div class="rows">
+          <label class="row"><span>Подписи</span><input type="checkbox" data-ctl="labels" checked></label>
+          <label class="row"><span>Точки интереса</span><input type="checkbox" data-ctl="pois" checked></label>
+          <label class="row"><span>3D-здания</span><input type="checkbox" data-ctl="b3d" checked></label>
+        </div>
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'layers-roads',
+      title: 'Дороги и поселения',
+      open: true,
+      body: `
+        <div class="rows">
+          <label class="row" data-ctl-row="roadsOrangeBold"><span>Жирные дороги</span><input type="checkbox" data-ctl="roadsOrangeBold"></label>
+          <label class="row" data-ctl-row="settlementOutline"><span>Обводка поселений</span><input type="checkbox" data-ctl="settlementOutline"></label>
+        </div>
+      `,
+    })}
   `;
 }
 
@@ -629,122 +633,93 @@ function renderReliefPanelBody() {
         <input type="checkbox" data-ctl="flatHypso" aria-describedby="flat-hypso-desc">
       </label>
     </div>
-    <div class="panel-group">
-      <h4 class="panel-group-title">Слои</h4>
-      <div class="rows">
-        <label class="row"><span>Отмывка</span><input type="checkbox" data-ctl="hillshade" checked></label>
-        <label class="row"><span>3D-рельеф</span><input type="checkbox" data-ctl="terrain3D" checked></label>
-        <label class="row"><span>Изолинии</span><input type="checkbox" data-ctl="contours" checked></label>
-        <label class="row"><span>Гипсометрический тон</span><input type="checkbox" data-ctl="hypsometricTint"></label>
-        <label class="row"><span>Батиметрия</span><input type="checkbox" data-ctl="bathymetry"></label>
-        <label class="row"><span>Текстурное затенение</span><input type="checkbox" data-ctl="textureShading"></label>
-        <label class="row"><span>Sky-View Factor</span><input type="checkbox" data-ctl="skyViewFactor"></label>
-        <label class="row" data-ctl-row="worldcoverTint">
-          <span class="worldcover-label">
-            ${ICONS.landcover}
-            <span>Land cover</span>
-          </span>
-          <input type="checkbox" data-ctl="worldcoverTint">
-        </label>
-        <label class="row" data-ctl-row="canopyHeightTint" title="Тёмные участки = старі смерекові ліси">
-          <span class="canopy-height-label">
-            ${ICONS.canopy}
-            <span>Canopy height</span>
-          </span>
-          <input type="checkbox" data-ctl="canopyHeightTint" aria-describedby="canopy-height-hint">
-        </label>
-        <small class="row-hint" id="canopy-height-hint">Тёмные участки = старі смерекові ліси</small>
-        <label class="row" data-ctl-row="forestLeafType" title="Хвойний / листяний / мішаний ліс по OSM leaf_type">
-          <span class="forest-leaf-label">
-            ${ICONS.forestLeaf}
-            <span>Forest types</span>
-          </span>
-          <input type="checkbox" data-ctl="forestLeafType" aria-describedby="forest-leaf-hint">
-        </label>
-        <small class="row-hint" id="forest-leaf-hint">Хвойний / листяний / мішаний ліс по OSM leaf_type</small>
-        <label class="row" data-ctl-row="forestCover" title="Зелёная подсветка лесных массивов по всей стране">
-          <span class="forest-cover-label">
-            ${ICONS.forestCover}
-            <span>Лесной покров</span>
-          </span>
-          <input type="checkbox" data-ctl="forestCover" aria-describedby="forest-cover-hint">
-        </label>
-        <small class="row-hint" id="forest-cover-hint">Плоский режим: леса зелёным по всей стране (как в Google Earth). Рельеф, 3D и тени скрываются.</small>
-        <div class="forest-markup-panel" data-forest-markup-panel hidden aria-hidden="true">
-          <div class="forest-markup-head">
-            <span class="forest-markup-title">Разметка лесного режима</span>
-            <button type="button" class="forest-markup-collapse" data-ctl="forestMarkupCollapse" aria-expanded="true" aria-controls="forest-markup-rows" title="Свернуть / развернуть">${ICONS.chevron ?? ICONS.controlsChev ?? ''}</button>
-          </div>
-          <div class="forest-markup-rows" id="forest-markup-rows" data-forest-markup-rows>
-            <label class="row" data-ctl-row="forestCities" title="Города и посёлки жирным синим — видно сразу на зелёном фоне">
-              <span>Города — жирным синим</span>
-              <input type="checkbox" data-ctl="forestCities">
-            </label>
-            <label class="row" data-ctl-row="forestWaterAccent" title="Реки и водоёмы более ярким синим">
-              <span>Реки и водоёмы</span>
-              <input type="checkbox" data-ctl="forestWaterAccent">
-            </label>
-            <label class="row" data-ctl-row="forestRoadsBold" title="Жирная тёмная обводка главных дорог (автомагистрали, трассы)">
-              <span>Главные дороги — жирным</span>
-              <input type="checkbox" data-ctl="forestRoadsBold">
-            </label>
-            <label class="row" data-ctl-row="forestRoadsOrange" title="Дороги ярким оранжевым жирным цветом (магистрали → второстепенные)">
-              <span>Дороги — оранжевым жирным</span>
-              <input type="checkbox" data-ctl="forestRoadsOrange">
-            </label>
-            <label class="row" data-ctl-row="settlementOutline" title="Фиолетовая обводка вокруг сёл, посёлков и городов (та же, что в панели «Слои»)">
-              <span>Обводка поселений (фиолетовая)</span>
-              <input type="checkbox" data-ctl="settlementOutline">
-            </label>
-          </div>
-          <small class="row-hint">Эти переключатели работают только во включённом «Лесном покрове» (кроме «Обводки поселений» — она общая со «Слоями»).</small>
+    ${accordionMarkup({
+      id: 'relief-base',
+      title: 'Базовый рельеф',
+      open: true,
+      body: `
+        <div class="rows">
+          <label class="row"><span>Отмывка</span><input type="checkbox" data-ctl="hillshade" checked></label>
+          <label class="row"><span>3D-рельеф</span><input type="checkbox" data-ctl="terrain3D" checked></label>
+          <label class="row"><span>Изолинии</span><input type="checkbox" data-ctl="contours" checked></label>
+          <label class="row"><span>Гипсометрический тон</span><input type="checkbox" data-ctl="hypsometricTint"></label>
+          <label class="row"><span>Батиметрия</span><input type="checkbox" data-ctl="bathymetry"></label>
+          <label class="row"><span>Текстурное затенение</span><input type="checkbox" data-ctl="textureShading"></label>
+          <label class="row"><span>Sky-View Factor</span><input type="checkbox" data-ctl="skyViewFactor"></label>
         </div>
-        <label class="row" data-ctl-row="slopeWarning">
-          <span class="slope-warn-label">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M12 3 L22 21 L2 21 Z"/>
-              <line x1="12" y1="10" x2="12" y2="15"/>
-              <circle cx="12" cy="18" r="0.6" fill="currentColor"/>
-            </svg>
-            <span>Крутые склоны (≥35°)</span>
-          </span>
-          <input type="checkbox" data-ctl="slopeWarning">
-        </label>
-        <label class="row" data-ctl-row="hazardousTerrain" title="Труднодоступные пики, обрывы, опасные перевалы">
-          <span class="hazard-label">
-            ${ICONS.hazard}
-            <span>Опасные участки</span>
-          </span>
-          <input type="checkbox" data-ctl="hazardousTerrain" aria-describedby="hazard-hint">
-        </label>
-        <small class="row-hint" id="hazard-hint">Труднодоступные пики (≥1500 м), обрывы, опасные перевалы</small>
-        <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
-        <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
-        <label class="row" data-ctl-row="carpathianTrails" title="Жирные красные линии горных троп (маркированные тропы, виа-феррата, ступени). Видны только при включённой «Карпатской детализации»">
-          <span>Горные тропы (красные)</span>
-          <input type="checkbox" data-ctl="carpathianTrails">
-        </label>
-      </div>
-    </div>
-    <div class="panel-group">
-      <h4 class="panel-group-title">Вертикальное преувеличение</h4>
-      <div class="slider-row">
-        <label class="slider-label" for="exaggeration">
-          <span>0.5× – 2×</span>
-          <span data-ctl="exaggeration-readout">1.0×</span>
-        </label>
-        <input
-          id="exaggeration"
-          type="range"
-          min="0.5"
-          max="2"
-          step="0.1"
-          value="1"
-          data-ctl="exaggeration"
-          aria-label="Вертикальное преувеличение"
-        />
-      </div>
-    </div>
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'relief-cover',
+      title: 'Земной покров и леса',
+      open: false,
+      body: `
+        <div class="rows">
+          <label class="row" data-ctl-row="worldcoverTint"><span>Land cover</span><input type="checkbox" data-ctl="worldcoverTint"></label>
+          <label class="row" data-ctl-row="canopyHeightTint"><span>Высота полога</span><input type="checkbox" data-ctl="canopyHeightTint"></label>
+          <label class="row" data-ctl-row="forestLeafType"><span>Типы леса</span><input type="checkbox" data-ctl="forestLeafType"></label>
+          <label class="row" data-ctl-row="forestCover"><span>Лесной покров</span><input type="checkbox" data-ctl="forestCover"></label>
+        </div>
+        ${accordionMarkup({
+          id: 'relief-forest-markup',
+          title: 'Разметка лесного режима',
+          open: true,
+          level: 1,
+          body: `
+            <div class="forest-markup-panel" data-forest-markup-panel data-enabled="false">
+              <p class="forest-markup-note" data-forest-markup-note>
+                Активно при включённом «Лесной покров».
+              </p>
+              <div class="forest-markup-rows" id="forest-markup-rows" data-forest-markup-rows>
+                <label class="row" data-ctl-row="forestCities"><span>Города — жирным</span><input type="checkbox" data-ctl="forestCities"></label>
+                <label class="row" data-ctl-row="forestWaterAccent"><span>Реки и водоёмы</span><input type="checkbox" data-ctl="forestWaterAccent"></label>
+                <label class="row" data-ctl-row="forestRoadsBold"><span>Главные дороги — жирным</span><input type="checkbox" data-ctl="forestRoadsBold"></label>
+                <label class="row" data-ctl-row="forestRoadsOrange"><span>Дороги — выделенным</span><input type="checkbox" data-ctl="forestRoadsOrange"></label>
+                <label class="row" data-ctl-row="settlementOutline"><span>Обводка поселений</span><input type="checkbox" data-ctl="settlementOutline"></label>
+              </div>
+            </div>
+          `,
+        })}
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'relief-safety',
+      title: 'Безопасность и маршруты',
+      open: false,
+      body: `
+        <div class="rows">
+          <label class="row" data-ctl-row="slopeWarning"><span>Крутые склоны (≥35°)</span><input type="checkbox" data-ctl="slopeWarning"></label>
+          <label class="row" data-ctl-row="hazardousTerrain"><span>Опасные участки</span><input type="checkbox" data-ctl="hazardousTerrain"></label>
+          <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
+        </div>
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'relief-carpathian',
+      title: 'Карпаты',
+      open: false,
+      body: `
+        <div class="rows">
+          <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
+          <label class="row" data-ctl-row="carpathianTrails"><span>Горные тропы</span><input type="checkbox" data-ctl="carpathianTrails"></label>
+        </div>
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'relief-exaggeration',
+      title: 'Вертикальное преувеличение',
+      open: false,
+      body: `
+        <div class="slider-row">
+          <label class="slider-label" for="exaggeration">
+            <span>0.5× – 2×</span>
+            <span data-ctl="exaggeration-readout">1.0×</span>
+          </label>
+          <input id="exaggeration" type="range" min="0.5" max="2" step="0.1" value="1"
+                 data-ctl="exaggeration" aria-label="Вертикальное преувеличение" />
+        </div>
+      `,
+    })}
   `;
 }
 
@@ -836,240 +811,235 @@ function renderSettingsPanelBody() {
   `;
 }
 
-function renderPanels(host) {
+function renderSearchPanelBody() {
+  // The search UI is mounted into this host by mountSettingsSearch().
+  return `<div data-ctl="settings-search-host"></div>`;
+}
+
+/**
+ * Render the docked sidebar: a header (section title + collapse button)
+ * and a scrollable body holding every section stacked (only the active
+ * one is shown via [data-active]).
+ */
+function renderSidebar(host) {
   host.innerHTML = `
-    ${panelShell('layers',   'Слои',        'layers',   renderLayersPanelBody())}
-    ${panelShell('relief',   'Рельеф',      'mountain', renderReliefPanelBody())}
-    ${panelShell('hypso',    'Гипсометрия', 'waves',    renderHypsoPanelBody())}
-    ${panelShell('places',   'Места',       'pin',      renderPlacesPanelBody())}
-    ${panelShell('draw',     'Рисование',   'draw',     renderDrawPanelBody(),     { persistent: true })}
-    ${panelShell('settings', 'Настройки',   'sliders',  renderSettingsPanelBody())}
+    <div class="sidebar-head">
+      <span class="sidebar-title" data-ctl="sidebar-title">Слои</span>
+      <button class="sidebar-collapse" type="button" data-ctl="sidebar-collapse"
+              aria-label="Свернуть панель" title="Свернуть панель">${ICONS.close}</button>
+    </div>
+    <div class="sidebar-body" data-ctl="sidebar-body">
+      ${sectionShell('search',   renderSearchPanelBody(),   { title: 'Поиск настроек' })}
+      ${sectionShell('layers',   renderLayersPanelBody(),   { title: 'Слои' })}
+      ${sectionShell('relief',   renderReliefPanelBody(),   { title: 'Рельеф' })}
+      ${sectionShell('hypso',    renderHypsoPanelBody(),    { title: 'Гипсометрия' })}
+      ${sectionShell('places',   renderPlacesPanelBody(),   { title: 'Места' })}
+      ${sectionShell('draw',     renderDrawPanelBody(),     { title: 'Рисование', persistent: true })}
+      ${sectionShell('settings', renderSettingsPanelBody(), { title: 'Настройки' })}
+    </div>
   `;
 }
 
 // ---------------------------------------------------------------------------
-// Dock controller — toggles panels, handles outside-click + keyboard.
+// Sidebar controller — selects which docked section is shown.
+//
+// Unlike the old floating DockController, this never overlaps the map:
+// the sidebar is a real grid column. Selecting a rail button switches the
+// active section; clicking the already-active button collapses the
+// sidebar (column → 0, map reflows). The active selection persists.
+//
+// On mobile the same DOM is reused; CSS turns the sidebar into a bottom
+// sheet and the scrim/drag-to-close gesture applies there.
 // ---------------------------------------------------------------------------
 
-class DockController {
+const SIDEBAR_PREF_KEY = 'cart:ui:sidebar:v1';
+
+class SidebarController {
   /**
    * @param {object} opts
-   * @param {HTMLElement} opts.dock       Element holding the icon buttons.
-   * @param {HTMLElement} opts.panelsHost Element that wraps every <section.panel>.
-   * @param {HTMLElement|null} opts.scrim Backdrop element for mobile sheet.
-   * @param {object} opts.caps            Device capabilities.
+   * @param {HTMLElement} opts.app        the #app grid root (carries data-side)
+   * @param {HTMLElement} opts.rail       activity rail (holds .rail-btn)
+   * @param {HTMLElement} opts.sidebar    docked sidebar element
+   * @param {HTMLElement} opts.scrim      mobile backdrop
+   * @param {object} opts.caps
    */
-  constructor({ dock, panelsHost, scrim, caps }) {
-    this.dock = dock;
-    this.panelsHost = panelsHost;
+  constructor({ app, rail, sidebar, scrim, caps }) {
+    this.app = app;
+    this.rail = rail;
+    this.sidebar = sidebar;
     this.scrim = scrim;
     this.caps = caps;
     this.entries = new Map();
     this.activeId = null;
+    this.collapsed = false;
+    this.titleEl = sidebar.querySelector('[data-ctl="sidebar-title"]');
+    this.bodyEl = sidebar.querySelector('[data-ctl="sidebar-body"]');
     this.mqMobile = window.matchMedia('(max-width: 540px)');
   }
 
   register(id) {
-    const button = this.dock.querySelector(`.dock-btn[data-panel="${id}"]`);
-    const panel = this.panelsHost.querySelector(`.panel[data-panel-id="${id}"]`);
-    if (!button || !panel) return null;
-    this.entries.set(id, { button, panel });
+    const button = this.rail.querySelector(`.rail-btn[data-section="${id}"]`);
+    const section = this.bodyEl?.querySelector(`.section[data-panel-id="${id}"]`);
+    if (!button || !section) return null;
+    const meta = SECTIONS.find((s) => s.id === id);
+    this.entries.set(id, { button, section, title: meta?.title || id });
 
-    button.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.toggle(id);
-    });
-    panel.querySelector('[data-ctl="close-panel"]')?.addEventListener('click', () => {
-      this.close();
-    });
-    this.installDragHandle(panel);
-    return { button, panel };
+    button.addEventListener('click', () => this.toggle(id));
+    return { button, section };
   }
 
-  /**
-   * Wire the mobile bottom-sheet drag-to-close gesture.
-   *
-   * On touch viewports the panel reads as a bottom-sheet: the user can
-   * pull it down by its head / drag handle to dismiss. We use Pointer
-   * Events (with `setPointerCapture`) so the gesture survives the
-   * pointer leaving the head element, and we close on either:
-   *   – downward distance > 25 % of the panel height, OR
-   *   – downward velocity > 0.5 px/ms (an inertial flick).
-   *
-   * If neither threshold is met we spring the panel back to the open
-   * position. While dragging we disable transitions (manual translate)
-   * and re-enable them on release so the spring-back animates.
-   */
-  installDragHandle(panel) {
-    const head = panel.querySelector('.panel-head');
-    if (!head) return;
-
-    let pointerId = null;
-    let startY = 0;
-    let startTime = 0;
-    let dragY = 0;
-    let lastY = 0;
-    let lastT = 0;
-    let dragging = false;
-
-    const reset = () => {
-      panel.style.transition = '';
-      panel.style.transform = '';
-      panel.removeAttribute('data-dragging');
-      dragging = false;
-      pointerId = null;
-      dragY = 0;
-    };
-
-    const onDown = (e) => {
-      // Only engage on mobile bottom-sheet form, and only the drag
-      // handle area (avoid hijacking the close-button hitbox).
-      if (!this.mqMobile.matches) return;
-      if (e.target.closest('[data-ctl="close-panel"]')) return;
-      if (panel.dataset.open !== 'true') return;
-      pointerId = e.pointerId;
-      startY = e.clientY;
-      lastY = e.clientY;
-      startTime = e.timeStamp;
-      lastT = e.timeStamp;
-      dragY = 0;
-      dragging = true;
-      panel.dataset.dragging = '1';
-      panel.style.transition = 'none';
-      try {
-        head.setPointerCapture(pointerId);
-      } catch {
-        /* setPointerCapture can throw on stale ids — fall through */
-      }
-    };
-
-    const onMove = (e) => {
-      if (!dragging || e.pointerId !== pointerId) return;
-      // Allow only downward motion. Apply a soft rubber-band when the
-      // user drags upward so the gesture still feels responsive.
-      const raw = e.clientY - startY;
-      dragY = raw > 0 ? raw : raw / 4;
-      panel.style.transform = `translateY(${dragY}px)`;
-      lastY = e.clientY;
-      lastT = e.timeStamp;
-    };
-
-    const onUp = (e) => {
-      if (!dragging || (e.pointerId != null && e.pointerId !== pointerId)) return;
-      try {
-        head.releasePointerCapture(pointerId);
-      } catch {
-        /* ignore */
-      }
-      const distance = dragY;
-      const dt = Math.max(1, e.timeStamp - lastT);
-      // velocity in px/ms over the last sample window
-      const velocity = dt > 0 ? (e.clientY - lastY) / dt : 0;
-      const threshold = panel.offsetHeight * 0.25;
-      reset();
-      if (distance > threshold || velocity > 0.5) {
-        this.close();
-      }
-    };
-
-    head.addEventListener('pointerdown', onDown);
-    head.addEventListener('pointermove', onMove);
-    head.addEventListener('pointerup', onUp);
-    head.addEventListener('pointercancel', onUp);
-  }
-
-  open(id) {
-    if (this.activeId === id) return;
-    if (this.activeId) this.close({ silent: true });
+  /** Show a section: mark active section + rail button, set the title. */
+  select(id, { collapseIfSame = true } = {}) {
     const entry = this.entries.get(id);
     if (!entry) return;
-    entry.panel.dataset.open = 'true';
-    entry.panel.setAttribute('aria-hidden', 'false');
-    entry.button.dataset.active = 'true';
-    entry.button.setAttribute('aria-expanded', 'true');
-    this.activeId = id;
-    if (this.scrim && this.mqMobile.matches) {
-      this.scrim.dataset.visible = '1';
-    }
-    // Defer focus so the CSS transition has a paint to settle in.
-    requestAnimationFrame(() => {
-      const focusable = entry.panel.querySelector(
-        'input:not([type=hidden]):not([disabled]), select, [tabindex]:not([tabindex="-1"]), .panel-close',
-      );
-      try {
-        focusable?.focus({ preventScroll: true });
-      } catch {
-        /* ignore */
-      }
-    });
-  }
 
-  close({ silent = false } = {}) {
-    if (!this.activeId) return;
-    const entry = this.entries.get(this.activeId);
-    if (entry) {
-      entry.panel.dataset.open = 'false';
-      entry.panel.setAttribute('aria-hidden', 'true');
-      entry.button.dataset.active = 'false';
-      entry.button.setAttribute('aria-expanded', 'false');
-      if (!silent) {
-        try {
-          entry.button.focus({ preventScroll: true });
-        } catch {
-          /* ignore */
-        }
-      }
+    // Re-selecting the active section collapses the sidebar (toggle off).
+    if (this.activeId === id && !this.collapsed && collapseIfSame) {
+      this.setCollapsed(true);
+      return;
     }
-    if (this.scrim) this.scrim.dataset.visible = '0';
-    this.activeId = null;
+
+    // Switch active section.
+    for (const [otherId, e] of this.entries) {
+      const on = otherId === id;
+      e.section.dataset.active = on ? 'true' : 'false';
+      e.button.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    this.activeId = id;
+    if (this.titleEl) this.titleEl.textContent = entry.title;
+    this.setCollapsed(false);
+    this._persist();
+
+    if (this.scrim && this.mqMobile.matches) this.scrim.dataset.visible = '1';
+
+    requestAnimationFrame(() => {
+      const focusable = entry.section.querySelector(
+        'input:not([type=hidden]):not([disabled]), select, button, [tabindex]:not([tabindex="-1"])',
+      );
+      try { focusable?.focus({ preventScroll: true }); } catch { /* ignore */ }
+    });
   }
 
   toggle(id) {
-    if (this.activeId === id) this.close();
-    else this.open(id);
+    this.select(id);
   }
 
-  /** Wire global handlers — Esc, outside-pointer, scrim, route changes. */
-  install() {
+  /** Open a section without collapse-on-same behaviour (used by search). */
+  open(id) {
+    this.select(id, { collapseIfSame: false });
+  }
+
+  setCollapsed(next) {
+    this.collapsed = !!next;
+    this.app.dataset.side = this.collapsed ? 'collapsed' : 'expanded';
+    if (this.collapsed) {
+      // Deselect rail buttons so nothing reads as "open".
+      for (const [, e] of this.entries) e.button.setAttribute('aria-selected', 'false');
+      if (this.scrim) this.scrim.dataset.visible = '0';
+    } else if (this.activeId) {
+      const e = this.entries.get(this.activeId);
+      e?.button.setAttribute('aria-selected', 'true');
+    }
+    this._persist();
+  }
+
+  _persist() {
+    try {
+      window.localStorage?.setItem(
+        SIDEBAR_PREF_KEY,
+        JSON.stringify({ activeId: this.activeId, collapsed: this.collapsed }),
+      );
+    } catch { /* best-effort */ }
+  }
+
+  _restore(defaultId) {
+    let pref = {};
+    try { pref = JSON.parse(window.localStorage?.getItem(SIDEBAR_PREF_KEY) || '{}') || {}; }
+    catch { pref = {}; }
+    // On mobile default to collapsed so the map is the priority.
+    const startCollapsed = this.mqMobile.matches ? true : !!pref.collapsed;
+    const startId = this.entries.has(pref.activeId) ? pref.activeId : defaultId;
+    // Always mark a section active in the DOM (so re-expanding shows it),
+    // but honour the collapsed flag for the visible state.
+    this.activeId = startId;
+    for (const [otherId, e] of this.entries) {
+      const on = otherId === startId;
+      e.section.dataset.active = on ? 'true' : 'false';
+    }
+    if (this.titleEl) {
+      this.titleEl.textContent = this.entries.get(startId)?.title || '';
+    }
+    this.setCollapsed(startCollapsed);
+  }
+
+  install({ defaultId = 'layers' } = {}) {
+    // Collapse button in the sidebar header.
+    this.sidebar.querySelector('[data-ctl="sidebar-collapse"]')
+      ?.addEventListener('click', () => this.setCollapsed(true));
+
+    // Esc collapses on mobile (where the sheet overlays); on desktop the
+    // sidebar is docked so Esc just blurs — keep it collapsing for parity.
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.activeId) {
+      if (e.key === 'Escape' && !this.collapsed && this.mqMobile.matches) {
         e.preventDefault();
-        this.close();
+        this.setCollapsed(true);
       }
     });
-    document.addEventListener('pointerdown', (e) => {
-      if (!this.activeId) return;
-      const entry = this.entries.get(this.activeId);
-      if (!entry) return;
-      const target = e.target;
-      if (entry.panel.contains(target)) return;
-      if (this.dock.contains(target)) return;
-      // Persistent panels (e.g. drawing) opt out of auto-close on
-      // map-area pointerdown so the user can keep interacting with
-      // the canvas without the controls disappearing on every tap.
-      // Scrim taps, dock-button switches, Esc and the close button
-      // still dismiss the panel as expected.
-      if (entry.panel.dataset.persistent === '1') {
-        const mapEl = document.getElementById('map');
-        if (mapEl && mapEl.contains(target)) return;
-      }
-      this.close();
-    }, true);
-    this.scrim?.addEventListener('click', () => this.close());
-    // Map clicks should close the panel on mobile (revealing the map),
-    // EXCEPT when the active panel opted into persistent mode — those
-    // panels stay open so the user can keep drawing while the bottom-
-    // sheet is parked at the bottom of the screen.
-    if (this.mqMobile.matches) {
-      const mapEl = document.getElementById('map');
-      mapEl?.addEventListener('pointerdown', () => {
-        if (!this.activeId) return;
-        const entry = this.entries.get(this.activeId);
-        if (entry?.panel?.dataset.persistent === '1') return;
-        this.close();
-      });
-    }
+
+    // Mobile scrim tap closes the sheet.
+    this.scrim?.addEventListener('click', () => this.setCollapsed(true));
+
+    // Mobile drag-to-close on the sidebar header.
+    this._installDragHandle();
+
+    this._restore(defaultId);
   }
+
+  /** Mobile bottom-sheet drag-to-close on the sidebar header. */
+  _installDragHandle() {
+    const head = this.sidebar.querySelector('.sidebar-head');
+    if (!head) return;
+    let pointerId = null, startY = 0, dragY = 0, lastY = 0, lastT = 0, dragging = false;
+
+    const reset = () => {
+      this.sidebar.style.transition = '';
+      this.sidebar.style.transform = '';
+      this.sidebar.removeAttribute('data-dragging');
+      dragging = false; pointerId = null; dragY = 0;
+    };
+    head.addEventListener('pointerdown', (e) => {
+      if (!this.mqMobile.matches || this.collapsed) return;
+      if (e.target.closest('[data-ctl="sidebar-collapse"]')) return;
+      pointerId = e.pointerId; startY = lastY = e.clientY; lastT = e.timeStamp;
+      dragY = 0; dragging = true;
+      this.sidebar.dataset.dragging = '1';
+      this.sidebar.style.transition = 'none';
+      try { head.setPointerCapture(pointerId); } catch { /* ignore */ }
+    });
+    head.addEventListener('pointermove', (e) => {
+      if (!dragging || e.pointerId !== pointerId) return;
+      const raw = e.clientY - startY;
+      dragY = raw > 0 ? raw : raw / 4;
+      this.sidebar.style.transform = `translateY(${dragY}px)`;
+      lastY = e.clientY; lastT = e.timeStamp;
+    });
+    const up = (e) => {
+      if (!dragging || (e.pointerId != null && e.pointerId !== pointerId)) return;
+      try { head.releasePointerCapture(pointerId); } catch { /* ignore */ }
+      const dt = Math.max(1, e.timeStamp - lastT);
+      const velocity = (e.clientY - lastY) / dt;
+      const threshold = this.sidebar.offsetHeight * 0.25;
+      const shouldClose = dragY > threshold || velocity > 0.5;
+      reset();
+      if (shouldClose) this.setCollapsed(true);
+    };
+    head.addEventListener('pointerup', up);
+    head.addEventListener('pointercancel', up);
+  }
+
+  // Back-compat alias used by older call sites (e.g. preset/home handlers
+  // that called controller.close() to dismiss on mobile).
+  close() { if (this.mqMobile.matches) this.setCollapsed(true); }
 }
 
 // ---------------------------------------------------------------------------
@@ -1087,52 +1057,32 @@ class DockController {
 export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   installNativeControls(map, { caps });
 
-  // Ensure / create the chip host. We append into #canvas so it sits in
-  // the same stacking context as the map.
-  const mapEl = document.getElementById('map');
-  const canvas = mapEl?.parentElement || document.getElementById('app');
-  let chipHost = document.getElementById('chip-host');
-  if (!chipHost) {
-    chipHost = document.createElement('div');
-    chipHost.id = 'chip-host';
-    chipHost.className = 'chip-host';
-    canvas?.appendChild(chipHost);
-  }
-  renderChip(chipHost);
+  const app = document.getElementById('app');
+  const rail = document.getElementById('rail');
 
-  // Mode switcher — segmented control that picks Cart / Standard /
-  // Satellite. Lives next to the brand chip at the top of the canvas
-  // so the user can see and reach it without opening any panel.
-  // `chip-host` already provides the floating-row layout (flex/gap),
-  // so a sibling `[data-ctl="mode-switcher"]` slots in next to it
-  // visually without extra positioning code.
-  let modeHost = chipHost.querySelector('[data-ctl="mode-switcher"]');
-  if (!modeHost) {
-    modeHost = document.createElement('div');
-    modeHost.dataset.ctl = 'mode-switcher';
-    modeHost.className = 'mode-switcher-host';
-    chipHost.appendChild(modeHost);
-  }
+  // ----- Build the docked shell ---------------------------------------
+  // The activity rail (column 1) and the docked sidebar (column 2). The
+  // sidebar's body holds every section stacked; the controller toggles
+  // which one is visible. `panelsHost` aliases the sidebar BODY so all
+  // existing `panelsHost.querySelector(...)` wiring keeps working.
+  rail.className = 'rail';
+  renderRail(rail);
+  sidebar.className = 'sidebar';
+  renderSidebar(sidebar);
+  const panelsHost = sidebar.querySelector('[data-ctl="sidebar-body"]');
 
-  // Build the dock host (the sidebar element) + the panels container +
-  // the vertical scale host. The dock-root + scale share a left-edge
-  // column visually; the panels live as a sibling node so their
-  // absolute positioning is unaffected by the dock's flex layout.
-  sidebar.className = '';
-  sidebar.innerHTML = '';
-  const dockHost = document.createElement('div');
-  dockHost.className = 'dock-root';
-  const panelsHost = document.createElement('div');
-  panelsHost.className = 'panels-root';
-  const scaleHost = document.createElement('div');
-  scaleHost.className = 'cart-scale-host';
-  sidebar.appendChild(dockHost);
-  sidebar.appendChild(panelsHost);
-  sidebar.appendChild(scaleHost);
-
-  renderDock(dockHost);
-  renderPanels(panelsHost);
-  installVerticalScale(map, scaleHost, { caps });
+  // Mode switcher (Cart / Standard / Satellite) — a docked card list
+  // pinned to the top of the sidebar body so it's always reachable and
+  // never floats over the map. A small heading labels the group so its
+  // purpose ("base map") is obvious.
+  const modeWrap = document.createElement('div');
+  modeWrap.className = 'mode-switcher-block';
+  modeWrap.innerHTML = `<h4 class="mode-switcher-heading">Базовая карта</h4>`;
+  const modeHost = document.createElement('div');
+  modeHost.dataset.ctl = 'mode-switcher';
+  modeHost.className = 'mode-switcher-host';
+  modeWrap.appendChild(modeHost);
+  panelsHost.prepend(modeWrap);
 
   // ----- State the user can toggle -------------------------------------
   const state = {
@@ -1258,20 +1208,21 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       }
     },
   });
-  // ----- Dock controller -----------------------------------------------
-  const controller = new DockController({
-    dock: dockHost,
-    panelsHost,
+  // ----- Sidebar controller --------------------------------------------
+  const controller = new SidebarController({
+    app,
+    rail,
+    sidebar,
     scrim,
     caps,
   });
-  ['layers', 'relief', 'hypso', 'places', 'draw', 'settings'].forEach((id) =>
+  ['search', 'layers', 'relief', 'hypso', 'places', 'draw', 'settings'].forEach((id) =>
     controller.register(id),
   );
-  controller.install();
+  controller.install({ defaultId: 'layers' });
 
-  // ----- Theme toggle (sun ↔ moon at the bottom of the dock) ----------
-  const themeBtn = dockHost.querySelector('[data-ctl="theme-toggle"]');
+  // ----- Theme toggle (in the rail foot) ------------------------------
+  const themeBtn = rail.querySelector('[data-ctl="theme-toggle"]');
   const syncTheme = () => {
     document.documentElement.dataset.theme = state.theme;
     if (themeBtn) {
@@ -1294,7 +1245,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   });
 
   // ----- Home button (fly to Ukraine centroid) ------------------------
-  const homeBtn = dockHost.querySelector('[data-ctl="home"]');
+  const homeBtn = rail.querySelector('[data-ctl="home"]');
   homeBtn?.addEventListener('click', () => {
     flyToPreset(map, 'ukraine', {
       reduceMotion: !!caps?.prefersReducedMotion,
@@ -1345,10 +1296,19 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   // wireToggle) can call the helper. The panel element is resolved after
   // the toggles are wired; the helper no-ops until then.
   let forestMarkupPanel = null;
-  function setForestMarkupPanelVisible(visible) {
+  // Forest-mode accents only do anything while "Лесной покров" is on.
+  // Rather than HIDE the whole sub-panel (which left the expanded
+  // accordion looking empty), we keep the rows visible and switch an
+  // `data-enabled` state: enabled = active toggles, disabled = dimmed
+  // rows + a short explanatory note. The accordion is never empty.
+  function setForestMarkupPanelVisible(enabled) {
     if (!forestMarkupPanel) return;
-    forestMarkupPanel.hidden = !visible;
-    forestMarkupPanel.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    forestMarkupPanel.dataset.enabled = enabled ? 'true' : 'false';
+    // Disable the inputs while inactive so they can't be toggled with
+    // no visible effect, but keep them readable.
+    forestMarkupPanel
+      .querySelectorAll('[data-forest-markup-rows] input')
+      .forEach((input) => { input.disabled = !enabled; });
   }
 
   const wireToggle = (selector, key = selector) => {
@@ -1459,29 +1419,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
 
   // ----- Forest-mode markup sub-panel ----------------------------------
   //
-  // The sub-panel of forest-mode-only accent toggles is revealed only
-  // while forest-cover is on (its checkboxes have no effect otherwise),
-  // and can be collapsed independently. Seed both states on mount so a
-  // refresh that restored forestCover=ON shows the panel immediately.
+  // Collapse is now owned by the surrounding accordion (its chevron), so
+  // there's no bespoke collapse button any more. We only resolve the
+  // panel element and seed its enabled/disabled state from the restored
+  // forest-cover choice so the rows read correctly on mount.
   forestMarkupPanel = panelsHost.querySelector('[data-forest-markup-panel]');
-  const forestMarkupRows = panelsHost.querySelector('[data-forest-markup-rows]');
-  const forestMarkupCollapseBtn = panelsHost.querySelector(
-    '[data-ctl=forestMarkupCollapse]',
-  );
-  if (forestMarkupCollapseBtn && forestMarkupRows) {
-    forestMarkupCollapseBtn.addEventListener('click', () => {
-      const collapsed = forestMarkupRows.hidden;
-      forestMarkupRows.hidden = !collapsed;
-      forestMarkupCollapseBtn.setAttribute(
-        'aria-expanded',
-        collapsed ? 'true' : 'false',
-      );
-      if (forestMarkupPanel) {
-        forestMarkupPanel.dataset.collapsed = collapsed ? 'false' : 'true';
-      }
-    });
-  }
-  // Initial reveal mirrors the restored forest-cover state.
   setForestMarkupPanelVisible(!!state.layerFeatures.forestCover);
 
   // ----- Cold-load reconcile of persisted layer prefs ------------------
@@ -1628,6 +1570,38 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     }
   });
 
+  // ----- Per-parameter explanations (info "?" buttons + popover) ------
+  //
+  // Inject a "?" affordance beside every labelled control that has a
+  // registered description, so the panels can keep only short labels
+  // while still offering a full explanation on click / hover. Run after
+  // every panel body exists; idempotent, so safe to re-run.
+  mountInfoTips(panelsHost);
+
+  // ----- Collapsible block categories (accordions) --------------------
+  //
+  // One delegated handler toggles every `.acc-head` in the panels root.
+  // Restructured panels (Relief, …) build their categories via
+  // accordionMarkup(); this activates them and restores saved open state.
+  installAccordions(panelsHost);
+
+  // ----- Settings search (fuzzy, multi-field) -------------------------
+  //
+  // Mounted into the dedicated Search panel. Activating a result opens
+  // the owning panel via the DockController, unfolds the accordion that
+  // contains the matched control, and flashes the row.
+  const searchHost = panelsHost.querySelector('[data-ctl=settings-search-host]');
+  if (searchHost) {
+    mountSettingsSearch({
+      host: searchHost,
+      panelsHost,
+      onReveal: (panelId, row) => {
+        if (panelId && panelId !== 'search') controller.open(panelId);
+        if (row) revealRow(panelsHost, row);
+      },
+    });
+  }
+
   // Reflect detected profile on the UI.
   sidebar.dataset.detectedProfile = state.detectedProfile;
 
@@ -1740,9 +1714,10 @@ function installHypsoUI(map, panelsHost, { caps, profile } = {}) {
  * a hot-reload), the existing handle is reused.
  */
 function installDrawingUI(map, panelsHost, controller) {
-  const drawPanel = panelsHost.querySelector('.panel[data-panel-id="draw"]');
+  const drawPanel = panelsHost.querySelector('.section[data-panel-id="draw"]');
   if (!drawPanel) return;
-  const body = drawPanel.querySelector('.panel-body');
+  // In the docked shell the section IS the body container.
+  const body = drawPanel;
   if (!body) return;
 
   // Engine: idempotent factory — calling twice on the same map returns
@@ -1770,13 +1745,13 @@ function installDrawingUI(map, panelsHost, controller) {
   // doesn't return to a stale rubber-band edge after dismissing the
   // panel mid-line.
   const onPanelToggle = () => {
-    const open = drawPanel.dataset.open === 'true';
+    const open = drawPanel.dataset.active === 'true';
     document.documentElement.dataset.drawing = open ? '1' : '0';
     if (!open) engine.cancelDraft?.();
   };
   onPanelToggle();
   const observer = new MutationObserver(onPanelToggle);
-  observer.observe(drawPanel, { attributes: true, attributeFilter: ['data-open'] });
+  observer.observe(drawPanel, { attributes: true, attributeFilter: ['data-active'] });
 
   // Expose for ad-hoc console debugging during development.
   if (typeof window !== 'undefined') {

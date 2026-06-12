@@ -1,9 +1,13 @@
 /* =====================================================================
  *  HUD — collapsible telemetry chip at the bottom-left.
  *
- *  Visual model:
- *    Collapsed:    [●]                                       ← anchor only
- *    Expanded:     [●][ FPS · ZOOM · TILES · LAT · LON · ELEV ]
+ *  Visual model (block UI v0.4 — trimmed to useful info):
+ *    Collapsed:    [●]                          ← anchor only (FPS pulse)
+ *    Expanded:     [●][ ZOOM · LAT · LON · ELEV ]
+ *
+ *  FPS / TILES number cells were removed; FPS survives as the anchor
+ *  dot's colour. The `[data-hud-stat="fps"]` rules below are retained
+ *  as harmless no-ops in case the cell is reintroduced.
  *
  *  The anchor button is the same 40 px square as the MapLibre controls
  *  and the hypso legend toggle (shared --float-size token). Its centre
@@ -102,7 +106,8 @@
 .hud-toggle-dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  /* Block UI: square status indicator. */
+  border-radius: var(--r-xs);
   background: var(--fg-muted);
   flex: 0 0 10px;
   position: relative;

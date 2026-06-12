@@ -1,0 +1,143 @@
+/* =====================================================================
+ *  Accordion / disclosure category (block UI v0.4).
+ *
+ *  Produced by src/ui/accordion.js. Each category is a sharp-edged block
+ *  with a clickable header (chevron arrow + title + optional meta) and a
+ *  collapsible body. Categories can nest; nested levels get an indent
+ *  rail (a vertical 1px line) so the hierarchy reads at a glance — the
+ *  "lines, arrows, nested categories" the redesign calls for.
+ *
+ *  All structure is carried by 1px hairlines; no radii, no soft shadows.
+ * ===================================================================== */
+
+.acc {
+  display: block;
+  border-top: 1px solid var(--hairline);
+}
+/* First accordion in a body shouldn't double the panel head's rule. */
+.panel-body > .acc:first-child {
+  border-top: 0;
+}
+
+/* ---- Header (the clickable disclosure bar) ------------------------ */
+.acc-head {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  min-height: var(--hit);
+}
+@media (hover: hover) {
+  .acc-head:hover {
+    background: var(--bg-side-soft);
+  }
+  .acc-head:hover .acc-title {
+    color: var(--accent);
+  }
+}
+.acc-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.acc-chevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--fg-muted);
+  transition: transform var(--t-base) var(--ease-out);
+}
+/* Closed → arrow points right (collapsed); open → points down. */
+.acc[data-open="false"] > .acc-head .acc-chevron {
+  transform: rotate(-90deg);
+}
+
+.acc-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-soft);
+  transition: color var(--t-fast) var(--ease-out);
+}
+.acc[data-open="true"] > .acc-head .acc-title {
+  color: var(--fg);
+}
+
+.acc-meta {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--hairline);
+  padding: 1px 6px;
+}
+
+/* ---- Body (collapsible region) ------------------------------------ *
+ * Animated via grid-template-rows 0fr→1fr — the modern, content-height-
+ * agnostic collapse that doesn't need a JS-measured max-height. */
+.acc-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--t-base) var(--ease-out);
+}
+.acc-body > * {
+  min-height: 0;
+  overflow: hidden;
+}
+.acc[data-open="false"] > .acc-body {
+  grid-template-rows: 0fr;
+}
+/* The inner padding lives on a wrapper so it collapses cleanly with the
+   row. We pad the body content directly and let overflow:hidden clip. */
+.acc-body {
+  padding-bottom: 6px;
+}
+.acc[data-open="false"] > .acc-body {
+  padding-bottom: 0;
+}
+
+/* ---- Nesting rail -------------------------------------------------- *
+ * Nested accordions (level ≥ 1) get a left indent + a vertical rule so
+ * the parent→child relationship is explicit. */
+.acc[data-level="1"],
+.acc[data-level="2"] {
+  margin-left: 10px;
+  border-top: 0;
+  border-left: 1px solid var(--hairline-strong);
+  padding-left: 8px;
+}
+.acc[data-level="1"] .acc-title,
+.acc[data-level="2"] .acc-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+/* A category that is itself open but whose parent groups several
+   children draws a subtle connecting tick before each child header. */
+.acc[data-level="1"] > .acc-head::before,
+.acc[data-level="2"] > .acc-head::before {
+  content: "";
+  width: 6px;
+  height: 1px;
+  background: var(--hairline-strong);
+  flex: 0 0 6px;
+  margin-left: -8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acc-body { transition: none; }
+  .acc-chevron { transition: none; }
+}

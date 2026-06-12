@@ -65,21 +65,39 @@
     <script type="module" src="./src/main.js"></script>
   </head>
   <body>
-    <div id="app" data-state="booting">
-      <main id="canvas">
+    <!--
+      Docked app shell (v0.5) — a VS Code-style fixed layout, NOT floating
+      overlays. CSS Grid splits the viewport into:
+
+        ┌──────┬───────────┬──────────────────┐
+        │ rail │  sidebar  │      map         │
+        │ 48px │  ~312px   │   (fills rest)   │
+        │      │           │                  │
+        │      ├───────────┴──────────────────┤
+        │      │        status bar            │
+        └──────┴──────────────────────────────┘
+
+      Everything is pinned to the same grid lines so nothing sits at a
+      mismatched height. The activity rail selects a sidebar section; the
+      sidebar is docked (slides the map, never overlaps it). On mobile the
+      sidebar becomes a bottom sheet and the rail a bottom bar.
+    -->
+    <div id="app" data-state="booting" data-shell="docked">
+      <!-- Activity rail: section selectors + theme toggle. -->
+      <nav id="rail" class="rail" aria-label="Разделы"></nav>
+
+      <!-- Docked sidebar: header + content of the active section. -->
+      <aside id="sidebar" class="sidebar" aria-label="Панель инструментов"></aside>
+
+      <!-- Map cell. -->
+      <main id="canvas" class="canvas">
         <div id="map" class="map" aria-label="Интерактивная векторная карта Украины"></div>
-        <div id="hud" class="hud-host" aria-live="polite"></div>
-        <div id="chip-host" class="chip-host"></div>
       </main>
 
-      <!--
-        The floating dock + popover panel system (renders into this element
-        from src/ui/controls.js). The ID is kept as `sidebar` for backward
-        compatibility with main.js's DOM lookup.
-      -->
-      <aside id="sidebar" aria-label="Инструменты"></aside>
+      <!-- Fixed status bar (former HUD): zoom · center · cursor · scale. -->
+      <footer id="hud" class="statusbar" aria-live="polite"></footer>
 
-      <!-- Backdrop for the mobile bottom-sheet expanded state. -->
+      <!-- Backdrop for the mobile sidebar sheet. -->
       <div id="scrim" class="scrim" data-visible="0" aria-hidden="true"></div>
 
       <div class="splash" aria-hidden="true">

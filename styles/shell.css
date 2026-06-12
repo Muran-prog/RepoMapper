@@ -1,0 +1,386 @@
+/* =====================================================================
+ *  Docked shell components — activity rail, sidebar, status bar (v0.5).
+ *
+ *  These are the FIXED, non-floating chrome surfaces of the new layout.
+ *  They read as one squared, monochrome system pinned to the grid lines
+ *  defined in layout.css. No glass blur, no drop shadows -- structure is
+ *  carried by 1px borders so every surface sits at the same rhythm.
+ * ===================================================================== */
+
+/* =====================================================================
+ *  Activity rail (column 1) -- section selector + theme toggle.
+ * ===================================================================== */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: var(--bg-side);
+  border-right: 1px solid var(--hairline-strong);
+  padding: 0;
+  overflow: hidden;
+  z-index: 6;
+}
+
+.rail-brand {
+  display: grid;
+  place-items: center;
+  height: var(--rail-w);
+  border-bottom: 1px solid var(--hairline);
+  flex: 0 0 auto;
+}
+.rail-brand .rail-logo {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.rail-brand .rail-logo svg { width: 18px; height: 18px; }
+
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.rail-nav::-webkit-scrollbar { display: none; }
+
+.rail-foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Rail button -- a full-width square cell. The active section gets a
+   solid accent edge bar on the left + inverted tint, so the current
+   section is unmistakable (the "absolutely clear where you are" goal). */
+.rail-btn {
+  appearance: none;
+  position: relative;
+  width: 100%;
+  height: var(--rail-w);
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--fg-soft);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.rail-btn svg { width: 22px; height: 22px; pointer-events: none; }
+@media (hover: hover) {
+  .rail-btn:hover { color: var(--fg); background: var(--bg-side-soft); }
+}
+.rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.rail-btn[aria-selected="true"] {
+  color: var(--fg);
+  background: var(--bg-side-soft);
+}
+.rail-btn[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+
+/* Rail tooltip (hover pointers only) -- the rail shows only icons, so a
+   label on hover keeps it discoverable without widening the rail. */
+.rail-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 9px;
+  background: var(--fg);
+  color: var(--bg-elevated);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 30;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .rail-btn[data-tip]:hover::after { opacity: 1; }
+}
+
+/* =====================================================================
+ *  Sidebar (column 2) -- header + section content.
+ * ===================================================================== */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-side);
+  border-right: 1px solid var(--hairline-strong);
+  overflow: hidden;
+  z-index: 5;
+}
+#app[data-side="collapsed"] .sidebar {
+  border-right: 0;
+}
+
+.sidebar-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--rail-w);
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--hairline-strong);
+}
+.sidebar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-collapse {
+  appearance: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.sidebar-collapse svg { width: 16px; height: 16px; }
+@media (hover: hover) {
+  .sidebar-collapse:hover { color: var(--fg); background: var(--bg-side-soft); }
+}
+
+/* Section bodies stack here; only the active one is shown. */
+.sidebar-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* =====================================================================
+ *  Unified scrollbar — squared, monochrome, block UI (v0.5).
+ *
+ *  A single treatment for every scrollable chrome surface so the bar
+ *  reads as part of the system instead of the OS default. Square thumb
+ *  (no radius), thin track separated by a hairline, theme-aware via
+ *  tokens, with a subtle hover darken. Firefox uses the standard
+ *  scrollbar-width/color pair; WebKit/Blink the ::-webkit-* pseudos.
+ * ===================================================================== */
+.sidebar-body,
+.settings-search-results,
+.acc-body,
+.info-pop {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+.sidebar-body::-webkit-scrollbar,
+.settings-search-results::-webkit-scrollbar,
+.acc-body::-webkit-scrollbar,
+.info-pop::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.sidebar-body::-webkit-scrollbar-track,
+.settings-search-results::-webkit-scrollbar-track,
+.acc-body::-webkit-scrollbar-track,
+.info-pop::-webkit-scrollbar-track {
+  background: transparent;
+  border-left: 1px solid var(--hairline);
+}
+.sidebar-body::-webkit-scrollbar-thumb,
+.settings-search-results::-webkit-scrollbar-thumb,
+.acc-body::-webkit-scrollbar-thumb,
+.info-pop::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  /* Square thumb with a transparent inset border so it reads as a slim
+     centred bar inside the 12px gutter, not edge-to-edge. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.sidebar-body::-webkit-scrollbar-thumb:hover,
+.settings-search-results::-webkit-scrollbar-thumb:hover,
+.acc-body::-webkit-scrollbar-thumb:hover,
+.info-pop::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+.sidebar-body::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.section {
+  display: none;
+  padding: 8px 12px calc(16px + env(safe-area-inset-bottom));
+  flex-direction: column;
+  gap: 0;
+}
+.section[data-active="true"] { display: flex; }
+
+/* Whole sidebar hides when collapsed (column already 0-width). */
+#app[data-side="collapsed"] .sidebar-head,
+#app[data-side="collapsed"] .sidebar-body {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* =====================================================================
+ *  Status bar (row 2) -- pinned readouts at one fixed height.
+ * ===================================================================== */
+.statusbar {
+  display: flex;
+  align-items: stretch;
+  height: var(--status-h);
+  background: var(--bg-side);
+  border-top: 1px solid var(--hairline-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-soft);
+  overflow: hidden;
+  user-select: none;
+  z-index: 4;
+}
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-right: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.status-cell:last-child { border-right: 0; }
+.status-label {
+  font-family: var(--sans);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.status-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  color: var(--fg);
+}
+.status-spacer { flex: 1 1 auto; border-right: 0; }
+/* The cursor cell fades when the pointer leaves the map. */
+.status-cell[data-state="idle"] { opacity: 0.35; }
+/* FPS pulse dot -- single permitted functional colour. */
+.status-fps-dot {
+  width: 8px; height: 8px;
+  background: var(--fg-muted);
+  border-radius: var(--r-xs);
+}
+.statusbar[data-tier="good"] .status-fps-dot { background: #2da356; }
+.statusbar[data-tier="mid"]  .status-fps-dot { background: #d28f15; }
+.statusbar[data-tier="low"]  .status-fps-dot { background: #d04839; }
+[data-theme="dark"] .statusbar[data-tier="good"] .status-fps-dot { background: #61d68f; }
+[data-theme="dark"] .statusbar[data-tier="mid"]  .status-fps-dot { background: #f6c25b; }
+[data-theme="dark"] .statusbar[data-tier="low"]  .status-fps-dot { background: #ff7a6b; }
+
+/* Scale bar inside the status bar. */
+.status-scale-bar {
+  position: relative;
+  width: 48px;
+  height: 3px;
+  background: var(--hairline-strong);
+  flex: 0 0 48px;
+}
+.status-scale-fill {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  width: 48px;
+  background: var(--accent);
+  transition: width var(--t-base) var(--ease-out);
+}
+
+/* Spacing for direct children of a section (mode switcher, search box,
+   preset cards, accordions). Accordions carry their own top borders, so
+   we only add breathing room around non-accordion blocks. */
+.section > .panel-group,
+.section > .preset-row-group,
+.section > .settings-search { margin-bottom: 10px; }
+.section > .acc:first-of-type { border-top: 1px solid var(--hairline); }
+
+/* Mode-switcher block — pinned at the very top of the sidebar body,
+   above every section, with a divider beneath so it reads as a global
+   "base map" chooser rather than part of any one section. */
+.mode-switcher-block {
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid var(--hairline-strong);
+}
+.mode-switcher-heading {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.mode-switcher-host { display: block; width: 100%; }
+
+/* =====================================================================
+ *  Status-bar buttons — "Высота" (legend) + attribution toggle.
+ *  Read as cells in the status strip: same height, hairline divider,
+ *  hover tint, solid ink when pressed/active.
+ * ===================================================================== */
+.status-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  border-left: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--fg-soft);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+.status-btn .status-label { color: inherit; }
+@media (hover: hover) {
+  .status-btn:hover { background: var(--bg-side-soft); color: var(--fg); }
+}
+.status-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.status-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.status-btn[aria-pressed="true"] .status-label { color: var(--accent-fg); }
+
+/* Tiny gradient swatch in the "Высота" button (mirrors the active ramp). */
+.status-legend-swatch {
+  width: 14px;
+  height: 6px;
+  border: 1px solid var(--hairline-strong);
+  background: linear-gradient(to right, #2da356, #d28f15, #d04839);
+  flex: 0 0 14px;
+}
+.status-btn[aria-pressed="true"] .status-legend-swatch {
+  border-color: var(--accent-fg);
+}

@@ -103,17 +103,6 @@ export function mountHypsoLegend(opts) {
           </div>
         </div>
       </div>
-      <button
-        class="hypso-legend-toggle"
-        data-ctl="toggle"
-        type="button"
-        aria-controls="${PANEL_ID}"
-        aria-expanded="${initiallyCollapsed ? 'false' : 'true'}"
-        aria-label="Высота — легенда"
-        title="Высота"
-      >
-        <span class="hypso-legend-glyph" aria-hidden="true" data-ctl="glyph"></span>
-      </button>
     </section>
   `;
 
@@ -163,14 +152,33 @@ export function mountHypsoLegend(opts) {
   // ------------------------------------------------------------------
   const setCollapsed = (collapsed, { persist = true } = {}) => {
     root.dataset.collapsed = collapsed ? 'true' : 'false';
-    refs.toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    refs.toggle?.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     refs.panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
     if (collapsed && refs.cursor) refs.cursor.dataset.state = 'hidden';
     if (persist) savePrefs({ legendCollapsed: collapsed });
+    // Tell the status-bar "Высота" button to mirror our open/closed state.
+    window.dispatchEvent(
+      new CustomEvent('cart:legend-state', { detail: { open: !collapsed } }),
+    );
   };
-  refs.toggle.addEventListener('click', () => {
+  refs.toggle?.addEventListener('click', () => {
     setCollapsed(root.dataset.collapsed !== 'true');
   });
+  // The status bar owns the visible "Высота" toggle now; bridge its
+  // clicks to our collapse state.
+  const onExternalToggle = (e) => {
+    const open = !!e?.detail?.open;
+    setCollapsed(!open);
+  };
+  window.addEventListener('cart:legend-toggle', onExternalToggle);
+  // Announce initial state so the status button starts in sync.
+  requestAnimationFrame(() =>
+    window.dispatchEvent(
+      new CustomEvent('cart:legend-state', {
+        detail: { open: root.dataset.collapsed !== 'true' },
+      }),
+    ),
+  );
 
   // ------------------------------------------------------------------
   // Re-render on ramp/theme changes.
@@ -215,6 +223,7 @@ export function mountHypsoLegend(opts) {
     unmount() {
       map.getContainer?.()?.removeEventListener?.('cart:hypso', onHypsoChange);
       window.removeEventListener('cart:hypso', onHypsoChange);
+      window.removeEventListener('cart:legend-toggle', onExternalToggle);
       map.off('styledata', onStyleData);
       if (onMouseMove) map.off('mousemove', onMouseMove);
       if (onMouseLeave) map.off('mouseout', onMouseLeave);

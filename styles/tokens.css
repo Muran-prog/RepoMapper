@@ -20,61 +20,85 @@
 :root {
   color-scheme: light dark;
 
-  /* ---- Surfaces ---------------------------------------------------- */
-  --bg-page: #efece4;
+  /* ---- Surfaces ---------------------------------------------------- *
+   * Block UI redesign (v0.4): monochrome, near-neutral greys. The light
+   * theme is a clean white→light-grey ramp; the accent is now ink-black
+   * (see below) so the whole chrome reads black-on-white. No warm tints. */
+  --bg-page: #f2f2f2;
   --bg-side: #ffffff;
-  --bg-side-soft: #f6f3eb;
+  --bg-side-soft: #ececec;
   --bg-elevated: #ffffff;
-  --bg-sunken: #ece8de;
+  --bg-sunken: #e2e2e2;
 
-  /* Floating "glass" surfaces — used by dock, panels, HUD, legend.
-     The `color-mix` falls back to plain rgba on engines without it. */
-  --glass-bg: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
-  --glass-bg-strong: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
-  --glass-blur: 22px;
-  --glass-saturate: 1.4;
+  /* Floating surfaces — opaque-ish neutral. Blur kept light: the squared
+     redesign favours crisp edges over heavy glass. */
+  --glass-bg: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  --glass-bg-strong: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  --glass-blur: 14px;
+  --glass-saturate: 1;
 
   /* ---- Text -------------------------------------------------------- */
-  --fg: #221d18;
-  --fg-soft: #6a6258;
-  --fg-muted: #948a7c;
+  --fg: #121212;
+  --fg-soft: #5a5a5a;
+  --fg-muted: #8c8c8c;
 
-  /* ---- Brand / accent --------------------------------------------- */
-  --accent: #c66809;
-  --accent-strong: #b35a06;
-  --accent-soft: rgba(198, 104, 9, 0.12);
-  --accent-glow: rgba(198, 104, 9, 0.34);
-  --accent-grad: linear-gradient(135deg, #d97706 0%, #c66809 55%, #a64a05 100%);
-  --brand-grad: linear-gradient(135deg, #005bbb 0%, #2d80d3 50%, #ffd500 100%);
+  /* ---- Accent (monochrome) ---------------------------------------- *
+   * In a B&W system the "accent" is simply maximum contrast: black on
+   * light, white on dark. Selection / active states use solid ink with
+   * inverted text rather than a hue. */
+  --accent: #111111;
+  --accent-strong: #000000;
+  --accent-soft: rgba(0, 0, 0, 0.08);
+  --accent-glow: rgba(0, 0, 0, 0.18);
+  --accent-fg: #ffffff;           /* text/icon colour on an accent fill */
+  --accent-grad: var(--accent);   /* gradients flattened to solid ink */
+  --brand-grad: var(--accent);
 
-  /* ---- Lines + dividers ------------------------------------------- */
-  --hairline: rgba(0, 0, 0, 0.07);
-  --hairline-strong: rgba(0, 0, 0, 0.14);
-  --ring: 0 0 0 1px rgba(0, 0, 0, 0.06);
-  --ring-strong: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  /* ---- Lines + dividers ------------------------------------------- *
+   * Sharper hairlines than the rounded theme — the block UI leans on
+   * visible 1px rules for structure (sections, lists, nested groups). */
+  --hairline: rgba(0, 0, 0, 0.12);
+  --hairline-strong: rgba(0, 0, 0, 0.26);
+  --ring: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  --ring-strong: 0 0 0 1px rgba(0, 0, 0, 0.24);
 
-  /* ---- Elevations -------------------------------------------------- */
-  --shadow-xs: 0 1px 2px rgba(15, 18, 24, 0.06);
-  --shadow-sm: 0 1px 2px rgba(15, 18, 24, 0.05), 0 2px 6px rgba(15, 18, 24, 0.06);
-  --shadow-md: 0 2px 4px rgba(15, 18, 24, 0.05), 0 8px 20px rgba(15, 18, 24, 0.08);
-  --shadow-lg: 0 4px 8px rgba(15, 18, 24, 0.05), 0 18px 40px rgba(15, 18, 24, 0.12),
-               0 32px 64px rgba(15, 18, 24, 0.10);
-  --shadow-xl: 0 6px 12px rgba(15, 18, 24, 0.08), 0 28px 60px rgba(15, 18, 24, 0.16),
-               0 48px 96px rgba(15, 18, 24, 0.14);
+  /* ---- Scrollbar (unified, block UI) ------------------------------ */
+  --scroll-thumb: rgba(0, 0, 0, 0.28);
+  --scroll-thumb-hover: rgba(0, 0, 0, 0.48);
+
+  /* ---- Elevations -------------------------------------------------- *
+   * Block UI redesign: decorative shadows are minimised. Structure is
+   * carried by 1px borders + the `--ring` outline, not soft glows. A
+   * single restrained drop is kept for genuinely floating surfaces
+   * (panels, popovers) so they separate from the map underneath. */
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 0 rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 4px 18px rgba(0, 0, 0, 0.16);
+  --shadow-xl: 0 8px 28px rgba(0, 0, 0, 0.22);
 
   /* Legacy aliases kept for forward-compat with older modules. */
   --shadow: var(--shadow-md);
 
-  /* ---- Radii ------------------------------------------------------- */
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 18px;
-  --r-2xl: 24px;
-  --r-pill: 999px;
-  --radius: var(--r-md);
-  --radius-lg: var(--r-xl);
+  /* ---- Radii ------------------------------------------------------- *
+   * Block UI redesign (v0.4): the product moves to a squared,
+   * minimal-decoration aesthetic. Every radius token collapses to 0 so
+   * downstream modules that still reference `--r-*` automatically render
+   * square corners without per-rule edits. A single hairline 2px is kept
+   * for the rare element (focus rings) that genuinely needs a sub-pixel
+   * softening; everything structural is now sharp.
+   *
+   * To revert to the rounded look, restore the original scale here — no
+   * component file references hard-coded radii. */
+  --r-xs: 0px;
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 0px;
+  --r-xl: 0px;
+  --r-2xl: 0px;
+  --r-pill: 0px;
+  --radius: 0px;
+  --radius-lg: 0px;
 
   /* ---- Typography -------------------------------------------------- */
   --mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
@@ -136,32 +160,41 @@
   --bg-elevated: #1a2330;
   --bg-sunken: #0a0e13;
 
-  --glass-bg: color-mix(in srgb, #1a2330 72%, transparent);
-  --glass-bg-strong: color-mix(in srgb, #1a2330 88%, transparent);
+  /* Dark theme — neutral charcoal→near-black ramp, white ink accent. */
+  --bg-page: #0d0d0d;
+  --bg-side: #161616;
+  --bg-side-soft: #202020;
+  --bg-elevated: #1a1a1a;
+  --bg-sunken: #080808;
 
-  --fg: #ebe7df;
-  --fg-soft: #aaa597;
-  --fg-muted: #6f6c64;
+  --glass-bg: color-mix(in srgb, #1a1a1a 86%, transparent);
+  --glass-bg-strong: color-mix(in srgb, #1a1a1a 96%, transparent);
 
-  --accent: #ffb368;
-  --accent-strong: #ffa047;
-  --accent-soft: rgba(255, 179, 104, 0.16);
-  --accent-glow: rgba(255, 179, 104, 0.36);
-  --accent-grad: linear-gradient(135deg, #ffb368 0%, #ff9a3d 55%, #d97706 100%);
-  --brand-grad: linear-gradient(135deg, #4093e5 0%, #6dafee 50%, #ffd966 100%);
+  --fg: #f2f2f2;
+  --fg-soft: #a8a8a8;
+  --fg-muted: #6e6e6e;
 
-  --hairline: rgba(255, 255, 255, 0.07);
-  --hairline-strong: rgba(255, 255, 255, 0.16);
-  --ring: 0 0 0 1px rgba(255, 255, 255, 0.06);
-  --ring-strong: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  --accent: #f2f2f2;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.12);
+  --accent-glow: rgba(255, 255, 255, 0.22);
+  --accent-fg: #0d0d0d;
+  --accent-grad: var(--accent);
+  --brand-grad: var(--accent);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.32);
-  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 10px 22px rgba(0, 0, 0, 0.36);
-  --shadow-lg: 0 6px 12px rgba(0, 0, 0, 0.45), 0 22px 48px rgba(0, 0, 0, 0.5),
-               0 36px 72px rgba(0, 0, 0, 0.4);
-  --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.5), 0 32px 64px rgba(0, 0, 0, 0.55),
-               0 56px 110px rgba(0, 0, 0, 0.4);
+  --hairline: rgba(255, 255, 255, 0.14);
+  --hairline-strong: rgba(255, 255, 255, 0.30);
+  --ring: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  --ring-strong: 0 0 0 1px rgba(255, 255, 255, 0.24);
+
+  --scroll-thumb: rgba(255, 255, 255, 0.26);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.46);
+
+  --shadow-xs: none;
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 6px 22px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 10px 32px rgba(0, 0, 0, 0.66);
 }
 
 /* Touch baseline: WCAG/Apple HIG recommend 44pt minimum hitbox.

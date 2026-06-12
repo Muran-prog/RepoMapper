@@ -1,0 +1,288 @@
+/* =====================================================================
+ *  Per-parameter info system + settings search (block UI v0.4).
+ *
+ *  Two cooperating subsystems:
+ *    • .info-btn   small square "?" affordance injected beside each
+ *                  labelled control by src/ui/info-tip.js
+ *    • .info-pop   the shared floating explanation popover (singleton,
+ *                  appended to <body>)
+ *    • .settings-search  the fuzzy search box + results list rendered
+ *                  into the Search panel by src/ui/settings-search.js
+ *
+ *  Everything is monochrome and squared: sharp 1px borders, no radii,
+ *  ink-on-paper contrast that flips automatically with [data-theme].
+ * ===================================================================== */
+
+/* ---- Info "?" button ---------------------------------------------- */
+.info-btn {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--hairline-strong);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+  transition:
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.info-btn svg {
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .info-btn:hover {
+    color: var(--accent-fg);
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+}
+.info-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Touch: keep the 18px visual but expand the effective hit area to the
+   WCAG/HIG-friendly target via a transparent expanded box. The glyph
+   stays small; only the tappable region grows. */
+[data-pointer="coarse"] .info-btn,
+[data-touch="1"] .info-btn {
+  position: relative;
+}
+[data-pointer="coarse"] .info-btn::before,
+[data-touch="1"] .info-btn::before {
+  content: "";
+  position: absolute;
+  inset: -13px;
+}
+
+/* The info button slots between the label and the toggle/knob — its DOM
+   position (injected before the control) already places it correctly, so
+   no `order` override is needed. */
+
+/* ---- Info popover -------------------------------------------------- */
+.info-pop {
+  position: fixed;
+  z-index: 1000;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 12px 14px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-xs);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out),
+    visibility var(--t-fast);
+  pointer-events: none;
+}
+.info-pop[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.info-pop-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+.info-pop-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-soft);
+}
+/* Square arrow notch — a rotated bordered square clipped by the body. */
+.info-pop-arrow {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline-strong);
+  transform: translateX(-50%) rotate(45deg);
+}
+.info-pop[data-placement="above"] .info-pop-arrow {
+  bottom: -5px;
+  border-top: 0;
+  border-left: 0;
+}
+.info-pop[data-placement="below"] .info-pop-arrow {
+  top: -5px;
+  border-bottom: 0;
+  border-right: 0;
+}
+
+/* ===================================================================== */
+/* Settings search                                                       */
+/* ===================================================================== */
+.settings-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.settings-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: var(--hit);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-xs);
+  background: var(--bg-side-soft);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.settings-search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+.settings-search-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--fg-muted);
+}
+.settings-search-input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  padding: 0;
+  outline: none;
+}
+.settings-search-input::placeholder {
+  color: var(--fg-muted);
+}
+/* Hide the native search clear (we provide our own). */
+.settings-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.settings-search-clear {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-xs);
+}
+@media (hover: hover) {
+  .settings-search-clear:hover {
+    color: var(--fg);
+    background: var(--hairline);
+  }
+}
+
+.settings-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.settings-search-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "main sub"
+    "desc desc";
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+@media (hover: hover) {
+  .settings-search-item:hover {
+    background: var(--bg-side-soft);
+  }
+}
+.settings-search-item[data-active="1"] {
+  background: var(--accent-soft);
+  border-color: var(--hairline-strong);
+}
+.ssi-main {
+  grid-area: main;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ssi-sub {
+  grid-area: sub;
+  align-self: center;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border: 1px solid var(--hairline);
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  white-space: nowrap;
+}
+.ssi-desc {
+  grid-area: desc;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.settings-search-empty {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* ---- Row flash (when a search result is revealed) ------------------ */
+[data-search-flash="1"] {
+  animation: search-flash 1.4s var(--ease-out);
+}
+@keyframes search-flash {
+  0%, 100% { background: transparent; box-shadow: none; }
+  15%, 55% {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-search-flash="1"] {
+    animation: none;
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+}

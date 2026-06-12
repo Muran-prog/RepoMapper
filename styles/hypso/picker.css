@@ -45,7 +45,7 @@
   appearance: none;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
+  border-radius: var(--r-xs);
   border: 1.5px solid var(--hairline-strong);
   position: relative;
   cursor: pointer;
@@ -62,9 +62,9 @@
 .hypso-label input[type="radio"]:checked::after {
   content: "";
   position: absolute;
-  inset: 3.5px;
-  background: var(--bg-side);
-  border-radius: 50%;
+  inset: 4px;
+  background: var(--accent-fg);
+  border-radius: var(--r-xs);
 }
 .hypso-preview {
   display: block;
