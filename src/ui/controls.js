@@ -129,6 +129,11 @@ const HAZARDOUS_TERRAIN_PREF_KEY = 'cart:features:hazardousTerrain';
 // Carpathian trail web (the bold red trail lines) — default ON; the user's
 // "off" choice must outlive the page like the other operator-hosted overlays.
 const CARPATHIAN_TRAILS_PREF_KEY = 'cart:features:carpathianTrails';
+// Bold orange road treatment — orange fills + amber casings + glow +
+// boosted widths on the hierarchy network (the «жирные оранжевые дороги»).
+// Default ON; persists so a user who turns the heavy orange look off
+// doesn't see it return on every reload.
+const ROADS_ORANGE_BOLD_PREF_KEY = 'cart:features:roadsOrangeBold';
 // Forest-mode markup accents — independent sub-toggles that only act
 // while forestCover is on. They persist alongside the forestCover choice
 // so a user's customised forest view survives a reload. Keyed by feature
@@ -596,6 +601,11 @@ function renderLayersPanelBody() {
         <label class="row"><span>Подписи</span><input type="checkbox" data-ctl="labels" checked></label>
         <label class="row"><span>Точки интереса</span><input type="checkbox" data-ctl="pois" checked></label>
         <label class="row"><span>3D-здания</span><input type="checkbox" data-ctl="b3d" checked></label>
+        <label class="row" data-ctl-row="roadsOrangeBold" title="Оранжевая заливка, свечение и увеличенная толщина главных дорог (магистрали → второстепенные)">
+          <span>Жирные оранжевые дороги</span>
+          <input type="checkbox" data-ctl="roadsOrangeBold" aria-describedby="roads-orange-bold-hint">
+        </label>
+        <small class="row-hint" id="roads-orange-bold-hint">Выключите — главные дороги (вместе с подписями и шильдиками) полностью исчезнут с карты</small>
         <label class="row" data-ctl-row="settlementOutline" title="Жирная обводка вокруг сёл, посёлков, городов — видно даже без зума">
           <span>Обводка поселений</span>
           <input type="checkbox" data-ctl="settlementOutline" aria-describedby="settlement-outline-hint">
@@ -1196,6 +1206,14 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // — the polygons ship in the upstream OMT tiles), so we don't
       // persist it: every cold boot starts from the FEATURES default.
       settlementOutline: FEATURES.settlementOutline,
+      // Bold orange road treatment — orange fills + casings + glow +
+      // boosted widths on hierarchy roads. Default ON; the user's choice
+      // (especially "off") persists under `cart:features:roadsOrangeBold`
+      // so the heavy orange look doesn't return on every reload.
+      roadsOrangeBold: loadBoolPref(
+        ROADS_ORANGE_BOLD_PREF_KEY,
+        FEATURES.roadsOrangeBold,
+      ),
     },
   };
   const effectiveProfile = () =>
@@ -1393,6 +1411,12 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       // Carpathian trail web defaults to ON; persist the user's choice
       // (especially "off") so the red trail lines don't reappear on reload.
       if (key === 'carpathianTrails') saveBoolPref(CARPATHIAN_TRAILS_PREF_KEY, el.checked);
+      // Bold orange roads default to ON; persist the user's choice
+      // (especially "off") so the heavy orange treatment doesn't
+      // reappear on every reload.
+      if (key === 'roadsOrangeBold') {
+        saveBoolPref(ROADS_ORANGE_BOLD_PREF_KEY, el.checked);
+      }
       // Forest-mode markup accents — persist each independent sub-toggle
       // so a customised forest view survives a reload. The flags only
       // emit layers inside the forestCover block, so toggling them while
@@ -1431,6 +1455,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('hazardousTerrain');
   wireToggle('carpathianTrails');
   wireToggle('settlementOutline');
+  wireToggle('roadsOrangeBold');
 
   // ----- Forest-mode markup sub-panel ----------------------------------
   //
@@ -1486,6 +1511,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     'forestRoadsOrange',
     'hazardousTerrain',
     'carpathianTrails',
+    'roadsOrangeBold',
   ];
   if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {
     rebuildStyle().catch(() => {

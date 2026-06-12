@@ -488,7 +488,7 @@ function placeLabels(t, opts) {
 // ---------------------------------------------------------------------------
 
 function roadLabels(t, opts) {
-  const { textPaddingMul } = opts;
+  const { textPaddingMul, hierarchyRoadLabels = true } = opts;
 
   const lineLabel = (id, classes, cfg) => {
     const fade = fadeIn(cfg.atZoom, 1.0, cfg.fadeWidth ?? 0.5);
@@ -523,19 +523,29 @@ function roadLabels(t, opts) {
   };
 
   return [
-    lineLabel('label_road_motorway', ['motorway'], {
-      atZoom: 11,
-      size: ['interpolate', ['linear'], ['zoom'], 11, 10, 16, 13, 20, 16],
-      spacing: 350,
-    }),
-    lineLabel('label_road_trunk_primary', ['trunk', 'primary'], {
-      atZoom: 12,
-      size: ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 13, 20, 16],
-    }),
-    lineLabel('label_road_secondary_tertiary', ['secondary', 'tertiary'], {
-      atZoom: 13,
-      size: ['interpolate', ['linear'], ['zoom'], 13, 10, 16, 12, 20, 15],
-    }),
+    // Hierarchy road names ride together with the hierarchy road
+    // GEOMETRY: when the «Жирные оранжевые дороги» toggle is off
+    // (FEATURES.roadsOrangeBold → hierarchyRoadLabels=false), the
+    // motorway → tertiary classes aren't emitted by roads.js at all,
+    // so their names and ref shields must also be suppressed — text
+    // floating over missing roads would read as a bug.
+    ...(hierarchyRoadLabels
+      ? [
+          lineLabel('label_road_motorway', ['motorway'], {
+            atZoom: 11,
+            size: ['interpolate', ['linear'], ['zoom'], 11, 10, 16, 13, 20, 16],
+            spacing: 350,
+          }),
+          lineLabel('label_road_trunk_primary', ['trunk', 'primary'], {
+            atZoom: 12,
+            size: ['interpolate', ['linear'], ['zoom'], 12, 10, 16, 13, 20, 16],
+          }),
+          lineLabel('label_road_secondary_tertiary', ['secondary', 'tertiary'], {
+            atZoom: 13,
+            size: ['interpolate', ['linear'], ['zoom'], 13, 10, 16, 12, 20, 15],
+          }),
+        ]
+      : []),
     lineLabel('label_road_minor', ['minor', 'service'], {
       atZoom: 15,
       size: ['interpolate', ['linear'], ['zoom'], 15, 10, 18, 12, 22, 14],
@@ -553,6 +563,12 @@ function roadLabels(t, opts) {
     //   • minor: secondary / tertiary → softer pill per class, visible
     //     from zoom 9, controlled by the `enableRoadShieldsMinor` flag
     //     (off on low-profile devices to reduce visual noise).
+    //
+    // Both tiers reference hierarchy classes only, so both are dropped
+    // together with the hierarchy geometry when hierarchyRoadLabels is
+    // off (see the comment at the top of this return).
+    ...(hierarchyRoadLabels
+      ? [
     {
       id: 'label_road_shield_major',
       type: 'symbol',
@@ -636,6 +652,8 @@ function roadLabels(t, opts) {
               ]),
             },
           },
+        ]
+      : []),
         ]
       : []),
   ];
@@ -962,6 +980,10 @@ function poiLayers(t, opts) {
  * @property {boolean} [enableHamlets=true]
  * @property {boolean} [enableSuburbs=true]
  * @property {boolean} [enableRoadShieldsMinor=true]  Shields on secondary/tertiary.
+ * @property {boolean} [hierarchyRoadLabels=true]
+ *           Names + ref shields for hierarchy roads (motorway → tertiary).
+ *           Turned off together with the hierarchy road geometry when the
+ *           bold-orange roads toggle (FEATURES.roadsOrangeBold) is off.
  */
 
 /**
