@@ -40,6 +40,7 @@ import { mountLineActionTooltip } from './draw/line-action.js';
 import { mountInfoTips } from './info-tip.js';
 import { mountSettingsSearch } from './settings-search.js';
 import { accordionMarkup, installAccordions, revealRow } from './accordion.js';
+import { richRow, groupNote, sectionLede, divider, SETTING_ICONS } from './setting-icons.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -97,6 +98,18 @@ const ICONS = {
   // 7-dot "more" glyph used by the MapLibre-controls collapse anchor.
   // Single-stroke chevron pair so it reads as "reveal a stack".
   controlsChev: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9 L12 14 L17 9"/><path d="M7 15 L12 20 L17 15" opacity="0.5"/></svg>`,
+  // Single chevron — rotated by CSS to point up/down for the collapse
+  // toggle on the base-map block.
+  chevron: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9 L12 15 L18 9"/></svg>`,
+  // "Pop out" glyph — a square with an arrow leaving its top-right
+  // corner. Used by the detach button that ejects the base-map block
+  // into a floating rail control.
+  detach: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 4 H20 V11"/><path d="M20 4 L11 13"/><path d="M18 14 V19 a1 1 0 0 1 -1 1 H5 a1 1 0 0 1 -1 -1 V7 a1 1 0 0 1 1 -1 H10"/></svg>`,
+  // "Dock back" glyph — an arrow pointing into a panel on the left.
+  // Used by the re-dock button when the block is detached.
+  dockBack: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1"/><path d="M21 12 H10"/><path d="M14 8 L10 12 L14 16"/></svg>`,
+  // Stacked-maps glyph for the floating rail button (detached mode).
+  mapStack: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 L21 7.5 L12 12 L3 7.5 Z"/><path d="M3 12.5 L12 17 L21 12.5"/></svg>`,
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +130,13 @@ const ICONS = {
 
 const WORLDCOVER_TINT_PREF_KEY = 'cart:features:worldcoverTint';
 const CANOPY_HEIGHT_TINT_PREF_KEY = 'cart:features:canopyHeightTint';
+// Base-map block view mode — how the "Базовая карта" chooser is presented:
+//   'expanded'  — full card list inside the sidebar (default)
+//   'collapsed' — heading only; cards hidden behind the chevron
+//   'detached'  — block removed from the sidebar, shown as a floating
+//                 rail button + popover instead.
+const MODE_BLOCK_VIEW_PREF_KEY = 'cart:ui:modeBlockView';
+const MODE_BLOCK_VIEWS = ['expanded', 'collapsed', 'detached'];
 // Forest leaf-type biom polygons share the same lifecycle as the two
 // raster relief overlays above: the operator rebuilds and re-uploads
 // carpathian-osm.pmtiles once, then the user's on/off choice should
@@ -232,6 +252,26 @@ function saveForestCoverPref(value) {
   try {
     if (typeof window === 'undefined') return;
     window.localStorage?.setItem(FOREST_COVER_PREF_KEY, value ? '1' : '0');
+  } catch {
+    /* quota / serialise — best-effort */
+  }
+}
+
+function loadModeBlockView(fallback = 'expanded') {
+  try {
+    if (typeof window === 'undefined') return fallback;
+    const raw = window.localStorage?.getItem(MODE_BLOCK_VIEW_PREF_KEY);
+    return MODE_BLOCK_VIEWS.includes(raw) ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveModeBlockView(value) {
+  try {
+    if (typeof window === 'undefined') return;
+    if (!MODE_BLOCK_VIEWS.includes(value)) return;
+    window.localStorage?.setItem(MODE_BLOCK_VIEW_PREF_KEY, value);
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -596,26 +636,29 @@ function sectionShell(id, body, opts = {}) {
 
 function renderLayersPanelBody() {
   return `
+    ${sectionLede('Управляет тем, что нанесено поверх базовой карты: подписи, объекты инфраструктуры и оформление дорожной сети.')}
     ${accordionMarkup({
       id: 'layers-display',
-      title: 'Отображение',
+      title: 'Содержимое карты',
+      meta: '3',
       open: true,
       body: `
         <div class="rows">
-          <label class="row"><span>Подписи</span><input type="checkbox" data-ctl="labels" checked></label>
-          <label class="row"><span>Точки интереса</span><input type="checkbox" data-ctl="pois" checked></label>
-          <label class="row"><span>3D-здания</span><input type="checkbox" data-ctl="b3d" checked></label>
+          ${richRow({ ctl: 'labels', title: 'Подписи', desc: 'Названия городов, рек, улиц и вершин', checked: true })}
+          ${richRow({ ctl: 'pois', title: 'Точки интереса', desc: 'Кафе, магазины, заправки, достопримечательности', checked: true })}
+          ${richRow({ ctl: 'b3d', title: '3D-здания', desc: 'Объёмная застройка при наклоне камеры', checked: true })}
         </div>
       `,
     })}
     ${accordionMarkup({
       id: 'layers-roads',
       title: 'Дороги и поселения',
+      meta: '2',
       open: true,
       body: `
         <div class="rows">
-          <label class="row" data-ctl-row="roadsOrangeBold"><span>Жирные дороги</span><input type="checkbox" data-ctl="roadsOrangeBold"></label>
-          <label class="row" data-ctl-row="settlementOutline"><span>Обводка поселений</span><input type="checkbox" data-ctl="settlementOutline"></label>
+          ${richRow({ ctl: 'roadsOrangeBold', title: 'Выделенные дороги', desc: 'Утолщённые главные дороги с заливкой и обводкой', rowAttr: 'data-ctl-row="roadsOrangeBold"' })}
+          ${richRow({ ctl: 'settlementOutline', title: 'Контуры населённых пунктов', desc: 'Заметная рамка вокруг сёл, посёлков и городов', rowAttr: 'data-ctl-row="settlementOutline"' })}
         </div>
       `,
     })}
@@ -624,58 +667,63 @@ function renderLayersPanelBody() {
 
 function renderReliefPanelBody() {
   return `
+    ${sectionLede('Слои, отражающие форму поверхности: тени, объём, цвет высот, растительность и подсказки безопасности.')}
     <div class="panel-group preset-row-group" data-ctl="flat-hypso-group">
       <label class="row preset-row">
+        <span class="preset-row-ico" aria-hidden="true">${SETTING_ICONS.flatHypso}</span>
         <span class="preset-row-text">
-          <strong>Плоская гипсометрия</strong>
-          <small>Цвет высот без затенения, уклона и изолиний</small>
+          <strong>Быстрый режим: цвет высот</strong>
         </span>
         <input type="checkbox" data-ctl="flatHypso" aria-describedby="flat-hypso-desc">
       </label>
     </div>
     ${accordionMarkup({
       id: 'relief-base',
-      title: 'Базовый рельеф',
+      title: 'Форма рельефа',
+      meta: '7',
       open: true,
       body: `
+        ${divider('Объём и тени')}
         <div class="rows">
-          <label class="row"><span>Отмывка</span><input type="checkbox" data-ctl="hillshade" checked></label>
-          <label class="row"><span>3D-рельеф</span><input type="checkbox" data-ctl="terrain3D" checked></label>
-          <label class="row"><span>Изолинии</span><input type="checkbox" data-ctl="contours" checked></label>
-          <label class="row"><span>Гипсометрический тон</span><input type="checkbox" data-ctl="hypsometricTint"></label>
-          <label class="row"><span>Батиметрия</span><input type="checkbox" data-ctl="bathymetry"></label>
-          <label class="row"><span>Текстурное затенение</span><input type="checkbox" data-ctl="textureShading"></label>
-          <label class="row"><span>Sky-View Factor</span><input type="checkbox" data-ctl="skyViewFactor"></label>
+          ${richRow({ ctl: 'hillshade', title: 'Отмывка теней', desc: 'Имитация теней от рельефа под виртуальным освещением', checked: true })}
+          ${richRow({ ctl: 'terrain3D', title: 'Объёмный рельеф (3D)', desc: 'Реальная деформация поверхности при наклоне камеры', checked: true })}
+          ${richRow({ ctl: 'textureShading', title: 'Текстурное затенение', desc: 'Подчёркивает овраги, гребни и русла мелким контрастом' })}
+          ${richRow({ ctl: 'skyViewFactor', title: 'Открытость неба', desc: 'Затемняет ущелья, подсвечивает вершины и плато' })}
+        </div>
+        ${divider('Высоты и глубины')}
+        <div class="rows">
+          ${richRow({ ctl: 'contours', title: 'Изолинии высот', desc: 'Горизонтали с подписями — топографический способ показать крутизну', checked: true })}
+          ${richRow({ ctl: 'hypsometricTint', title: 'Окраска по высоте', desc: 'Заливка цветом от низин к вершинам по выбранной палитре' })}
+          ${richRow({ ctl: 'bathymetry', title: 'Глубины водоёмов', desc: 'Чем глубже — тем темнее синий тон под водой' })}
         </div>
       `,
     })}
     ${accordionMarkup({
       id: 'relief-cover',
-      title: 'Земной покров и леса',
+      title: 'Растительность и покров',
+      meta: '4',
       open: false,
       body: `
         <div class="rows">
-          <label class="row" data-ctl-row="worldcoverTint"><span>Land cover</span><input type="checkbox" data-ctl="worldcoverTint"></label>
-          <label class="row" data-ctl-row="canopyHeightTint"><span>Высота полога</span><input type="checkbox" data-ctl="canopyHeightTint"></label>
-          <label class="row" data-ctl-row="forestLeafType"><span>Типы леса</span><input type="checkbox" data-ctl="forestLeafType"></label>
-          <label class="row" data-ctl-row="forestCover"><span>Лесной покров</span><input type="checkbox" data-ctl="forestCover"></label>
+          ${richRow({ ctl: 'worldcoverTint', title: 'Типы поверхности', desc: 'Лес, поля, вода и застройка по данным WorldCover', rowAttr: 'data-ctl-row="worldcoverTint"' })}
+          ${richRow({ ctl: 'canopyHeightTint', title: 'Высота крон леса', desc: 'Тёмные участки — высокие старые леса, светлые — молодые', rowAttr: 'data-ctl-row="canopyHeightTint"' })}
+          ${richRow({ ctl: 'forestLeafType', title: 'Породы леса', desc: 'Хвойный, лиственный и смешанный — каждый своим оттенком', rowAttr: 'data-ctl-row="forestLeafType"' })}
+          ${richRow({ ctl: 'forestCover', title: 'Сплошной лесной покров', desc: 'Зелёная подсветка всех лесов в плоском режиме, как в Google Earth', rowAttr: 'data-ctl-row="forestCover"' })}
         </div>
         ${accordionMarkup({
           id: 'relief-forest-markup',
-          title: 'Разметка лесного режима',
+          title: 'Акценты лесного режима',
           open: true,
           level: 1,
           body: `
             <div class="forest-markup-panel" data-forest-markup-panel data-enabled="false">
-              <p class="forest-markup-note" data-forest-markup-note>
-                Активно при включённом «Лесной покров».
-              </p>
+              ${groupNote('Эти акценты действуют только при включённом «Сплошной лесной покров».', { tone: 'warn' }).replace('class="group-note"', 'class="group-note forest-markup-note" data-forest-markup-note')}
               <div class="forest-markup-rows" id="forest-markup-rows" data-forest-markup-rows>
-                <label class="row" data-ctl-row="forestCities"><span>Города — жирным</span><input type="checkbox" data-ctl="forestCities"></label>
-                <label class="row" data-ctl-row="forestWaterAccent"><span>Реки и водоёмы</span><input type="checkbox" data-ctl="forestWaterAccent"></label>
-                <label class="row" data-ctl-row="forestRoadsBold"><span>Главные дороги — жирным</span><input type="checkbox" data-ctl="forestRoadsBold"></label>
-                <label class="row" data-ctl-row="forestRoadsOrange"><span>Дороги — выделенным</span><input type="checkbox" data-ctl="forestRoadsOrange"></label>
-                <label class="row" data-ctl-row="settlementOutline"><span>Обводка поселений</span><input type="checkbox" data-ctl="settlementOutline"></label>
+                ${richRow({ ctl: 'forestCities', title: 'Города крупнее', desc: 'Контрастное выделение населённых пунктов на зелёном фоне', rowAttr: 'data-ctl-row="forestCities"' })}
+                ${richRow({ ctl: 'forestWaterAccent', title: 'Яркие реки и водоёмы', desc: 'Усиленный синий для контраста с лесом', rowAttr: 'data-ctl-row="forestWaterAccent"' })}
+                ${richRow({ ctl: 'forestRoadsBold', title: 'Жирные главные дороги', desc: 'Тёмная обводка магистралей поверх зелёного', rowAttr: 'data-ctl-row="forestRoadsBold"' })}
+                ${richRow({ ctl: 'forestRoadsOrange', title: 'Цветовое выделение дорог', desc: 'Яркая окраска дорог по их значимости', rowAttr: 'data-ctl-row="forestRoadsOrange"' })}
+                ${richRow({ ctl: 'settlementOutline', title: 'Контуры поселений', desc: 'Рамка вокруг сёл и городов', rowAttr: 'data-ctl-row="settlementOutline"' })}
               </div>
             </div>
           `,
@@ -684,35 +732,39 @@ function renderReliefPanelBody() {
     })}
     ${accordionMarkup({
       id: 'relief-safety',
-      title: 'Безопасность и маршруты',
+      title: 'Безопасность маршрутов',
+      meta: '3',
       open: false,
       body: `
+        ${groupNote('Подсказки для горного туризма и планирования походов в высокогорье.')}
         <div class="rows">
-          <label class="row" data-ctl-row="slopeWarning"><span>Крутые склоны (≥35°)</span><input type="checkbox" data-ctl="slopeWarning"></label>
-          <label class="row" data-ctl-row="hazardousTerrain"><span>Опасные участки</span><input type="checkbox" data-ctl="hazardousTerrain"></label>
-          <label class="row"><span>Хребты</span><input type="checkbox" data-ctl="ridgeOverlay"></label>
+          ${richRow({ ctl: 'slopeWarning', title: 'Крутые склоны (от 35°)', desc: 'Потенциально лавиноопасные и труднопроходимые участки', rowAttr: 'data-ctl-row="slopeWarning"' })}
+          ${richRow({ ctl: 'hazardousTerrain', title: 'Опасные участки', desc: 'Высокие пики, обрывы и опасные перевалы', rowAttr: 'data-ctl-row="hazardousTerrain"' })}
+          ${richRow({ ctl: 'ridgeOverlay', title: 'Горные хребты', desc: 'Линии гребней и водоразделов для понимания орографии' })}
         </div>
       `,
     })}
     ${accordionMarkup({
       id: 'relief-carpathian',
-      title: 'Карпаты',
+      title: 'Карпатский регион',
+      meta: '2',
       open: false,
       body: `
         <div class="rows">
-          <label class="row"><span>Карпатская детализация</span><input type="checkbox" data-ctl="carpathian"></label>
-          <label class="row" data-ctl-row="carpathianTrails"><span>Горные тропы</span><input type="checkbox" data-ctl="carpathianTrails"></label>
+          ${richRow({ ctl: 'carpathian', title: 'Детализация Карпат', desc: 'Тропы, приюты, вершины и специальная стилизация региона' })}
+          ${richRow({ ctl: 'carpathianTrails', title: 'Маркированные тропы', desc: 'Красные линии троп, виа-феррат и ступеней', rowAttr: 'data-ctl-row="carpathianTrails"' })}
         </div>
       `,
     })}
     ${accordionMarkup({
       id: 'relief-exaggeration',
-      title: 'Вертикальное преувеличение',
+      title: 'Высота рельефа',
       open: false,
       body: `
+        ${groupNote('Множитель высоты влияет на 3D-рельеф и отмывку: больше единицы — выразительнее горы, меньше — мягче.')}
         <div class="slider-row">
           <label class="slider-label" for="exaggeration">
-            <span>0.5× – 2×</span>
+            <span>Преувеличение · 0.5×–2×</span>
             <span data-ctl="exaggeration-readout">1.0×</span>
           </label>
           <input id="exaggeration" type="range" min="0.5" max="2" step="0.1" value="1"
@@ -731,8 +783,8 @@ function renderHypsoPanelBody() {
     <div data-ctl="hypso-picker"></div>
 
     <div class="panel-group" data-ctl="hypso-profile-launcher" hidden>
-      <button class="btn-block" type="button" data-ctl="open-profile">
-        <span>Нарисовать профиль высот</span>
+      <button class="btn-block btn-accent" type="button" data-ctl="open-profile">
+        <span>Построить профиль высот по линии</span>
       </button>
     </div>
 
@@ -1077,12 +1129,62 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   // purpose ("base map") is obvious.
   const modeWrap = document.createElement('div');
   modeWrap.className = 'mode-switcher-block';
-  modeWrap.innerHTML = `<h4 class="mode-switcher-heading">Базовая карта</h4>`;
+  modeWrap.innerHTML = `
+    <div class="mode-switcher-head">
+      <h4 class="mode-switcher-heading">Базовая карта</h4>
+      <div class="mode-switcher-head-actions">
+        <button type="button" class="mode-switcher-act" data-ctl="mode-collapse"
+                aria-expanded="true" title="Свернуть" aria-label="Свернуть базовую карту">
+          ${ICONS.chevron}
+        </button>
+        <button type="button" class="mode-switcher-act" data-ctl="mode-detach"
+                title="Открепить" aria-label="Открепить базовую карту в плавающую кнопку">
+          ${ICONS.detach}
+        </button>
+      </div>
+    </div>
+  `;
   const modeHost = document.createElement('div');
   modeHost.dataset.ctl = 'mode-switcher';
   modeHost.className = 'mode-switcher-host';
   modeWrap.appendChild(modeHost);
   panelsHost.prepend(modeWrap);
+
+  // Floating rail control (only visible in the 'detached' view). It lives
+  // in the rail nav so it sits alongside the section buttons; clicking it
+  // opens a small popover that hosts the same mode cards + a re-dock
+  // button. We build the scaffold up-front and toggle visibility via the
+  // view-mode state below.
+  const railNav = rail.querySelector('.rail-nav');
+  const modeFab = document.createElement('button');
+  modeFab.type = 'button';
+  modeFab.className = 'rail-btn rail-mode-fab';
+  modeFab.dataset.ctl = 'mode-fab';
+  modeFab.hidden = true;
+  modeFab.setAttribute('aria-haspopup', 'true');
+  modeFab.setAttribute('aria-expanded', 'false');
+  modeFab.setAttribute('data-tip', 'Базовая карта');
+  modeFab.setAttribute('aria-label', 'Базовая карта');
+  modeFab.innerHTML = ICONS.mapStack;
+  railNav?.appendChild(modeFab);
+
+  const modePopover = document.createElement('div');
+  modePopover.className = 'mode-switcher-popover';
+  modePopover.dataset.ctl = 'mode-popover';
+  modePopover.hidden = true;
+  modePopover.innerHTML = `
+    <div class="mode-switcher-head">
+      <h4 class="mode-switcher-heading">Базовая карта</h4>
+      <button type="button" class="mode-switcher-act" data-ctl="mode-redock"
+              title="Вернуть в панель" aria-label="Вернуть базовую карту в панель">
+        ${ICONS.dockBack}
+      </button>
+    </div>
+  `;
+  const modePopHost = document.createElement('div');
+  modePopHost.className = 'mode-switcher-host';
+  modePopover.appendChild(modePopHost);
+  app.appendChild(modePopover);
 
   // ----- State the user can toggle -------------------------------------
   const state = {
@@ -1208,6 +1310,92 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       }
     },
   });
+
+  // ----- Base-map block view modes (collapse / detach / re-dock) -------
+  // Three presentations, persisted across reloads:
+  //   • expanded  — full card list docked in the sidebar (default)
+  //   • collapsed — heading only, cards hidden behind the chevron
+  //   • detached  — block ejected from the sidebar into a floating rail
+  //                 button + popover, freeing sidebar space
+  //
+  // The single mounted switcher (`modeHost`) is physically relocated
+  // between the sidebar block and the popover on detach/re-dock, so all
+  // event wiring + the active selection survive the move untouched.
+  const modeCollapseBtn = modeWrap.querySelector('[data-ctl="mode-collapse"]');
+  const modeDetachBtn = modeWrap.querySelector('[data-ctl="mode-detach"]');
+  const modeRedockBtn = modePopover.querySelector('[data-ctl="mode-redock"]');
+  let modeBlockView = loadModeBlockView();
+
+  const closeModePopover = () => {
+    modePopover.hidden = true;
+    modePopover.dataset.open = 'false';
+    modeFab.setAttribute('aria-expanded', 'false');
+  };
+  const openModePopover = () => {
+    if (modeBlockView !== 'detached') return;
+    modePopover.hidden = false;
+    modePopover.dataset.open = 'true';
+    modeFab.setAttribute('aria-expanded', 'true');
+  };
+
+  const applyModeBlockView = (view, { persist = true } = {}) => {
+    if (!MODE_BLOCK_VIEWS.includes(view)) view = 'expanded';
+    modeBlockView = view;
+
+    const detached = view === 'detached';
+    const collapsed = view === 'collapsed';
+
+    // Move the live switcher host into whichever container is active.
+    if (detached) {
+      if (modeHost.parentNode !== modePopover) modePopover.appendChild(modeHost);
+    } else if (modeHost.parentNode !== modeWrap) {
+      modeWrap.appendChild(modeHost);
+    }
+
+    modeWrap.hidden = detached;
+    modeWrap.dataset.collapsed = collapsed ? 'true' : 'false';
+    modeFab.hidden = !detached;
+    if (!detached) closeModePopover();
+
+    modeCollapseBtn?.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    modeCollapseBtn?.setAttribute('title', collapsed ? 'Развернуть' : 'Свернуть');
+    modeCollapseBtn?.setAttribute(
+      'aria-label',
+      collapsed ? 'Развернуть базовую карту' : 'Свернуть базовую карту',
+    );
+
+    if (persist) saveModeBlockView(view);
+  };
+
+  modeCollapseBtn?.addEventListener('click', () => {
+    applyModeBlockView(modeBlockView === 'collapsed' ? 'expanded' : 'collapsed');
+  });
+  modeDetachBtn?.addEventListener('click', () => {
+    applyModeBlockView('detached');
+    openModePopover();
+  });
+  modeRedockBtn?.addEventListener('click', () => {
+    applyModeBlockView('expanded');
+  });
+  modeFab.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (modePopover.dataset.open === 'true') closeModePopover();
+    else openModePopover();
+  });
+  // Dismiss the popover on outside click / Escape.
+  document.addEventListener('pointerdown', (e) => {
+    if (modePopover.hidden) return;
+    const t = e.target;
+    if (modePopover.contains(t) || modeFab.contains(t)) return;
+    closeModePopover();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modePopover.hidden) closeModePopover();
+  });
+
+  // Apply the restored view without re-persisting (no-op if 'expanded').
+  applyModeBlockView(modeBlockView, { persist: false });
+
   // ----- Sidebar controller --------------------------------------------
   const controller = new SidebarController({
     app,

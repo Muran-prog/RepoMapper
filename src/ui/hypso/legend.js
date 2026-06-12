@@ -151,6 +151,11 @@ export function mountHypsoLegend(opts) {
   // Collapse / expand.
   // ------------------------------------------------------------------
   const setCollapsed = (collapsed, { persist = true } = {}) => {
+    // The forest-cover cold-load path may hide the whole legend host
+    // (host.hidden = true). Expanding via the status-bar "Высота" button
+    // only flips data-collapsed/aria-hidden on inner elements, so a hidden
+    // host would swallow the toggle. Reveal the host whenever we expand.
+    if (!collapsed) host.hidden = false;
     root.dataset.collapsed = collapsed ? 'true' : 'false';
     refs.toggle?.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     refs.panel.setAttribute('aria-hidden', collapsed ? 'true' : 'false');

@@ -93,19 +93,22 @@
   grid-template-rows: 1fr;
   transition: grid-template-rows var(--t-base) var(--ease-out);
 }
-.acc-body > * {
+/* A single wrapper child is the collapsing grid track. All real content
+   lives inside it, so the 0fr collapse is reliable no matter how many
+   top-level blocks (rows, dividers, notes, nested accordions) the body
+   holds. */
+.acc-body-inner {
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 6px;
 }
 .acc[data-open="false"] > .acc-body {
   grid-template-rows: 0fr;
 }
-/* The inner padding lives on a wrapper so it collapses cleanly with the
-   row. We pad the body content directly and let overflow:hidden clip. */
-.acc-body {
-  padding-bottom: 6px;
-}
-.acc[data-open="false"] > .acc-body {
+.acc[data-open="false"] > .acc-body .acc-body-inner {
   padding-bottom: 0;
 }
 

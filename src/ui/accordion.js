@@ -81,7 +81,9 @@ export function accordionMarkup({ id, title, body, meta = '', open = true, level
         ${meta ? `<span class="acc-meta">${escapeHtml(meta)}</span>` : ''}
       </button>
       <div class="acc-body" id="${bodyId}" role="region" aria-label="${escapeHtml(title)}">
-        ${body}
+        <div class="acc-body-inner">
+          ${body}
+        </div>
       </div>
     </section>
   `;
