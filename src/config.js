@@ -687,6 +687,24 @@ export const FEATURES = Object.freeze({
   hikingRoutes: true,
 
   /**
+   * Bold ORANGE road treatment — the full signature look of the
+   * hierarchy road network (motorway → tertiary): orange inline fills,
+   * amber casings, the "premium" glow wash AND the boosted overview
+   * width curves. This is what makes the major roads read as thick
+   * orange ribbons on every overview shot (see ROAD_CLASSES +
+   * `glowHaloLayers` in src/style/roads.js and the roadGlow* tokens).
+   *
+   * Default ON — preserves the existing look. Toggleable from the
+   * Layers panel («Жирные оранжевые дороги»); the user's choice is
+   * persisted under `cart:features:roadsOrangeBold` so an "off"
+   * decision survives a reload. Off → hierarchy roads render in the
+   * quiet neutral palette (`roadQuiet`/`roadQuietCasing` tokens) with
+   * slimmer widths and no glow — the orange disappears entirely while
+   * casings + inlines keep the same layer ids.
+   */
+  roadsOrangeBold: true,
+
+  /**
    * Use MapLibre `projection: { type: 'globe' }` at low zooms. Falls back
    * to plain Mercator below the min-zoom threshold. Only useful on the
    * overview zoom (≤5), so it's off by default.

@@ -364,6 +364,11 @@ function profileToLayerOpts(profileConfig, features) {
     enableSuburbs: profileConfig.enableSuburbs,
     enableRoadShieldsMinor: profileConfig.enableRoadShieldsMinor,
     roadsCarpathianDoubleCasing: profileConfig.roadsCarpathianDoubleCasing,
+    // Bold orange road treatment (orange fills + amber casings + glow +
+    // boosted widths on hierarchy roads). Pure user preference — no
+    // device-profile knob, just the raw flag from FEATURES (overridden
+    // by the user's UI toggle).
+    roadsOrangeBold: features.roadsOrangeBold,
     // Heavy violet outline around residential/suburb/quarter/neighbourhood
     // polygons. Pure user preference — no device-profile knob, just the
     // raw flag from FEATURES (overridden by the user's UI toggle).

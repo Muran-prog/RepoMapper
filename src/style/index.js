@@ -115,6 +115,16 @@ import { getTokens } from './tokens.js';
  * @property {boolean} [enableSuburbs=true]
  * @property {boolean} [enableRoadShieldsMinor=true]
  * @property {boolean} [roadsCarpathianDoubleCasing=true]
+ * @property {boolean} [roadsOrangeBold=true]
+ *           The bold orange hierarchy road network (motorway →
+ *           tertiary): orange inline fills, amber casings, the premium
+ *           glow wash and boosted overview widths — what makes major
+ *           roads read as thick orange ribbons. Off → those road
+ *           classes are NOT emitted at all and their names + ref
+ *           shields are suppressed in labels.js; the orange roads
+ *           disappear from the map entirely while minor streets,
+ *           services, tracks and paths keep rendering. See
+ *           NO_HIERARCHY_ROAD_CLASSES in src/style/roads.js.
  * @property {boolean} [settlementOutline=true]
  *           Heavy road-style violet outline around residential /
  *           suburb / quarter / neighbourhood polygons so populated
@@ -240,6 +250,7 @@ export function composeLayers(opts = {}) {
     enableSuburbs = true,
     enableRoadShieldsMinor = true,
     roadsCarpathianDoubleCasing = true,
+    roadsOrangeBold = true,
     settlementOutline = true,
 
     hillshade = false,
@@ -535,6 +546,7 @@ export function composeLayers(opts = {}) {
     ...roadLayers(t, {
       shieldsMinor: enableRoadShieldsMinor,
       carpathianDoubleCasing: roadsCarpathianDoubleCasing,
+      orangeBold: roadsOrangeBold,
     }),
   );
 
@@ -623,6 +635,11 @@ export function composeLayers(opts = {}) {
       enableHamlets,
       enableSuburbs,
       enableRoadShieldsMinor,
+      // Hierarchy road names + ref shields ride together with the
+      // hierarchy road geometry: when the bold-orange roads are off,
+      // roads.js emits no motorway → tertiary layers, so their labels
+      // must vanish too (no text floating over missing roads).
+      hierarchyRoadLabels: roadsOrangeBold,
     });
     if (!pois) labelStack = labelStack.filter((l) => !l.id.startsWith('poi_'));
     stack.push(...labelStack);

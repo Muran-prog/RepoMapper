@@ -648,39 +648,61 @@ function glowHaloLayers(rc, t) {
 }
 
 // ---------------------------------------------------------------------------
+// Hierarchy-free class catalog — used when the bold-orange road treatment
+// is turned OFF («Жирные оранжевые дороги» toggle / FEATURES.roadsOrangeBold).
+// Every hierarchy class (the ones carrying a `glow` mark: motorway / trunk /
+// primary / secondary / tertiary) is dropped ENTIRELY — no casing, no
+// inline, no glow, nothing. The big orange roads simply disappear from the
+// map. Non-hierarchy classes (minor / service / track / path / …) are
+// untouched. The matching road labels + ref shields for the dropped
+// classes are suppressed by labels.js via the `hierarchyRoadLabels` flag
+// so no text floats over missing geometry.
+// ---------------------------------------------------------------------------
+
+const NO_HIERARCHY_ROAD_CLASSES = ROAD_CLASSES.filter((rc) => !rc.glow);
+
+// ---------------------------------------------------------------------------
 // Brunnel-level stack emission. Each road class produces:
 //   (optional Carpathian halo) → casing → inline   [for each surface variant]
 // ---------------------------------------------------------------------------
 
 function brunnelStack(brunnel, t, opts) {
   const out = [];
+  // The class catalog is swappable: the bold-orange treatment uses the
+  // canonical ROAD_CLASSES; the toggle-off variant uses the filtered
+  // catalog with the hierarchy classes removed, so their layers are
+  // never emitted. Surviving layer ids stay identical either way.
+  const classes = opts.classes ?? ROAD_CLASSES;
 
   // 1) Premium glow halos (ground only — bridges/tunnels skip the wash
   //    so elevated/buried roads don't bleed colour off-geometry).
   //    Order matters: glow must paint UNDER both the Carpathian halo
   //    and the casing so the casing's crisp edge isn't softened.
   //    Two layers per road: outer ambient wash → inner heat ring.
-  if (brunnel === 'ground') {
-    for (const rc of ROAD_CLASSES) {
+  //    Only emitted in the bold-orange state (FEATURES.roadsOrangeBold →
+  //    the «Жирные оранжевые дороги» toggle); the filtered catalog
+  //    carries no `glow` marks, so this loop is a structural no-op there.
+  if (brunnel === 'ground' && opts.glow) {
+    for (const rc of classes) {
       if (rc.glow) out.push(...glowHaloLayers(rc, t));
     }
   }
 
   // 2) Carpathian halos (ground only, gated by feature flag from caller).
   if (brunnel === 'ground' && opts.carpathianDoubleCasing) {
-    for (const rc of ROAD_CLASSES) {
+    for (const rc of classes) {
       if (rc.carpathianDoubleCasing) out.push(carpathianHaloLayer(rc, t));
     }
   }
 
   // 3) Casings (one per class, never split by surface — the surface only
   //    affects the inline's dashing, not the casing).
-  for (const rc of ROAD_CLASSES) {
+  for (const rc of classes) {
     out.push(casingLayer(rc, brunnel, t));
   }
 
   // 4) Inlines (surface-aware classes emit paved+unpaved; others a single layer).
-  for (const rc of ROAD_CLASSES) {
+  for (const rc of classes) {
     if (rc.surfaceAware) {
       out.push(inlineLayer(rc, brunnel, t, { idSuffix: '_paved', surface: 'paved' }));
       out.push(inlineLayer(rc, brunnel, t, { idSuffix: '_unpaved', surface: 'unpaved', forceDashed: true }));
@@ -759,6 +781,15 @@ function railways(t) {
  * @property {boolean} [carpathianDoubleCasing=true]
  *     Imhof-style extra-wide halo on serpentine roads inside the Carpathian
  *     bbox at deep zoom. Off-switchable for low-profile users.
+ * @property {boolean} [orangeBold=true]
+ *     The bold ORANGE hierarchy road network (motorway → tertiary):
+ *     orange inline fills, amber casings, the premium glow wash, and
+ *     the boosted overview width curves. Driven by
+ *     FEATURES.roadsOrangeBold via the «Жирные оранжевые дороги»
+ *     toggle in the Layers panel. Off → those classes are NOT emitted
+ *     at all (no casing / inline / glow) — the orange roads disappear
+ *     from the map entirely; minor streets, services, tracks and paths
+ *     keep rendering as usual.
  */
 
 /**
@@ -766,13 +797,13 @@ function railways(t) {
  * @param {RoadOpts} [opts]
  */
 export function roadLayers(t, opts = {}) {
-  const { carpathianDoubleCasing = true } = opts;
-  const passOpts = { carpathianDoubleCasing };
+  const { carpathianDoubleCasing = true, orangeBold = true } = opts;
+  const classes = orangeBold ? ROAD_CLASSES : NO_HIERARCHY_ROAD_CLASSES;
   return [
-    ...brunnelStack('tunnel', t, { carpathianDoubleCasing: false }),
-    ...brunnelStack('ground', t, passOpts),
+    ...brunnelStack('tunnel', t, { carpathianDoubleCasing: false, glow: false, classes }),
+    ...brunnelStack('ground', t, { carpathianDoubleCasing, glow: orangeBold, classes }),
     ...railways(t),
-    ...brunnelStack('bridge', t, { carpathianDoubleCasing: false }),
+    ...brunnelStack('bridge', t, { carpathianDoubleCasing: false, glow: false, classes }),
   ];
 }
 

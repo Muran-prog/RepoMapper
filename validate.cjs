@@ -162,6 +162,7 @@ async function main() {
       enableSuburbs: cfg.enableSuburbs,
       enableRoadShieldsMinor: cfg.enableRoadShieldsMinor,
       roadsCarpathianDoubleCasing: cfg.roadsCarpathianDoubleCasing,
+      roadsOrangeBold: effectiveFeatures.roadsOrangeBold,
       settlementOutline: features.settlementOutline,
 
       hillshade: effectiveFeatures.hillshade,
@@ -295,6 +296,11 @@ async function main() {
     { name: 'no-carpathian', flags: { carpathian: false } },
     { name: 'no-carpathian-trails', flags: { carpathian: true, carpathianTrails: false } },
     { name: 'no-settlement-outline', flags: { settlementOutline: false } },
+    // Bold orange roads OFF — the hierarchy classes (motorway → tertiary)
+    // must drop out of the stack entirely (glow + casing + inline), along
+    // with their name labels and ref shields. Minor/service/track/path
+    // road layers survive untouched.
+    { name: 'no-roads-orange-bold', flags: { roadsOrangeBold: false } },
     {
       name: 'minimal',
       flags: {
