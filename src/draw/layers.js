@@ -109,9 +109,10 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
 
   // Fraction of the stroke opacity that the fill inherits. Keeps
   // polygons readable over busy basemaps without the user needing
-  // a second "fill opacity" slider. Tuned so a 95 % stroke gives a
-  // ~38 % fill — comfortably visible but still see-through.
-  const FILL_OPACITY_FRACTION = 0.4;
+  // a second "fill opacity" slider. Tuned so the chosen fill colour
+  // reads clearly as itself (a green fill looks green, not a faint
+  // wash) while still letting the basemap show through a little.
+  const FILL_OPACITY_FRACTION = 0.62;
   /** `feature.opacity` with a sensible default, clamped to [0..1]. */
   const strokeOpacityExpr = ['max', 0, ['min', 1, ['coalesce', ['get', 'opacity'], 0.95]]];
   /** Fill opacity derived from stroke opacity × the fraction above. */
@@ -158,15 +159,19 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
         'line-color': [
           'case',
           ['==', ['get', 'autoMode'], 'mesh'], 'rgba(0, 0, 0, 0.30)',
-          'rgba(255, 255, 255, 0.85)',
+          'rgba(255, 255, 255, 0.7)',
         ],
+        // A thin contrast halo — just enough to lift the stroke off the
+        // basemap. Kept narrow (≈1.4 px total bleed) so the user's own
+        // colour stays the dominant, vivid part of the line rather than
+        // being swallowed by a fat white casing.
         'line-width': [
           '+',
-          ['+', ['coalesce', ['get', 'weight'], weight], 2.5],
+          ['+', ['coalesce', ['get', 'weight'], weight], 1.4],
           selectedBoost,
         ],
-        'line-opacity': 0.85,
-        'line-blur': 0.4,
+        'line-opacity': 0.6,
+        'line-blur': 0.3,
       },
     },
 

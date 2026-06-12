@@ -331,15 +331,116 @@
   padding: 8px 12px 12px;
   border-bottom: 1px solid var(--hairline-strong);
 }
+.mode-switcher-block[hidden] { display: none; }
+
+/* Heading row — title on the left, collapse + detach actions on the
+   right. Shared between the docked block and the detached popover. */
+.mode-switcher-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
 .mode-switcher-heading {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--fg-muted);
 }
+.mode-switcher-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.mode-switcher-act {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs, 3px);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+.mode-switcher-act svg { width: 15px; height: 15px; pointer-events: none; }
+@media (hover: hover) {
+  .mode-switcher-act:hover { background: var(--bg-side-soft); color: var(--fg); }
+}
+.mode-switcher-act:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Chevron points down when expanded, up when collapsed. */
+.mode-switcher-act[data-ctl="mode-collapse"] svg {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.mode-switcher-act[data-ctl="mode-collapse"][aria-expanded="false"] svg {
+  transform: rotate(180deg);
+}
+
 .mode-switcher-host { display: block; width: 100%; }
+
+/* Collapsed: hide the card list with a quick height/opacity fade. The
+   heading row stays so the user can re-expand. */
+.mode-switcher-block .mode-switcher-host {
+  overflow: hidden;
+  max-height: 360px;
+  opacity: 1;
+  transition:
+    max-height var(--t-base) var(--ease-out-soft),
+    opacity var(--t-fast) var(--ease-out),
+    margin var(--t-base) var(--ease-out-soft);
+}
+.mode-switcher-block[data-collapsed="true"] .mode-switcher-host {
+  max-height: 0;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+/* =====================================================================
+ *  Detached base-map control — floating rail button + popover.
+ * ===================================================================== */
+.rail-mode-fab[hidden] { display: none; }
+.rail-mode-fab[aria-expanded="true"] {
+  color: var(--fg);
+  background: var(--bg-side-soft);
+}
+.rail-mode-fab[aria-expanded="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+
+/* Popover anchored to the left edge of the map area, vertically near the
+   rail. Square block surface to match the docked shell — no glass. */
+.mode-switcher-popover {
+  position: absolute;
+  left: calc(var(--rail-w) + 8px);
+  top: 64px;
+  z-index: 40;
+  width: 230px;
+  padding: 10px 12px 12px;
+  background: var(--bg-side);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.18));
+  animation: mode-pop-in var(--t-fast) var(--ease-out);
+}
+.mode-switcher-popover[hidden] { display: none; }
+@keyframes mode-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 /* =====================================================================
  *  Status-bar buttons — "Высота" (legend) + attribution toggle.

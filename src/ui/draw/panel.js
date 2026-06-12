@@ -21,16 +21,20 @@
  */
 
 import { DRAW_ICONS as I } from './icons.js';
+import { accordionMarkup } from '../accordion.js';
 
+// Tool palette, split into two intent groups so the grid reads as
+// "точки и линии" vs "площади и свободные формы" rather than one
+// undifferentiated block.
 const TOOL_DEFS = [
-  { id: 'select',  label: 'Выбор',     tip: 'Выделить и редактировать', icon: I.select },
-  { id: 'marker',  label: 'Метка',     tip: 'Поставить метку',           icon: I.marker },
-  { id: 'line',    label: 'Линия',     tip: 'Начертить линию',           icon: I.line },
-  { id: 'segment', label: 'Отрезок',   tip: 'Два тапа — одна линия',     icon: I.segment },
-  { id: 'polygon', label: 'Полигон',   tip: 'Начертить многоугольник',   icon: I.polygon },
-  { id: 'pencil',  label: 'Карандаш',  tip: 'Свободное рисование',       icon: I.pencil },
-  { id: 'shape',   label: 'Фигура',    tip: 'Готовая фигура',             icon: I.shapeHex },
-  { id: 'eraser',  label: 'Ластик',    tip: 'Стереть нарисованное',       icon: I.eraser },
+  { id: 'select',  label: 'Выбор',     tip: 'Выделить объект и редактировать его узлы', icon: I.select,    group: 'base' },
+  { id: 'marker',  label: 'Метка',     tip: 'Поставить точку одним кликом',             icon: I.marker,    group: 'base' },
+  { id: 'line',    label: 'Ломаная',   tip: 'Линия по последовательности точек',        icon: I.line,      group: 'base' },
+  { id: 'segment', label: 'Отрезок',   tip: 'Прямая линия по двум точкам',              icon: I.segment,   group: 'base' },
+  { id: 'polygon', label: 'Контур',    tip: 'Замкнутый многоугольник',                  icon: I.polygon,   group: 'area' },
+  { id: 'shape',   label: 'Фигура',    tip: 'Готовая геометрическая фигура',            icon: I.shapeHex,  group: 'area' },
+  { id: 'pencil',  label: 'От руки',   tip: 'Свободное рисование карандашом',           icon: I.pencil,    group: 'area' },
+  { id: 'eraser',  label: 'Ластик',    tip: 'Стирать нарисованное движением',           icon: I.eraser,    group: 'area' },
 ];
 
 const SHAPE_DEFS = [
@@ -50,11 +54,11 @@ const SHAPE_DEFS = [
  * global recompute.
  */
 const CONN_DEFS = [
-  { id: 'none',     label: 'Без соединений', tip: 'Новые метки не соединяются автоматически', icon: I.connectionNone },
-  { id: 'sequence', label: 'Последовательно', tip: 'Каждую новую метку соединять с предыдущей', icon: I.connectionSequence },
-  { id: 'mesh',     label: 'Все со всеми',    tip: 'Каждую новую метку соединять со всеми предыдущими', icon: I.connectionMesh },
-  { id: 'hub',      label: 'Звезда',          tip: 'Каждую новую метку соединять с первой (центром)', icon: I.connectionHub },
-  { id: 'optimal',  label: 'Кратчайший маршрут', tip: 'Новые метки оптимизируются в кратчайший маршрут между собой. Существующие линии не меняются.', icon: I.connectionOptimal },
+  { id: 'none',     label: 'Не соединять',          tip: 'Метки остаются отдельными точками', icon: I.connectionNone },
+  { id: 'sequence', label: 'Цепочкой',              tip: 'Каждая новая метка соединяется с предыдущей', icon: I.connectionSequence },
+  { id: 'mesh',     label: 'Каждый с каждым',       tip: 'Новая метка соединяется со всеми предыдущими', icon: I.connectionMesh },
+  { id: 'hub',      label: 'Лучами от центра',      tip: 'Все метки соединяются с первой поставленной', icon: I.connectionHub },
+  { id: 'optimal',  label: 'Кратчайший маршрут',    tip: 'Новые метки выстраиваются в самый короткий путь. Существующие линии не меняются.', icon: I.connectionOptimal },
 ];
 
 /**
@@ -62,173 +66,219 @@ const CONN_DEFS = [
  * this into the existing `.panel-body` shell.
  */
 export function renderDrawPanelBody() {
+  const toolBtn = (t) => `
+    <button
+      class="draw-tool"
+      type="button"
+      role="radio"
+      aria-checked="false"
+      data-tool="${t.id}"
+      data-tip="${t.tip}"
+      aria-label="${t.label}">
+      <span class="draw-tool-icon">${t.icon}</span>
+      <span class="draw-tool-label">${t.label}</span>
+    </button>`;
+
+  const baseTools = TOOL_DEFS.filter((t) => t.group === 'base').map(toolBtn).join('');
+  const areaTools = TOOL_DEFS.filter((t) => t.group === 'area').map(toolBtn).join('');
+
   return `
+    <p class="draw-lede">Чертите метки, линии и фигуры прямо на карте. Выберите инструмент, настройте стиль — всё сохраняется автоматически.</p>
+
     <div class="panel-group draw-tools-group">
-      <h4 class="panel-group-title">Инструмент</h4>
-      <div class="draw-tool-grid" data-ctl="draw-tools" role="radiogroup" aria-label="Активный инструмент рисования">
-        ${TOOL_DEFS
-          .map((t) => `
-            <button
-              class="draw-tool"
-              type="button"
-              role="radio"
-              aria-checked="false"
-              data-tool="${t.id}"
-              data-tip="${t.tip}"
-              aria-label="${t.label}">
-              <span class="draw-tool-icon">${t.icon}</span>
-              <span class="draw-tool-label">${t.label}</span>
-            </button>
-          `)
-          .join('')}
+      <div class="draw-tools-host" data-ctl="draw-tools" role="radiogroup" aria-label="Инструмент рисования">
+        <div class="draw-tool-subhead">Точки и линии</div>
+        <div class="draw-tool-grid">${baseTools}</div>
+        <div class="draw-tool-subhead">Площади и формы</div>
+        <div class="draw-tool-grid">${areaTools}</div>
       </div>
     </div>
 
-    <div class="panel-group draw-shape-group" data-ctl="draw-shape-group" hidden>
-      <h4 class="panel-group-title">Фигура</h4>
-      <div class="draw-shape-grid" data-ctl="draw-shapes" role="radiogroup" aria-label="Тип фигуры">
-        ${SHAPE_DEFS
-          .map((s) => `
-            <button
-              class="draw-shape"
-              type="button"
-              role="radio"
-              aria-checked="false"
-              data-shape="${s.id}"
-              aria-label="${s.label}">
-              <span class="draw-shape-icon">${s.icon}</span>
-              <span class="draw-shape-label">${s.label}</span>
-            </button>
-          `)
-          .join('')}
-      </div>
-      <div class="draw-shape-size">
-        <div class="slider-row">
-          <label class="slider-label" for="draw-shape-size">
-            <span>Размер</span>
-            <span data-ctl="draw-shape-size-readout">100 px</span>
-          </label>
-          <input id="draw-shape-size" type="range" min="20" max="220" step="5" value="100" data-ctl="draw-shape-size">
+    ${accordionMarkup({
+      id: 'draw-shape',
+      title: 'Параметры фигуры',
+      open: true,
+      body: `
+        <div class="draw-shape-group" data-ctl="draw-shape-group" hidden>
+          <div class="draw-shape-grid" data-ctl="draw-shapes" role="radiogroup" aria-label="Тип фигуры">
+            ${SHAPE_DEFS
+              .map((s) => `
+                <button
+                  class="draw-shape"
+                  type="button"
+                  role="radio"
+                  aria-checked="false"
+                  data-shape="${s.id}"
+                  aria-label="${s.label}">
+                  <span class="draw-shape-icon">${s.icon}</span>
+                  <span class="draw-shape-label">${s.label}</span>
+                </button>
+              `)
+              .join('')}
+          </div>
+          <div class="draw-shape-size">
+            <div class="slider-row">
+              <label class="slider-label" for="draw-shape-size">
+                <span>Размер фигуры</span>
+                <span data-ctl="draw-shape-size-readout">100 px</span>
+              </label>
+              <input id="draw-shape-size" type="range" min="20" max="220" step="5" value="100" data-ctl="draw-shape-size">
+            </div>
+          </div>
+          <div class="draw-shape-sides" data-ctl="draw-shape-sides-row" hidden>
+            <div class="slider-row">
+              <label class="slider-label" for="draw-shape-sides">
+                <span>Число сторон</span>
+                <span data-ctl="draw-shape-sides-readout">6</span>
+              </label>
+              <input id="draw-shape-sides" type="range" min="3" max="12" step="1" value="6" data-ctl="draw-shape-sides">
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="draw-shape-sides" data-ctl="draw-shape-sides-row" hidden>
-        <div class="slider-row">
-          <label class="slider-label" for="draw-shape-sides">
-            <span>Стороны</span>
-            <span data-ctl="draw-shape-sides-readout">6</span>
-          </label>
-          <input id="draw-shape-sides" type="range" min="3" max="12" step="1" value="6" data-ctl="draw-shape-sides">
+        <div class="draw-eraser-group" data-ctl="draw-eraser-group" hidden>
+          <div class="slider-row">
+            <label class="slider-label" for="draw-eraser-size">
+              <span>Диаметр ластика</span>
+              <span data-ctl="draw-eraser-size-readout">30 px</span>
+            </label>
+            <input id="draw-eraser-size" type="range" min="5" max="120" step="5" value="30" data-ctl="draw-eraser-size">
+          </div>
         </div>
-      </div>
-    </div>
+        <p class="draw-hint" data-ctl="draw-shape-hint">Выберите инструмент «Фигура» или «Ластик», чтобы настроить их параметры.</p>
+      `,
+    })}
 
-    <div class="panel-group draw-eraser-group" data-ctl="draw-eraser-group" hidden>
-      <h4 class="panel-group-title">Ластик</h4>
-      <div class="slider-row">
-        <label class="slider-label" for="draw-eraser-size">
-          <span>Размер ластика</span>
-          <span data-ctl="draw-eraser-size-readout">30 px</span>
-        </label>
-        <input id="draw-eraser-size" type="range" min="5" max="120" step="5" value="30" data-ctl="draw-eraser-size">
-      </div>
-    </div>
+    ${accordionMarkup({
+      id: 'draw-connections',
+      title: 'Соединение меток',
+      open: false,
+      body: `
+        <div class="draw-conn-list" data-ctl="draw-connections" role="radiogroup" aria-label="Режим соединения меток">
+          ${CONN_DEFS
+            .map((c) => `
+              <button
+                class="draw-conn"
+                type="button"
+                role="radio"
+                aria-checked="false"
+                data-conn="${c.id}"
+                title="${c.tip}"
+                aria-label="${c.label}">
+                <span class="draw-conn-icon">${c.icon}</span>
+                <span class="draw-conn-text">
+                  <strong>${c.label}</strong>
+                  <small>${c.tip}</small>
+                </span>
+              </button>
+            `)
+            .join('')}
+        </div>
+        <div class="rows">
+          <label class="row row-rich">
+            <span class="row-ico" aria-hidden="true">${I.geodesic}</span>
+            <span class="row-main">
+              <span class="row-title">Учитывать кривизну Земли</span>
+              <span class="row-desc">Геодезические линии по дуге большого круга</span>
+            </span>
+            <input type="checkbox" data-ctl="draw-geodesic" checked>
+          </label>
+          <label class="row row-rich">
+            <span class="row-ico" aria-hidden="true">${I.label}</span>
+            <span class="row-main">
+              <span class="row-title">Нумеровать метки</span>
+              <span class="row-desc">Порядковые номера на каждой точке</span>
+            </span>
+            <input type="checkbox" data-ctl="draw-labels" checked>
+          </label>
+          <label class="row row-rich">
+            <span class="row-ico" aria-hidden="true">${I.ruler}</span>
+            <span class="row-main">
+              <span class="row-title">Показывать расстояния</span>
+              <span class="row-desc">Подписи длины при наведении на линию</span>
+            </span>
+            <input type="checkbox" data-ctl="draw-measure">
+          </label>
+        </div>
+      `,
+    })}
 
-    <div class="panel-group">
-      <h4 class="panel-group-title">Соединение меток</h4>
-      <div class="draw-conn-list" data-ctl="draw-connections" role="radiogroup" aria-label="Режим соединения меток">
-        ${CONN_DEFS
-          .map((c) => `
-            <button
-              class="draw-conn"
-              type="button"
-              role="radio"
-              aria-checked="false"
-              data-conn="${c.id}"
-              title="${c.tip}"
-              aria-label="${c.label}">
-              <span class="draw-conn-icon">${c.icon}</span>
-              <span class="draw-conn-text">
-                <strong>${c.label}</strong>
-                <small>${c.tip}</small>
-              </span>
-            </button>
-          `)
-          .join('')}
-      </div>
-      <div class="rows">
-        <label class="row">
-          <span>Геодезические (с кривизной Земли)</span>
-          <input type="checkbox" data-ctl="draw-geodesic" checked>
-        </label>
-        <label class="row">
-          <span>Нумерация меток</span>
-          <input type="checkbox" data-ctl="draw-labels" checked>
-        </label>
-        <label class="row">
-          <span>Показывать расстояния</span>
-          <input type="checkbox" data-ctl="draw-measure">
-        </label>
-      </div>
-    </div>
+    ${accordionMarkup({
+      id: 'draw-style',
+      title: 'Внешний вид',
+      open: true,
+      body: `
+        <div class="draw-style-row">
+          <label class="draw-color">
+            <span>Цвет линий</span>
+            <input type="color" data-ctl="draw-color" value="#c66809">
+          </label>
+          <label class="draw-color">
+            <span>Цвет заливки</span>
+            <input type="color" data-ctl="draw-fill" value="#c66809">
+          </label>
+        </div>
+        <div class="slider-row">
+          <label class="slider-label" for="draw-weight">
+            <span>Толщина линии</span>
+            <span data-ctl="draw-weight-readout">3 px</span>
+          </label>
+          <input id="draw-weight" type="range" min="1" max="10" step="0.5" value="3" data-ctl="draw-weight">
+        </div>
+        <div class="slider-row">
+          <label class="slider-label" for="draw-opacity">
+            <span>Непрозрачность</span>
+            <span data-ctl="draw-opacity-readout">95 %</span>
+          </label>
+          <input id="draw-opacity" type="range" min="0.1" max="1" step="0.05" value="0.95" data-ctl="draw-opacity">
+        </div>
+      `,
+    })}
 
-    <div class="panel-group">
-      <h4 class="panel-group-title">Стиль</h4>
-      <div class="draw-style-row">
-        <label class="draw-color">
-          <span>Контур</span>
-          <input type="color" data-ctl="draw-color" value="#c66809">
-        </label>
-        <label class="draw-color">
-          <span>Заливка</span>
-          <input type="color" data-ctl="draw-fill" value="#c66809">
-        </label>
-      </div>
-      <div class="slider-row">
-        <label class="slider-label" for="draw-weight">
-          <span>Толщина</span>
-          <span data-ctl="draw-weight-readout">3 px</span>
-        </label>
-        <input id="draw-weight" type="range" min="1" max="10" step="0.5" value="3" data-ctl="draw-weight">
-      </div>
-      <div class="slider-row">
-        <label class="slider-label" for="draw-opacity">
-          <span>Прозрачность</span>
-          <span data-ctl="draw-opacity-readout">95 %</span>
-        </label>
-        <input id="draw-opacity" type="range" min="0.1" max="1" step="0.05" value="0.95" data-ctl="draw-opacity">
-      </div>
-    </div>
-
-    <div class="panel-group draw-stats" data-ctl="draw-stats">
-      <div class="draw-stat">
-        <span class="draw-stat-label">Метки</span>
-        <span class="draw-stat-value" data-ctl="draw-stat-markers">0</span>
-      </div>
-      <div class="draw-stat">
-        <span class="draw-stat-label">Маршрут</span>
-        <span class="draw-stat-value" data-ctl="draw-stat-distance">—</span>
-      </div>
-      <div class="draw-stat">
-        <span class="draw-stat-label">Объекты</span>
-        <span class="draw-stat-value" data-ctl="draw-stat-features">0</span>
-      </div>
-    </div>
+    ${accordionMarkup({
+      id: 'draw-summary',
+      title: 'Сводка',
+      open: true,
+      body: `
+        <div class="draw-stats" data-ctl="draw-stats">
+          <div class="draw-stat">
+            <span class="draw-stat-label">Метки</span>
+            <span class="draw-stat-value" data-ctl="draw-stat-markers">0</span>
+          </div>
+          <div class="draw-stat">
+            <span class="draw-stat-label">Длина пути</span>
+            <span class="draw-stat-value" data-ctl="draw-stat-distance">—</span>
+          </div>
+          <div class="draw-stat">
+            <span class="draw-stat-label">Объекты</span>
+            <span class="draw-stat-value" data-ctl="draw-stat-features">0</span>
+          </div>
+        </div>
+      `,
+    })}
 
     <div class="panel-group draw-actions">
       <div class="draw-action-row">
-        <button type="button" class="draw-action" data-ctl="draw-undo"   title="Отменить (Ctrl+Z)" aria-label="Отменить">${I.undo}</button>
-        <button type="button" class="draw-action" data-ctl="draw-redo"   title="Вернуть (Ctrl+Shift+Z)" aria-label="Вернуть">${I.redo}</button>
-        <button type="button" class="draw-action" data-ctl="draw-delete" title="Удалить выбранный (Del)" aria-label="Удалить выбранный">${I.trash}</button>
-        <button type="button" class="draw-action draw-danger" data-ctl="draw-clear" title="Очистить всё" aria-label="Очистить всё">${I.broom}</button>
+        <button type="button" class="draw-action" data-ctl="draw-undo"   title="Отменить (Ctrl+Z)" aria-label="Отменить">${I.undo}<span>Отменить</span></button>
+        <button type="button" class="draw-action" data-ctl="draw-redo"   title="Вернуть (Ctrl+Shift+Z)" aria-label="Вернуть">${I.redo}<span>Вернуть</span></button>
       </div>
       <div class="draw-action-row">
-        <button type="button" class="draw-action draw-io" data-ctl="draw-export" title="Экспорт GeoJSON" aria-label="Экспорт GeoJSON">${I.download}<span>Экспорт</span></button>
-        <label class="draw-action draw-io" title="Импорт GeoJSON" aria-label="Импорт GeoJSON">${I.upload}<span>Импорт</span>
+        <button type="button" class="draw-action" data-ctl="draw-delete" title="Удалить выбранный объект (Del)" aria-label="Удалить выбранный">${I.trash}<span>Удалить</span></button>
+        <button type="button" class="draw-action draw-danger" data-ctl="draw-clear" title="Удалить все объекты" aria-label="Очистить всё">${I.broom}<span>Очистить всё</span></button>
+      </div>
+      ${divider('Файл')}
+      <div class="draw-action-row">
+        <button type="button" class="draw-action draw-io" data-ctl="draw-export" title="Сохранить чертёж в файл GeoJSON" aria-label="Сохранить в GeoJSON">${I.download}<span>Сохранить в файл</span></button>
+        <label class="draw-action draw-io" title="Загрузить чертёж из файла GeoJSON" aria-label="Загрузить из GeoJSON">${I.upload}<span>Загрузить из файла</span>
           <input type="file" accept=".json,.geojson,application/json,application/geo+json" data-ctl="draw-import-file" hidden>
         </label>
       </div>
     </div>
   `;
+}
+
+/** Inline labelled divider for the drawing panel (mirrors setting-icons). */
+function divider(label) {
+  return `<div class="rule-label"><span>${label}</span></div>`;
 }
 
 /**
@@ -262,16 +312,24 @@ export function mountDrawPanel({ engine, host }) {
     btn.addEventListener('click', () => engine.setTool(btn.dataset.tool));
   }
 
+  const refreshShapeHint = () => {
+    const hint = $('[data-ctl="draw-shape-hint"]');
+    if (!hint) return;
+    const shapeOn = !$('[data-ctl="draw-shape-group"]')?.hidden;
+    const eraserOn = !$('[data-ctl="draw-eraser-group"]')?.hidden;
+    hint.hidden = shapeOn || eraserOn;
+  };
+
   const refreshShapeGroup = (tool) => {
     const group = $('[data-ctl="draw-shape-group"]');
-    if (!group) return;
-    group.hidden = tool !== 'shape';
+    if (group) group.hidden = tool !== 'shape';
+    refreshShapeHint();
   };
 
   const refreshEraserGroup = (tool) => {
     const group = $('[data-ctl="draw-eraser-group"]');
-    if (!group) return;
-    group.hidden = tool !== 'eraser';
+    if (group) group.hidden = tool !== 'eraser';
+    refreshShapeHint();
   };
 
   // -------------------------------------------------------------------
@@ -487,6 +545,29 @@ export function mountDrawPanel({ engine, host }) {
     setRadioGroup('[data-ctl="draw-connections"] [data-conn]', m, 'conn');
   });
 
+  // Selecting a feature loads ITS style into the controls so the user
+  // edits what they picked; changing a swatch then recolours that
+  // feature (engine.setPrefs → restyleSelected). Clearing the
+  // selection restores the controls to the current authoring prefs.
+  const syncStyleControls = (style) => {
+    if (!style) return;
+    if (color && style.color != null) color.value = style.color;
+    if (fill && style.fill != null) fill.value = style.fill;
+    if (weight && style.weight != null) {
+      weight.value = String(style.weight);
+      if (weightOut) weightOut.textContent = `${style.weight} px`;
+      updateSliderFill(weight);
+    }
+    if (opacity && style.opacity != null) {
+      opacity.value = String(style.opacity);
+      if (opacityOut) opacityOut.textContent = `${Math.round(style.opacity * 100)} %`;
+      updateSliderFill(opacity);
+    }
+  };
+  const offSelection = engine.on('selection', ({ id }) => {
+    syncStyleControls(id ? engine.getFeatureStyle(id) : engine.getPrefs());
+  });
+
   const statMarkers = $('[data-ctl="draw-stat-markers"]');
   const statDistance = $('[data-ctl="draw-stat-distance"]');
   const statFeatures = $('[data-ctl="draw-stat-features"]');
@@ -520,6 +601,7 @@ export function mountDrawPanel({ engine, host }) {
     offTool();
     offShape();
     offConn();
+    offSelection();
     offMetrics();
     offChange();
     offHistory();

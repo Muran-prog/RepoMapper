@@ -1628,9 +1628,49 @@ export function createDrawEngine(map) {
     emit('shape', shape);
   };
 
+  /**
+   * Apply style props (`color` / `fill` / `weight` / `opacity`) from a
+   * patch onto the currently-selected feature, if any. This is what
+   * makes the colour / width / opacity controls feel "live": with a
+   * feature selected, changing a swatch recolours THAT feature, not
+   * just the next one the user draws.
+   *
+   * Auto-gen connection lines are intentionally left alone — they're
+   * regenerated from marker placements and would snap back to the
+   * pref colour on the next edit anyway. Only directly-authored
+   * geometry (markers, lines, polygons, pencils, shapes) is restyled.
+   *
+   * Mutates in place WITHOUT a history push (style nudges shouldn't
+   * each cost an undo step); the change still persists via the normal
+   * debounce.
+   *
+   * @param {Partial<import('./store.js').DrawPrefs>} patch
+   * @returns {boolean} true when a selected feature was restyled.
+   */
+  const restyleSelected = (patch) => {
+    if (!state.selectedId) return false;
+    const f = state.features.get(state.selectedId);
+    if (!f || !f.properties || f.properties.autoGen) return false;
+    const STYLE_KEYS = ['color', 'fill', 'weight', 'opacity'];
+    let changed = false;
+    for (const k of STYLE_KEYS) {
+      if (k in patch && f.properties[k] !== patch[k]) {
+        f.properties[k] = patch[k];
+        changed = true;
+      }
+    }
+    if (changed) schedulePersist();
+    return changed;
+  };
+
   const setPrefs = (patch) => {
     Object.assign(prefs, patch);
     savePrefs(patch);
+    // With a feature selected, style props in the patch recolour /
+    // resize THAT feature too — so the swatches feel live instead of
+    // only affecting the next drawing. Done before rerender so the
+    // updated geometry paints in the same frame.
+    restyleSelected(patch);
     // The layer paint expressions read every style property from each
     // feature's own `properties` bag (`color`, `fill`, `weight`,
     // `opacity`). New features pick up the updated prefs automatically
@@ -1758,6 +1798,19 @@ export function createDrawEngine(map) {
     undo, redo,
     clearAll, deleteSelected, cancelDraft,
     exportGeoJSON, importGeoJSON,
+    /**
+     * Read the style bag (`color` / `fill` / `weight` / `opacity`) of a
+     * feature by id, or of the current selection when no id is given.
+     * Returns null when nothing matches. The panel uses this to sync
+     * the swatches / sliders to whatever feature the user just picked.
+     */
+    getFeatureStyle: (id = state.selectedId) => {
+      if (!id) return null;
+      const f = state.features.get(id);
+      if (!f || !f.properties) return null;
+      const { color, fill, weight, opacity } = f.properties;
+      return { color, fill, weight, opacity };
+    },
     on,
     dispose,
     /** Internal hooks — exposed so `tools.js` can manipulate state. */

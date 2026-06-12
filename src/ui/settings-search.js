@@ -105,7 +105,12 @@ export function buildSearchIndex(panelsHost) {
   if (!panelsHost) return entries;
 
   const seen = new Set();
-  const panels = panelsHost.querySelectorAll('.panel[data-panel-id]');
+  // The docked shell renders sections as `.section[data-panel-id]`; the
+  // older popover shell used `.panel[data-panel-id]`. Match both so the
+  // index is populated regardless of which shell mounted the controls.
+  const panels = panelsHost.querySelectorAll(
+    '.section[data-panel-id], .panel[data-panel-id]',
+  );
 
   panels.forEach((panel) => {
     const panelId = panel.dataset.panelId;
@@ -130,7 +135,7 @@ export function buildSearchIndex(panelsHost) {
       // Visible label: prefer the registry title, else the row's text.
       const labelText =
         info?.title ||
-        row.querySelector('span:not(.dot)')?.textContent?.trim() ||
+        row.querySelector('.row-title, .preset-row-text strong, span:not(.dot):not(.row-ico):not(.preset-row-ico)')?.textContent?.trim() ||
         row.textContent?.trim() ||
         id;
 
