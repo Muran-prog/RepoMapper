@@ -24,6 +24,10 @@
  */
 
 import { TERRAIN, CONTOURS, HYPSO } from '../config.js';
+import {
+  SETTLEMENTS_SUPPLEMENT,
+  SETTLEMENTS_SUPPLEMENT_SOURCE,
+} from './settlements-supplement.js';
 
 /**
  * Build a `raster-dem` source spec, or return null if the config is empty.
@@ -99,6 +103,16 @@ export function composeSources({
 }) {
   const sources = {};
   if (vectorSource) sources.openmaptiles = vectorSource;
+
+  // Supplemental settlement polygons — hand-supplied boundaries for places
+  // OSM does not model as settlements (e.g. the Заросляк mountain base).
+  // Inline GeoJSON, always present and network-free, so the perimeter
+  // outline in settlements.js can trace them exactly like landuse-class
+  // settlements. See settlements-supplement.js for the rationale + data.
+  sources[SETTLEMENTS_SUPPLEMENT_SOURCE] = {
+    type: 'geojson',
+    data: SETTLEMENTS_SUPPLEMENT,
+  };
 
   // Primary DEM backs hillshade, 3D terrain, dynamic contour generation,
   // AND the native color-relief hypsometric tint. The latter is easy
