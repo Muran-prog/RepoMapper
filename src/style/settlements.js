@@ -78,6 +78,56 @@ const SOURCE = 'openmaptiles';
 const LAYER = 'landuse';
 
 /**
+ * Point source-layer carrying populated-place markers. Small villages,
+ * hamlets and isolated dwellings frequently DO NOT have a
+ * `landuse=residential` polygon in the upstream OMT tiles — they exist
+ * only as a single `place` point. The polygon-boundary stack above can
+ * therefore never frame them (there is no geometry to stroke), so the
+ * brief's "every settlement reads without zoom" goal silently fails for
+ * exactly the smallest places. The circle-ring stack below closes that
+ * gap: it draws the same violet frame as a ring around the place POINT,
+ * so a hamlet with no polygon still gets a visible settlement outline.
+ */
+const PLACE_LAYER = 'place';
+
+/**
+ * Place classes treated as "small settlements that need a point-ring".
+ * We intentionally include `town` as well — a small town can also lack a
+ * residential polygon — but exclude `city` (cities always carry a polygon
+ * and a ring around them would clutter the overview).
+ *
+ * `locality` is included too: many Carpathian tourist bases, trailheads
+ * and named spots (e.g. Заросляк at the foot of Hoverla) are mapped in
+ * OSM as `place=locality` — a NAMED point with no population and usually
+ * no residential polygon. Without it such hubs get no frame at all. To
+ * avoid cluttering the overview with every minor урочище / поляна, the
+ * `locality` ring is gated to z11+ via `PLACE_MINZOOM_BY_CLASS` and
+ * drawn at a smaller radius than a hamlet (see `ringRadiusByClass`).
+ */
+const PLACE_CLASSES = ['town', 'village', 'hamlet', 'isolated_dwelling', 'locality'];
+
+/**
+ * Per-class minimum zoom for the point ring. Most settlement classes
+ * ride the radius curve (which returns 0 px below their useful band),
+ * but `locality` is noisy at country-overview zoom, so we hard-gate it
+ * to z11+ where the user is reading a single valley rather than the
+ * whole country.
+ */
+const PLACE_MINZOOM_BY_CLASS = [
+  'case',
+  ['==', ['get', 'class'], 'locality'], ['>=', ['zoom'], 11],
+  true,
+];
+
+/** Literal `in` filter for the small-settlement place classes, plus the
+ *  per-class minzoom gate above. */
+const PLACE_FILTER = [
+  'all',
+  inFilter('class', PLACE_CLASSES),
+  PLACE_MINZOOM_BY_CLASS,
+];
+
+/**
  * OMT classes treated as "settlement land". Residential is the primary
  * polygon; suburb / quarter / neighbourhood appear in dense urban cores
  * where the upstream tile schema breaks the residential super-polygon
@@ -120,6 +170,60 @@ const GLOW_INNER_EXTRA = 7.0;
 const GLOW_OUTER_EXTRA = 14.0;
 
 const ROUND_CAPS = { 'line-cap': 'round', 'line-join': 'round' };
+
+// ---------------------------------------------------------------------------
+// Point-ring geometry — fallback frame for polygon-less small settlements.
+// ---------------------------------------------------------------------------
+//
+// Per place class the ring radius grows with zoom so a village reads as a
+// small framed plot on overview and a larger one as you zoom in. Cities
+// are excluded entirely (they always carry a polygon). The width family
+// mirrors the polygon glow → casing → inline relationship: inline is the
+// bright core, casing pads it, glow is the wide soft halo.
+
+/** Per-class ring radius (px) by zoom. Bigger class = bigger ring.
+ *  `locality` (tourist bases, trailheads, named spots) tracks the
+ *  hamlet curve but a touch smaller, and only after its z11 gate. */
+const ringRadiusByClass = (townV, villageV, hamletV, isoV, localityV) => [
+  'match', ['get', 'class'],
+  'town', townV,
+  'village', villageV,
+  'hamlet', hamletV,
+  'isolated_dwelling', isoV,
+  'locality', localityV,
+  0,
+];
+
+/** Core ring radius — visible from z4, grows into hiking zooms. */
+const RING_RADIUS = ['interpolate', ['linear'], ['zoom'],
+  4, ringRadiusByClass(3.0, 2.2, 1.6, 1.2, 0),
+  7, ringRadiusByClass(5.0, 3.6, 2.6, 2.0, 0),
+  10, ringRadiusByClass(8.0, 6.0, 4.4, 3.4, 0),
+  13, ringRadiusByClass(14.0, 11.0, 8.0, 6.0, 5.0),
+  16, ringRadiusByClass(26.0, 20.0, 15.0, 11.0, 9.0),
+];
+
+/** Glow ring sits a few px outside the core ring. */
+const RING_GLOW_RADIUS = ['interpolate', ['linear'], ['zoom'],
+  4, ringRadiusByClass(4.5, 3.4, 2.6, 2.0, 0),
+  7, ringRadiusByClass(7.0, 5.2, 4.0, 3.2, 0),
+  10, ringRadiusByClass(11.0, 8.4, 6.4, 5.0, 0),
+  13, ringRadiusByClass(18.0, 14.0, 10.5, 8.0, 7.0),
+  16, ringRadiusByClass(32.0, 25.0, 19.0, 14.0, 12.0),
+];
+
+/** Bright inline ring stroke — the core highlight. */
+const RING_INLINE_WIDTH = ['interpolate', ['linear'], ['zoom'],
+  4, 1.0, 9, 1.6, 14, 2.6, 18, 4.0,
+];
+/** Casing ring stroke — slightly wider, painted under the inline. */
+const RING_CASING_WIDTH = ['interpolate', ['linear'], ['zoom'],
+  4, 2.5, 9, 3.4, 14, 5.0, 18, 7.0,
+];
+/** Glow ring stroke — wide soft halo. */
+const RING_GLOW_WIDTH = ['interpolate', ['linear'], ['zoom'],
+  4, 3.0, 9, 4.5, 14, 7.0, 18, 10.0,
+];
 
 // ---------------------------------------------------------------------------
 // Layer factory
@@ -196,6 +300,65 @@ export function settlementOutlineLayers(t) {
       paint: {
         'line-color': t.settlementInline,
         'line-width': expZoom(INLINE_WIDTHS),
+      },
+    },
+
+    // --- Point-ring fallback for polygon-less small settlements -------
+    //
+    // Glow ring — a soft violet halo around the place POINT, matching
+    // the polygon glow above. Drawn for towns / villages / hamlets /
+    // isolated dwellings that have no residential polygon to frame.
+    {
+      id: 'settlement_point_glow',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': PLACE_LAYER,
+      minzoom: 4,
+      filter: PLACE_FILTER,
+      paint: {
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-radius': RING_GLOW_RADIUS,
+        'circle-stroke-color': t.settlementGlow,
+        'circle-stroke-width': RING_GLOW_WIDTH,
+        'circle-stroke-opacity': 0.9,
+        'circle-blur': 0.6,
+        'circle-pitch-alignment': 'map',
+      },
+    },
+    // Casing ring — the dark frame, painted under the bright inline ring
+    // exactly like the polygon casing → inline pairing above.
+    {
+      id: 'settlement_point_casing',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': PLACE_LAYER,
+      minzoom: 4,
+      filter: PLACE_FILTER,
+      paint: {
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-radius': RING_RADIUS,
+        'circle-stroke-color': t.settlementCasing,
+        'circle-stroke-width': RING_CASING_WIDTH,
+        'circle-stroke-opacity': 0.95,
+        'circle-pitch-alignment': 'map',
+      },
+    },
+    // Inline ring — the bright violet core stroke, the point-equivalent
+    // of `settlement_outline_inline`. Painted last so the ring reads as
+    // the dominant settlement cue for polygon-less places.
+    {
+      id: 'settlement_point_inline',
+      type: 'circle',
+      source: SOURCE,
+      'source-layer': PLACE_LAYER,
+      minzoom: 4,
+      filter: PLACE_FILTER,
+      paint: {
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-radius': RING_RADIUS,
+        'circle-stroke-color': t.settlementInline,
+        'circle-stroke-width': RING_INLINE_WIDTH,
+        'circle-pitch-alignment': 'map',
       },
     },
   ];

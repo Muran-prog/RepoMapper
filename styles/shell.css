@@ -286,6 +286,60 @@
 .status-spacer { flex: 1 1 auto; border-right: 0; }
 /* The cursor cell fades when the pointer leaves the map. */
 .status-cell[data-state="idle"] { opacity: 0.35; }
+
+/* The CENTER cell is interactive: click it to type a "go to" target. */
+.status-cell[data-status-action="goto"] {
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+.status-cell[data-status-action="goto"]:hover { background: var(--bg-side-soft); }
+.status-cell[data-status-action="goto"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* A subtle target glyph hints the cell is clickable. */
+.status-cell[data-status-action="goto"] .status-value::after {
+  content: "⌖";
+  margin-left: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+/* While editing, hide the static readout — the input takes its place. */
+.status-cell[data-status-action="goto"][data-editing] .status-value { display: none; }
+
+/* Inline "go to coordinates" text field, styled to sit flush inside the
+   status bar where the CENTER readout was. */
+.status-goto-input {
+  align-self: center;
+  height: calc(var(--status-h) - 10px);
+  margin: 0 4px;
+  padding: 0 8px;
+  min-width: 168px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-xs);
+  outline: none;
+}
+.status-goto-input[hidden] { display: none; }
+.status-goto-input::placeholder { color: var(--fg-muted); }
+.status-goto-input[data-invalid="1"] { border-color: #d04839; }
+
+/* Validation hint shown when the typed value can't be parsed. */
+.status-goto-error {
+  align-self: center;
+  margin-right: 8px;
+  font-family: var(--sans);
+  font-size: 10px;
+  color: #d04839;
+  white-space: nowrap;
+}
+.status-goto-error[hidden] { display: none; }
+[data-theme="dark"] .status-goto-input[data-invalid="1"] { border-color: #ff7a6b; }
+[data-theme="dark"] .status-goto-error { color: #ff7a6b; }
 /* FPS pulse dot -- single permitted functional colour. */
 .status-fps-dot {
   width: 8px; height: 8px;

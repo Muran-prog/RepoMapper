@@ -42,7 +42,12 @@ export function mountHUD(map, perf, root, { caps } = {}) {
       <span class="status-fps-dot" data-hud="fps-dot" aria-hidden="true"></span>
     </div>
     ${cell('zoom', 'Масшт', '—')}
-    ${cell('center', 'Центр', '—')}
+    ${cell('center', 'Центр', '—', ' data-status-action="goto" tabindex="0" role="button" title="Нажмите, чтобы перейти к координатам (широта, долгота)"')}
+    <input class="status-goto-input" data-hud="goto-input" type="text" inputmode="decimal"
+           spellcheck="false" autocomplete="off" hidden
+           placeholder="широта, долгота"
+           aria-label="Перейти к координатам: широта, долгота" />
+    <span class="status-goto-error" data-hud="goto-error" role="alert" hidden></span>
     ${showCursor ? `
       ${cell('lat', 'Шир', '—', ' data-state="idle"')}
       ${cell('lon', 'Дол', '—', ' data-state="idle"')}
@@ -72,6 +77,9 @@ export function mountHUD(map, perf, root, { caps } = {}) {
   const refs = {
     zoom: root.querySelector('[data-hud=zoom]'),
     center: root.querySelector('[data-hud=center]'),
+    centerCell: root.querySelector('[data-status-cell="center"]'),
+    gotoInput: root.querySelector('[data-hud="goto-input"]'),
+    gotoError: root.querySelector('[data-hud="goto-error"]'),
     lat: root.querySelector('[data-hud=lat]'),
     lon: root.querySelector('[data-hud=lon]'),
     elev: root.querySelector('[data-hud=elev]'),
@@ -118,6 +126,129 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     refs.attribBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
     const attrib = document.querySelector('.maplibregl-ctrl-attrib');
     if (attrib) attrib.dataset.statusOpen = next ? '1' : '0';
+  });
+
+  // ----- "Go to coordinates" — click the CENTER cell to type a target -
+  //
+  // The CENTER cell shows the live map centre as `lat, lon` (4-decimal,
+  // en-US). Clicking (or pressing Enter/Space when focused) swaps the
+  // readout for a text input pre-filled with that same string, so the
+  // user edits in exactly the format they were just reading. Submitting
+  // parses `lat, lon` and flies the camera there; Escape / blur cancels
+  // without moving. The parser is permissive: it accepts the trailing
+  // `°` the cursor cells use, a comma OR whitespace separator, and an
+  // optional N/S/E/W hemisphere suffix, so pasting any of the formats
+  // the status bar itself emits "just works".
+  const parseLatLon = (raw) => {
+    if (typeof raw !== 'string') return null;
+    // Normalise: strip degree marks, collapse separators to a single
+    // comma, trim. Accept "lat, lon", "lat lon", "lat;lon".
+    const cleaned = raw
+      .replace(/°/g, ' ')
+      .replace(/[;\t]+/g, ',')
+      .trim();
+    if (!cleaned) return null;
+
+    // Split on comma if present, else on whitespace.
+    const parts = (cleaned.includes(',') ? cleaned.split(',') : cleaned.split(/\s+/))
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length !== 2) return null;
+
+    // Pull an optional hemisphere letter off each part and apply its sign.
+    const toSigned = (token, posLetter, negLetter) => {
+      const m = token.match(/^([+-]?\d+(?:\.\d+)?)\s*([nsewNSEW])?$/);
+      if (!m) return NaN;
+      let v = parseFloat(m[1]);
+      if (!Number.isFinite(v)) return NaN;
+      const hemi = m[2] ? m[2].toUpperCase() : '';
+      if (hemi === negLetter) v = -Math.abs(v);
+      else if (hemi === posLetter) v = Math.abs(v);
+      else if (hemi && hemi !== posLetter && hemi !== negLetter) return NaN;
+      return v;
+    };
+
+    const lat = toSigned(parts[0], 'N', 'S');
+    const lon = toSigned(parts[1], 'E', 'W');
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    return { lat, lon };
+  };
+
+  let editingGoto = false;
+
+  const closeGoto = () => {
+    if (!editingGoto) return;
+    editingGoto = false;
+    if (refs.gotoInput) refs.gotoInput.hidden = true;
+    if (refs.gotoError) {
+      refs.gotoError.hidden = true;
+      refs.gotoError.textContent = '';
+    }
+    if (refs.gotoInput) refs.gotoInput.dataset.invalid = '0';
+    refs.centerCell?.removeAttribute('data-editing');
+  };
+
+  const openGoto = () => {
+    if (!refs.gotoInput || !refs.centerCell || editingGoto) return;
+    editingGoto = true;
+    refs.centerCell.setAttribute('data-editing', '1');
+    // Pre-fill with the current readout so the format is self-documenting.
+    const c = map.getCenter();
+    refs.gotoInput.value = `${FMT_COORD.format(c.lat)}, ${FMT_COORD.format(c.lng)}`;
+    refs.gotoInput.hidden = false;
+    refs.gotoInput.dataset.invalid = '0';
+    if (refs.gotoError) refs.gotoError.hidden = true;
+    refs.gotoInput.focus();
+    refs.gotoInput.select();
+  };
+
+  const submitGoto = () => {
+    if (!refs.gotoInput) return;
+    const parsed = parseLatLon(refs.gotoInput.value);
+    if (!parsed) {
+      refs.gotoInput.dataset.invalid = '1';
+      if (refs.gotoError) {
+        refs.gotoError.textContent = 'Введите: широта, долгота';
+        refs.gotoError.hidden = false;
+      }
+      refs.gotoInput.focus();
+      return;
+    }
+    closeGoto();
+    map.flyTo({
+      center: [parsed.lon, parsed.lat],
+      // Keep the current zoom unless we're zoomed way out; a pinpoint
+      // jump from a country overview lands at a sensible street zoom.
+      zoom: Math.max(map.getZoom(), 12),
+      essential: true,
+    });
+  };
+
+  refs.centerCell?.addEventListener('click', openGoto);
+  refs.centerCell?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      openGoto();
+    }
+  });
+  refs.gotoInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitGoto();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeGoto();
+      refs.centerCell?.focus();
+    }
+  });
+  refs.gotoInput?.addEventListener('input', () => {
+    if (refs.gotoInput) refs.gotoInput.dataset.invalid = '0';
+    if (refs.gotoError) refs.gotoError.hidden = true;
+  });
+  refs.gotoInput?.addEventListener('blur', () => {
+    // Defer so an Enter that triggers submit isn't pre-empted by blur.
+    setTimeout(closeGoto, 120);
   });
 
   // ----- FPS dot + zoom + center (perf subscription) ------------------
