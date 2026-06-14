@@ -1931,6 +1931,26 @@ function installContourUI(map, panelsHost) {
   const engine = createSettlementContourEngine(map);
   const unmountPanel = mountContourPanel({ engine, host: section });
 
+  // ── Coordinate with the freehand draw engine ───────────────────────
+  // Both engines are ALWAYS live and listen to the same map clicks (see
+  // installDrawingUI's lifecycle note). The draw engine authors geometry
+  // whenever its active tool is an authoring tool (marker / line / …).
+  // So if the user left the draw tool on "Маркеры", every click that
+  // traces a settlement contour ALSO drops a numbered draw marker right
+  // on top of the contour. When the user starts tracing OR editing a
+  // contour we flip the draw engine into its passive "select" tool, so
+  // contour clicks no longer double as marker placements. The freehand
+  // tool is one tap away in the «Рисование» panel when they want it back.
+  // createDrawEngine is idempotent → this is the same instance that
+  // installDrawingUI uses, regardless of mount order.
+  const drawEngine = createDrawEngine(map);
+  engine.on('mode', ({ mode }) => {
+    if (mode === 'draw' || mode === 'edit') {
+      try { drawEngine.setTool('select'); }
+      catch { /* draw engine mid-init — safe to ignore */ }
+    }
+  });
+
   // Cancel an in-flight draft when the user navigates away from the
   // panel, so they don't return to a stale rubber-band edge.
   const onPanelToggle = () => {
