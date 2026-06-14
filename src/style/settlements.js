@@ -69,6 +69,7 @@
  */
 
 import { expZoom, casingWidth, inFilter } from '../utils/interp.js';
+import { SETTLEMENTS_SUPPLEMENT_SOURCE } from './settlements-supplement.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -359,6 +360,66 @@ export function settlementOutlineLayers(t) {
         'circle-stroke-color': t.settlementInline,
         'circle-stroke-width': RING_INLINE_WIDTH,
         'circle-pitch-alignment': 'map',
+      },
+    },
+
+    // --- Perimeter outline for supplemented, OSM-unmapped settlements --
+    //
+    // Some places (e.g. the Заросляк mountain base at the foot of Hoverla)
+    // have no `landuse=residential` polygon and no `place` node in OSM —
+    // only a POI point and a few scattered buildings — so neither the
+    // polygon-outline stack nor the place-point ring above can match them.
+    //
+    // settlements-supplement.js supplies a real boundary polygon for each
+    // such place; the four layers below trace its PERIMETER with the exact
+    // same glow → casing → inline treatment as the landuse outline, so a
+    // supplemented place reads identically to every other settlement
+    // (outlined по периметру, not a synthetic circle).
+    {
+      id: 'settlement_supplement_glow_outer',
+      type: 'line',
+      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
+      minzoom: 4,
+      layout: ROUND_CAPS,
+      paint: {
+        'line-color': t.settlementGlowOuter,
+        'line-width': casingWidth(INLINE_WIDTHS, GLOW_OUTER_EXTRA),
+        'line-blur': 5.0,
+      },
+    },
+    {
+      id: 'settlement_supplement_glow_inner',
+      type: 'line',
+      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
+      minzoom: 4,
+      layout: ROUND_CAPS,
+      paint: {
+        'line-color': t.settlementGlow,
+        'line-width': casingWidth(INLINE_WIDTHS, GLOW_INNER_EXTRA),
+        'line-blur': 2.0,
+      },
+    },
+    {
+      id: 'settlement_supplement_casing',
+      type: 'line',
+      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
+      minzoom: 4,
+      layout: ROUND_CAPS,
+      paint: {
+        'line-color': t.settlementCasing,
+        'line-width': casingWidth(INLINE_WIDTHS, CASING_EXTRA),
+        'line-opacity': 0.95,
+      },
+    },
+    {
+      id: 'settlement_supplement_inline',
+      type: 'line',
+      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
+      minzoom: 4,
+      layout: ROUND_CAPS,
+      paint: {
+        'line-color': t.settlementInline,
+        'line-width': expZoom(INLINE_WIDTHS),
       },
     },
   ];
