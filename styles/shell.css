@@ -307,6 +307,54 @@
 /* While editing, hide the static readout — the input takes its place. */
 .status-cell[data-status-action="goto"][data-editing] .status-value { display: none; }
 
+/* Copy-coordinates button — sits immediately after the CENTER cell,
+   before the goto input. Styled as a compact icon button that matches
+   the status-bar height and the existing .status-btn vocabulary. */
+.status-copy-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  align-self: stretch;
+  flex: 0 0 28px;
+  cursor: pointer;
+  padding: 0;
+  border-right: 1px solid var(--hairline);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .status-copy-btn:hover {
+    background: var(--bg-side-soft);
+    color: var(--fg);
+  }
+}
+.status-copy-btn:active { background: var(--hairline); }
+.status-copy-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* Confirmed-copy state: swap icon colour to accent green for 1.4 s. */
+.status-copy-btn[data-copied="1"] {
+  color: #2da356;
+}
+[data-theme="dark"] .status-copy-btn[data-copied="1"] { color: #61d68f; }
+/* Replace the SVG with a ✓ tick while data-copied is set. */
+.status-copy-btn[data-copied="1"] svg { display: none; }
+.status-copy-btn[data-copied="1"]::after {
+  content: "✓";
+  font-size: 12px;
+  font-family: var(--sans);
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* Inline "go to coordinates" text field, styled to sit flush inside the
    status bar where the CENTER readout was. */
 .status-goto-input {

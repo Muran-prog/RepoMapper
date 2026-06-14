@@ -43,6 +43,15 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     </div>
     ${cell('zoom', 'Масшт', '—')}
     ${cell('center', 'Центр', '—', ' data-status-action="goto" tabindex="0" role="button" title="Нажмите, чтобы перейти к координатам (широта, долгота)"')}
+    <button class="status-copy-btn" type="button" data-hud="copy-coords"
+            title="Скопировать координаты центра карты"
+            aria-label="Скопировать координаты центра карты">
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="5" y="5" width="8" height="9" rx="1"/>
+        <path d="M3 11 H2.5 A1 1 0 0 1 1.5 10 V2.5 A1 1 0 0 1 2.5 1.5 H10 A1 1 0 0 1 11 2.5 V3"/>
+      </svg>
+    </button>
     <input class="status-goto-input" data-hud="goto-input" type="text" inputmode="decimal"
            spellcheck="false" autocomplete="off" hidden
            placeholder="широта, долгота"
@@ -78,6 +87,7 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     zoom: root.querySelector('[data-hud=zoom]'),
     center: root.querySelector('[data-hud=center]'),
     centerCell: root.querySelector('[data-status-cell="center"]'),
+    copyBtn: root.querySelector('[data-hud="copy-coords"]'),
     gotoInput: root.querySelector('[data-hud="goto-input"]'),
     gotoError: root.querySelector('[data-hud="goto-error"]'),
     lat: root.querySelector('[data-hud=lat]'),
@@ -127,6 +137,42 @@ export function mountHUD(map, perf, root, { caps } = {}) {
     const attrib = document.querySelector('.maplibregl-ctrl-attrib');
     if (attrib) attrib.dataset.statusOpen = next ? '1' : '0';
   });
+
+  // ----- Copy centre coordinates to clipboard -------------------------
+  //
+  // The small clipboard button next to the CENTER cell copies the current
+  // map centre as "lat, lon" (same 4-decimal en-US format the readout
+  // shows). A brief "✓" flash on the button confirms the copy without
+  // any intrusive toast. Falls back gracefully when the Clipboard API is
+  // unavailable (e.g. non-secure context).
+  if (refs.copyBtn) {
+    let copyFlashTimer = null;
+    refs.copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // don't trigger the goto-input on the CENTER cell
+      const c = map.getCenter();
+      const text = `${FMT_COORD.format(c.lat)}, ${FMT_COORD.format(c.lng)}`;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // Fallback: execCommand (deprecated but still works in some envs)
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch { return; }
+      }
+      // Flash ✓ on the button icon for 1.4 s.
+      refs.copyBtn.dataset.copied = '1';
+      clearTimeout(copyFlashTimer);
+      copyFlashTimer = setTimeout(() => {
+        if (refs.copyBtn) delete refs.copyBtn.dataset.copied;
+      }, 1400);
+    });
+  }
 
   // ----- "Go to coordinates" — click the CENTER cell to type a target -
   //
