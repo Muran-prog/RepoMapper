@@ -837,14 +837,21 @@ export function createSettlementContourEngine(map) {
   // Style-rebuild resilience.
   // -------------------------------------------------------------------
   let retryArmed = false;
+  // Try to (re)install the source/layers and re-push the current data.
+  // Returns true only when the style was ready and everything installed,
+  // so the caller can decide whether an idle-retry is still needed.
   const tryInstallAndRender = () => {
-    if (ensureLayers()) {
-      renderAll();
-      recolorLayers();
-      applyCursor();
-      syncDoubleClickZoom();
-    }
+    if (!ensureLayers()) return false;
+    renderAll();
+    recolorLayers();
+    applyCursor();
+    syncDoubleClickZoom();
+    return true;
   };
+  // One-shot `idle` latch. `idle` is the canonical "style fully settled"
+  // signal in MapLibre and fires after every setStyle once the new style
+  // has parsed, glyphs/sprites loaded and the first frame painted — the
+  // single most reliable hook to converge installation on.
   const scheduleRetry = () => {
     if (retryArmed) return;
     retryArmed = true;
@@ -854,15 +861,21 @@ export function createSettlementContourEngine(map) {
     });
   };
   const onStyleData = () => {
-    // The freshly-applied style has dropped our runtime layers; reinstall
-    // (re-reading the active theme so colours follow the new theme) and
-    // re-push the data. If the style isn't fully settled yet, retry on idle.
-    if (!ensureLayers()) {
-      scheduleRetry();
-      return;
-    }
-    renderAll();
-    recolorLayers();
+    // A theme / quality / map-mode switch swaps the whole style via
+    // `setStyle({ diff: false })`, which drops our runtime layers and
+    // emits several `styledata` events.
+    //
+    // 1) Attempt installation synchronously right now. When the style is
+    //    already loaded this reinstalls the source/layers immediately —
+    //    the proven behaviour callers (and tests) rely on.
+    // 2) Belt-and-braces: always arm a one-shot `idle` retry. `idle` is
+    //    guaranteed after every setStyle once the new style has fully
+    //    parsed and painted, so we still reconverge if this synchronous
+    //    attempt ran against a half-built style (`isStyleLoaded()` false)
+    //    or one that gets replaced again later in the swap sequence.
+    // Both paths are idempotent and cheap.
+    tryInstallAndRender();
+    scheduleRetry();
   };
 
   // -------------------------------------------------------------------
