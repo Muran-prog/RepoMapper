@@ -89,3 +89,8 @@
  *     and on-canvas overlays. Imported last so the panel primitives
  *     can lean on every layer above without `!important` overrides. */
 @import url("./draw.css");
+
+/* 13. Manual settlement contours — sidebar panel for hand-traced
+ *     settlement outlines. After draw.css so it can lean on the same
+ *     sidebar primitives. */
+@import url("./settlement-contours.css");

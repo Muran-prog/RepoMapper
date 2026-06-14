@@ -34,6 +34,11 @@ import { loadUiPrefs, saveUiPrefs, loadMapMode } from './store.js';
 import { mountModeSwitcher } from './mode-switcher.js';
 import { createDrawEngine } from '../draw/index.js';
 import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
+import {
+  renderContourPanelBody,
+  mountContourPanel,
+} from './settlement-contours/panel.js';
+import { createSettlementContourEngine } from '../draw/settlement-contours.js';
 import { DRAW_ICONS } from './draw/icons.js';
 import { mountMeasureTooltip } from './draw/tooltip.js';
 import { mountLineActionTooltip } from './draw/line-action.js';
@@ -57,6 +62,7 @@ const ICONS = {
   // 1.75-stroke vocabulary as the rest of the bar so the new button reads
   // as a peer rather than an alien addition.
   draw: DRAW_ICONS.dock,
+  contour: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9 L9 4 L16 5 L20 11 L17 19 L8 20 L4 14 Z"/><circle cx="5" cy="9" r="1.3" fill="currentColor" stroke="none"/><circle cx="16" cy="5" r="1.3" fill="currentColor" stroke="none"/><circle cx="20" cy="11" r="1.3" fill="currentColor" stroke="none"/><circle cx="8" cy="20" r="1.3" fill="currentColor" stroke="none"/></svg>`,
   // Two-tree landcover glyph used by the WorldCover relief toggle. Same
   // 1.75-stroke vocabulary as the rest of the relief icons so the row
   // reads as a peer of the hillshade / hypso / texture toggles.
@@ -599,6 +605,7 @@ const SECTIONS = [
   { id: 'hypso',    icon: 'waves',    title: 'Гипсометрия' },
   { id: 'places',   icon: 'pin',      title: 'Места' },
   { id: 'draw',     icon: 'draw',     title: 'Рисование' },
+  { id: 'contours', icon: 'contour',  title: 'Контуры' },
   { id: 'settings', icon: 'sliders',  title: 'Настройки' },
 ];
 
@@ -887,6 +894,7 @@ function renderSidebar(host) {
       ${sectionShell('hypso',    renderHypsoPanelBody(),    { title: 'Гипсометрия' })}
       ${sectionShell('places',   renderPlacesPanelBody(),   { title: 'Места' })}
       ${sectionShell('draw',     renderDrawPanelBody(),     { title: 'Рисование', persistent: true })}
+      ${sectionShell('contours', renderContourPanelBody(), { title: 'Контуры', persistent: true })}
       ${sectionShell('settings', renderSettingsPanelBody(), { title: 'Настройки' })}
     </div>
   `;
@@ -1404,7 +1412,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     scrim,
     caps,
   });
-  ['search', 'layers', 'relief', 'hypso', 'places', 'draw', 'settings'].forEach((id) =>
+  ['search', 'layers', 'relief', 'hypso', 'places', 'draw', 'contours', 'settings'].forEach((id) =>
     controller.register(id),
   );
   controller.install({ defaultId: 'layers' });
@@ -1745,6 +1753,13 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   // a switch without any extra wiring here.
   installDrawingUI(map, panelsHost, controller);
 
+  // ----- Manual settlement contours -----------------------------------
+  //
+  // Trace settlement outlines the automatic detection missed. Like the
+  // drawing engine it owns its own style-rebuild resilience, so no theme
+  // wiring is needed here — it re-reads the active theme on reinstall.
+  installContourUI(map, panelsHost);
+
   // ----- Hypso subsystem ----------------------------------------------
   installHypsoUI(map, panelsHost, { caps, profile: effectiveProfile() });
 
@@ -1901,6 +1916,37 @@ function installHypsoUI(map, panelsHost, { caps, profile } = {}) {
  * Idempotent: if the engine is already mounted on the map (e.g. after
  * a hot-reload), the existing handle is reused.
  */
+/**
+ * Mount the manual settlement-contour UI bundle.
+ *
+ * Hydrates the `contours` sidebar section with the live panel and binds
+ * it to the contour engine. The engine is idempotent and survives style
+ * rebuilds on its own; the panel is wired once for the page lifetime.
+ */
+function installContourUI(map, panelsHost) {
+  const section = panelsHost.querySelector('.section[data-panel-id="contours"]');
+  if (!section) return;
+
+  // Idempotent factory — a second call returns the existing handle.
+  const engine = createSettlementContourEngine(map);
+  const unmountPanel = mountContourPanel({ engine, host: section });
+
+  // Cancel an in-flight draft when the user navigates away from the
+  // panel, so they don't return to a stale rubber-band edge.
+  const onPanelToggle = () => {
+    const open = section.dataset.active === 'true';
+    if (!open) engine.cancelDrawing?.();
+  };
+  onPanelToggle();
+  const observer = new MutationObserver(onPanelToggle);
+  observer.observe(section, { attributes: true, attributeFilter: ['data-active'] });
+
+  if (typeof window !== 'undefined') {
+    window.__cart_contours = engine;
+    window.__cart_contours_panel = { unmount: unmountPanel, observer };
+  }
+}
+
 function installDrawingUI(map, panelsHost, controller) {
   const drawPanel = panelsHost.querySelector('.section[data-panel-id="draw"]');
   if (!drawPanel) return;

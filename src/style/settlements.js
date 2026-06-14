@@ -173,6 +173,88 @@ const GLOW_OUTER_EXTRA = 14.0;
 const ROUND_CAPS = { 'line-cap': 'round', 'line-join': 'round' };
 
 // ---------------------------------------------------------------------------
+// Shared perimeter-outline builder — single source of truth for the
+// glow → casing → inline look.
+// ---------------------------------------------------------------------------
+//
+// Both the supplemented-settlement stack below and the user-drawn
+// "manual settlement contour" feature (src/draw/settlement-contours.js)
+// trace a polygon PERIMETER with the exact same four-line treatment.
+// Centralising the paint here guarantees a hand-drawn contour is
+// visually indistinguishable from a data-driven settlement outline and
+// keeps the width/blur/opacity curves defined in exactly one place.
+
+/**
+ * Build the four `line` layers (glow_outer → glow_inner → casing →
+ * inline) that trace a polygon perimeter with the settlement look.
+ *
+ * @param {object}  opts
+ * @param {object}  opts.t            Theme tokens (see `tokens.js`).
+ * @param {string}  opts.source       Source id to draw from.
+ * @param {string}  opts.idPrefix     Prefix for the generated layer ids.
+ * @param {string}  [opts.sourceLayer] Vector-tile source-layer (omit for GeoJSON).
+ * @param {number}  [opts.minzoom=4]  Minimum zoom for every layer.
+ * @param {*}       [opts.filter]     Optional MapLibre filter applied to all four.
+ * @returns {Array<object>} Layer specs in paint order.
+ */
+export function settlementPerimeterLayers({
+  t,
+  source,
+  idPrefix,
+  sourceLayer,
+  minzoom = 4,
+  filter,
+}) {
+  const base = (extra) => {
+    const spec = { source, minzoom, layout: ROUND_CAPS };
+    if (sourceLayer) spec['source-layer'] = sourceLayer;
+    if (filter) spec.filter = filter;
+    return spec;
+  };
+  return [
+    {
+      ...base(),
+      id: `${idPrefix}_glow_outer`,
+      type: 'line',
+      paint: {
+        'line-color': t.settlementGlowOuter,
+        'line-width': casingWidth(INLINE_WIDTHS, GLOW_OUTER_EXTRA),
+        'line-blur': 5.0,
+      },
+    },
+    {
+      ...base(),
+      id: `${idPrefix}_glow_inner`,
+      type: 'line',
+      paint: {
+        'line-color': t.settlementGlow,
+        'line-width': casingWidth(INLINE_WIDTHS, GLOW_INNER_EXTRA),
+        'line-blur': 2.0,
+      },
+    },
+    {
+      ...base(),
+      id: `${idPrefix}_casing`,
+      type: 'line',
+      paint: {
+        'line-color': t.settlementCasing,
+        'line-width': casingWidth(INLINE_WIDTHS, CASING_EXTRA),
+        'line-opacity': 0.95,
+      },
+    },
+    {
+      ...base(),
+      id: `${idPrefix}_inline`,
+      type: 'line',
+      paint: {
+        'line-color': t.settlementInline,
+        'line-width': expZoom(INLINE_WIDTHS),
+      },
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Point-ring geometry — fallback frame for polygon-less small settlements.
 // ---------------------------------------------------------------------------
 //
@@ -375,52 +457,11 @@ export function settlementOutlineLayers(t) {
     // same glow → casing → inline treatment as the landuse outline, so a
     // supplemented place reads identically to every other settlement
     // (outlined по периметру, not a synthetic circle).
-    {
-      id: 'settlement_supplement_glow_outer',
-      type: 'line',
+    ...settlementPerimeterLayers({
+      t,
       source: SETTLEMENTS_SUPPLEMENT_SOURCE,
+      idPrefix: 'settlement_supplement',
       minzoom: 4,
-      layout: ROUND_CAPS,
-      paint: {
-        'line-color': t.settlementGlowOuter,
-        'line-width': casingWidth(INLINE_WIDTHS, GLOW_OUTER_EXTRA),
-        'line-blur': 5.0,
-      },
-    },
-    {
-      id: 'settlement_supplement_glow_inner',
-      type: 'line',
-      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
-      minzoom: 4,
-      layout: ROUND_CAPS,
-      paint: {
-        'line-color': t.settlementGlow,
-        'line-width': casingWidth(INLINE_WIDTHS, GLOW_INNER_EXTRA),
-        'line-blur': 2.0,
-      },
-    },
-    {
-      id: 'settlement_supplement_casing',
-      type: 'line',
-      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
-      minzoom: 4,
-      layout: ROUND_CAPS,
-      paint: {
-        'line-color': t.settlementCasing,
-        'line-width': casingWidth(INLINE_WIDTHS, CASING_EXTRA),
-        'line-opacity': 0.95,
-      },
-    },
-    {
-      id: 'settlement_supplement_inline',
-      type: 'line',
-      source: SETTLEMENTS_SUPPLEMENT_SOURCE,
-      minzoom: 4,
-      layout: ROUND_CAPS,
-      paint: {
-        'line-color': t.settlementInline,
-        'line-width': expZoom(INLINE_WIDTHS),
-      },
-    },
+    }),
   ];
 }
