@@ -28,6 +28,7 @@ import {
   SETTLEMENTS_SUPPLEMENT,
   SETTLEMENTS_SUPPLEMENT_SOURCE,
 } from './settlements-supplement.js';
+import { GRID_SOURCE_ID, gridSourceSpec } from './grid.js';
 
 /**
  * Build a `raster-dem` source spec, or return null if the config is empty.
@@ -113,6 +114,13 @@ export function composeSources({
     type: 'geojson',
     data: SETTLEMENTS_SUPPLEMENT,
   };
+
+  // Game-style coordinate grid — inline GeoJSON, only emitted when the
+  // `grid` feature flag is on so the battleship overlay's source +
+  // layers appear/disappear together on each style rebuild.
+  if (features.grid) {
+    sources[GRID_SOURCE_ID] = gridSourceSpec();
+  }
 
   // Primary DEM backs hillshade, 3D terrain, dynamic contour generation,
   // AND the native color-relief hypsometric tint. The latter is easy
@@ -268,6 +276,7 @@ export function sourceAvailability(sources) {
     hypsoRasterRampId: rasterRampId,
     bathymetry: 'bathymetry' in sources,
     ridges: 'ridges' in sources,
+    grid: GRID_SOURCE_ID in sources,
     carpathianOsm: 'carpathian-osm' in sources,
     // Forest leaf-type polygons live INSIDE carpathian-osm.pmtiles
     // (see tools/carpathian-profile.yml `forest_polygon` layer), so

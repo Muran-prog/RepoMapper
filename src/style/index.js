@@ -36,6 +36,10 @@
  *                                   passes (very negative sort-key, wins
  *                                   every collision; emitted last so it
  *                                   paints on top of everything)
+ *  23. Forest-mode markup         — flat-view-only accents (forestCover)
+ *  24. Coordinate grid            — game-style "battleship" reference
+ *                                   overlay (grid flag); emitted dead-last
+ *                                   so its lines + labels sit above all
  *
  * Land-only mask: layers 5–6 (hypso + hillshade) sit BELOW the water
  * polygons in layer 7, so the colour wash never bleeds into lakes or
@@ -94,6 +98,7 @@ import { hikingRouteLayers } from './hiking-routes.js';
 import { forestCoverLayers, forestCoverHiDetailLayers } from './forest-cover.js';
 import { forestMarkupLayers } from './forest-markup.js';
 import { hazardLayers } from './hazards.js';
+import { gridLayers } from './grid.js';
 import { getTokens } from './tokens.js';
 
 /**
@@ -303,6 +308,9 @@ export function composeLayers(opts = {}) {
     forestRoadsOrange = false,
     hazardousTerrain = false,
     hikingRoutes = false,
+
+    grid = false,
+    hasGridSource = false,
 
     reduceMotion = false,
   } = opts;
@@ -691,6 +699,15 @@ export function composeLayers(opts = {}) {
         forestRoadsOrange,
       }),
     );
+  }
+
+  // 24: Game-style coordinate grid — the "battleship" reference overlay.
+  //     Emitted dead-last so its bright lines + labels read on top of the
+  //     entire stack (basemap, relief, roads AND labels). Gated by both
+  //     the `grid` flag and the inline-GeoJSON source's presence, so the
+  //     composer never references a source that wasn't added.
+  if (grid && hasGridSource) {
+    stack.push(...gridLayers(t));
   }
 
   return stack;

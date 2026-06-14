@@ -36,6 +36,7 @@ export const SETTING_ICONS = Object.freeze({
   b3d: svg('<path d="M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 z"/><path d="M12 3 V21 M4 7.5 L12 12 L20 7.5"/>'),
   roadsOrangeBold: svg('<path d="M8 21 L10 3"/><path d="M16 21 L14 3"/><path d="M12 6 V8 M12 11 V13 M12 16 V18"/>'),
   settlementOutline: svg('<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2"/><rect x="9" y="9" width="6" height="6"/>'),
+  grid: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="1"/><path d="M9 3.5 V20.5 M15 3.5 V20.5 M3.5 9 H20.5 M3.5 15 H20.5"/>'),
 
   // ---- Relief: base ----------------------------------------------------
   flatHypso: svg('<rect x="3.5" y="6" width="17" height="12" rx="1"/><path d="M3.5 11 H20.5 M3.5 14 H20.5"/>'),

@@ -884,6 +884,18 @@ export const FEATURES = Object.freeze({
    * hazards, green forests — was already claimed).
    */
   settlementOutline: true,
+
+  /**
+   * Game-style coordinate grid — a toggleable "battleship" reference
+   * overlay (lettered columns A–J, numbered rows 1–7) drawn over the
+   * Ukrainian extent. Pure-geometry, network-free; see src/style/grid.js.
+   *
+   * Default OFF — it's an opt-in tactical aid, surfaced through the
+   * «Координатная сетка» toggle in the Layers panel. The user's choice
+   * persists under `cart:features:grid` so an ON decision survives a
+   * reload. Off → no source, no layers (silent no-op).
+   */
+  grid: false,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */

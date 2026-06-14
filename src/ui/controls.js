@@ -166,6 +166,9 @@ const CARPATHIAN_TRAILS_PREF_KEY = 'cart:features:carpathianTrails';
 // Default ON; persists so a user who turns the heavy orange look off
 // doesn't see it return on every reload.
 const ROADS_ORANGE_BOLD_PREF_KEY = 'cart:features:roadsOrangeBold';
+// Game-style coordinate grid — off by default; persist an ON choice so the
+// battleship overlay survives a reload.
+const GRID_PREF_KEY = 'cart:features:grid';
 // Forest-mode markup accents — independent sub-toggles that only act
 // while forestCover is on. They persist alongside the forestCover choice
 // so a user's customised forest view survives a reload. Keyed by feature
@@ -666,6 +669,18 @@ function renderLayersPanelBody() {
         <div class="rows">
           ${richRow({ ctl: 'roadsOrangeBold', title: 'Выделенные дороги', desc: 'Утолщённые главные дороги с заливкой и обводкой', rowAttr: 'data-ctl-row="roadsOrangeBold"' })}
           ${richRow({ ctl: 'settlementOutline', title: 'Контуры населённых пунктов', desc: 'Заметная рамка вокруг сёл, посёлков и городов', rowAttr: 'data-ctl-row="settlementOutline"' })}
+        </div>
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'layers-grid',
+      title: 'Координатная сетка',
+      meta: '1',
+      open: false,
+      body: `
+        ${groupNote('Тактическая сетка как в играх: столбцы — буквы (A–J), строки — цифры (1–7). Каждая клетка получает обозначение как в морском бое — A1, B7, J3.')}
+        <div class="rows">
+          ${richRow({ ctl: 'grid', title: 'Координатная сетка', desc: 'Чёткая игровая сетка с подписями клеток (A1, B7…) поверх карты', rowAttr: 'data-ctl-row="grid"' })}
         </div>
       `,
     })}
@@ -1274,6 +1289,9 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         ROADS_ORANGE_BOLD_PREF_KEY,
         FEATURES.roadsOrangeBold,
       ),
+      // Game-style coordinate grid — off by default; the user's ON choice
+      // persists under `cart:features:grid` so the overlay survives reload.
+      grid: loadBoolPref(GRID_PREF_KEY, FEATURES.grid),
     },
   };
   const effectiveProfile = () =>
@@ -1573,6 +1591,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       if (key === 'roadsOrangeBold') {
         saveBoolPref(ROADS_ORANGE_BOLD_PREF_KEY, el.checked);
       }
+      // Coordinate grid — persist the user's choice (default off) so an
+      // ON decision restores the battleship overlay after a reload.
+      if (key === 'grid') {
+        saveBoolPref(GRID_PREF_KEY, el.checked);
+      }
       // Forest-mode markup accents — persist each independent sub-toggle
       // so a customised forest view survives a reload. The flags only
       // emit layers inside the forestCover block, so toggling them while
@@ -1612,6 +1635,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   wireToggle('carpathianTrails');
   wireToggle('settlementOutline');
   wireToggle('roadsOrangeBold');
+  wireToggle('grid');
 
   // ----- Forest-mode markup sub-panel ----------------------------------
   //
@@ -1650,6 +1674,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     'hazardousTerrain',
     'carpathianTrails',
     'roadsOrangeBold',
+    'grid',
   ];
   if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {
     rebuildStyle().catch(() => {
