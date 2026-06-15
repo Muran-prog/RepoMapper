@@ -32,6 +32,9 @@ const ICONS = {
   target: svg('<circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
   check: svg('<path d="M20 6 9 17l-5-5"/>'),
   marker: svg('<path d="M12 21s7-6.3 7-11a7 7 0 0 0-14 0c0 4.7 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/>'),
+  // Clipboard glyph — matches the status-bar "copy centre" button so the
+  // per-contour copy reads as the same affordance.
+  copy: svg('<rect x="7" y="7" width="11" height="13" rx="1.5"/><path d="M4.5 15.5H4A1.5 1.5 0 0 1 2.5 14V4A1.5 1.5 0 0 1 4 2.5h10A1.5 1.5 0 0 1 15.5 4v.5"/>'),
 };
 
 /** Escape a string for safe interpolation into HTML attributes / text. */
@@ -119,6 +122,7 @@ export function mountContourPanel({ engine, host }) {
         <div class="sc-item-head">
           <input class="sc-item-name" type="text" value="${esc(c.name)}" data-ctl="sc-name" aria-label="Название контура" maxlength="80">
           <div class="sc-item-tools">
+            <button type="button" class="sc-icon-btn" data-ctl="sc-copy" title="Скопировать координаты контура" aria-label="Скопировать координаты контура">${ICONS.copy}</button>
             <button type="button" class="sc-icon-btn" data-ctl="sc-flyto" title="Перелететь к контуру" aria-label="Перелететь к контуру">${ICONS.target}</button>
             <button type="button" class="sc-icon-btn" data-ctl="sc-visibility" title="${c.hidden ? 'Показать' : 'Скрыть'}" aria-label="${c.hidden ? 'Показать контур' : 'Скрыть контур'}" aria-pressed="${c.hidden ? 'true' : 'false'}">${c.hidden ? ICONS.eyeOff : ICONS.eye}</button>
             <button type="button" class="sc-icon-btn${c.editing ? ' is-active' : ''}" data-ctl="sc-edit" title="${c.editing ? 'Завершить правку' : 'Редактировать узлы'}" aria-label="Редактировать узлы" aria-pressed="${c.editing ? 'true' : 'false'}">${c.editing ? ICONS.check : ICONS.edit}</button>
@@ -176,12 +180,50 @@ export function mountContourPanel({ engine, host }) {
   // -------------------------------------------------------------------
   const itemId = (el) => el.closest('.sc-item')?.dataset.id;
 
+  // Copy a contour's vertex coordinates to the clipboard as newline-
+  // separated "lat, lon" lines (same 5-decimal format the node list and
+  // the rest of the UI use). Flashes a "✓" on the button to confirm,
+  // mirroring the status bar's copy-centre affordance. Falls back to a
+  // hidden textarea + execCommand when the Clipboard API is unavailable
+  // (e.g. non-secure context).
+  const copyFlashTimers = new WeakMap();
+  const copyContourCoords = async (id, btn) => {
+    const contour = engine.getContours().find((c) => c.id === id);
+    if (!contour) return;
+    const text = contour.coordinates
+      .map((ll) => `${ll[1].toFixed(5)}, ${ll[0].toFixed(5)}`)
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch { return; }
+    }
+    if (btn) {
+      btn.dataset.copied = '1';
+      clearTimeout(copyFlashTimers.get(btn));
+      copyFlashTimers.set(btn, setTimeout(() => {
+        delete btn.dataset.copied;
+      }, 1400));
+    }
+  };
+
   listEl?.addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-ctl]');
     if (!btn) return;
     const id = itemId(btn);
     if (!id) return;
     switch (btn.dataset.ctl) {
+      case 'sc-copy':
+        copyContourCoords(id, btn);
+        break;
       case 'sc-flyto':
         engine.flyTo(id);
         break;

@@ -970,6 +970,32 @@ export function createDrawEngine(map) {
     }
   };
 
+  // Click-authored vertex tools (line / segment / polygon) place points
+  // on discrete `click` events. MapLibre, however, only emits `click`
+  // when the pointer barely moves between mousedown and mouseup — any
+  // larger travel is classified as a pan and swallows the click (the
+  // map just slides instead of dropping a vertex). Users routinely
+  // press-and-slide slightly when "fixing" the cursor before clicking,
+  // so the tool would intermittently do nothing but pan. Disabling
+  // dragPan while one of these tools is armed guarantees every press
+  // resolves to a `click`, making vertex placement deterministic. Pan
+  // stays available via two-finger / keyboard and in select mode.
+  const CLICK_AUTHOR_TOOLS = new Set(['line', 'segment', 'polygon', 'marker', 'shape']);
+  const syncDragPan = () => {
+    if (state.enabled && CLICK_AUTHOR_TOOLS.has(state.tool)) {
+      map.dragPan?.disable?.();
+    } else if (map.__cartContourAuthoring) {
+      // The settlement-contour engine is mid-authoring and has its own
+      // dragPan suppression in force (it also needs deterministic
+      // clicks). It flips us to the passive `select` tool the moment it
+      // arms, which would otherwise land us in the `else` below and
+      // re-enable pan — re-breaking contour drawing. Leave dragPan
+      // exactly as the contour engine set it.
+    } else {
+      map.dragPan?.enable?.();
+    }
+  };
+
   // -------------------------------------------------------------------
   // Map event wiring. One listener per map event; the tool dispatcher
   // (`runTool`) reads `state.tool` and routes to the right handler.
@@ -1248,6 +1274,7 @@ export function createDrawEngine(map) {
     syncPencilLifecycle();
     syncEraserLifecycle();
     syncDoubleClickZoom();
+    syncDragPan();
     return true;
   };
 
@@ -1299,6 +1326,7 @@ export function createDrawEngine(map) {
     syncPencilLifecycle();
     syncEraserLifecycle();
     syncDoubleClickZoom();
+    syncDragPan();
   });
   window.addEventListener('keydown', onKeyDown);
 
@@ -1441,6 +1469,7 @@ export function createDrawEngine(map) {
     syncPencilLifecycle();
     syncEraserLifecycle();
     syncDoubleClickZoom();
+    syncDragPan();
     setLayerCursor();
     emit('enabled', true);
   };
@@ -1453,6 +1482,9 @@ export function createDrawEngine(map) {
     syncPencilLifecycle();
     syncEraserLifecycle();
     syncDoubleClickZoom();
+    // Re-enable pan unconditionally when the engine is paused so the
+    // map never gets stuck in a non-pannable state.
+    map.dragPan?.enable?.();
     setLayerCursor();
     rerender();
     emit('enabled', false);
@@ -1516,6 +1548,7 @@ export function createDrawEngine(map) {
     syncPencilLifecycle();
     syncEraserLifecycle();
     syncDoubleClickZoom();
+    syncDragPan();
     setLayerCursor();
     rerender();
     emit('tool', tool);

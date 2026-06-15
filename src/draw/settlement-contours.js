@@ -564,6 +564,39 @@ export function createSettlementContourEngine(map) {
     }
   };
 
+  // Authoring places vertices on discrete `click` events. MapLibre only
+  // fires `click` when the pointer barely moves between mousedown and
+  // mouseup — any larger travel is treated as a pan, which swallows the
+  // click and just slides the map (the reported bug: press-and-slide to
+  // "fix" the cursor before clicking does nothing but pan). Disabling
+  // dragPan during the draw mode guarantees every press resolves to a
+  // `click`, so vertex placement is deterministic. We snapshot and
+  // restore the prior setting so editing / idle keep normal panning,
+  // and so editing's own per-drag dragPan toggling isn't clobbered.
+  let dragPanWasEnabled = null;
+  const syncDrawPan = () => {
+    try {
+      if (state.mode === 'draw') {
+        if (dragPanWasEnabled === null) {
+          dragPanWasEnabled = !!map.dragPan?.isEnabled?.();
+        }
+        // Publish an authoring flag the freehand draw engine reads: when
+        // a contour arms, controls.js flips that engine to its passive
+        // `select` tool, whose own dragPan sync would otherwise re-enable
+        // pan and swallow our authoring clicks. The flag tells it to
+        // leave dragPan as we set it here.
+        map.__cartContourAuthoring = true;
+        map.dragPan?.disable?.();
+      } else if (dragPanWasEnabled !== null) {
+        map.__cartContourAuthoring = false;
+        if (dragPanWasEnabled) map.dragPan?.enable?.();
+        dragPanWasEnabled = null;
+      }
+    } catch {
+      /* gesture handler not ready */
+    }
+  };
+
   // -------------------------------------------------------------------
   // Authoring (mirrors the polyline tool + polygon auto-close).
   // -------------------------------------------------------------------
@@ -648,6 +681,7 @@ export function createSettlementContourEngine(map) {
     // to immediately re-arm for another.
     state.mode = 'idle';
     syncDoubleClickZoom();
+    syncDrawPan();
     applyCursor();
     renderOverlay();
     emitMode();
@@ -846,6 +880,7 @@ export function createSettlementContourEngine(map) {
     recolorLayers();
     applyCursor();
     syncDoubleClickZoom();
+    syncDrawPan();
     return true;
   };
   // One-shot `idle` latch. `idle` is the canonical "style fully settled"
@@ -912,6 +947,7 @@ export function createSettlementContourEngine(map) {
     state.mode = 'draw';
     state.draft = null;
     syncDoubleClickZoom();
+    syncDrawPan();
     applyCursor();
     renderOverlay();
     emitMode();
@@ -922,6 +958,7 @@ export function createSettlementContourEngine(map) {
     cancelDraft();
     state.mode = 'idle';
     syncDoubleClickZoom();
+    syncDrawPan();
     applyCursor();
     emitMode();
   }
@@ -1012,6 +1049,7 @@ export function createSettlementContourEngine(map) {
     if (state.mode !== 'idle') {
       state.mode = 'idle';
       syncDoubleClickZoom();
+      syncDrawPan();
     }
     state.draft = null;
     applyCursor();
@@ -1037,6 +1075,13 @@ export function createSettlementContourEngine(map) {
 
   function dispose() {
     flushPersist();
+    // Restore any gesture handlers we suspended for the draw mode so the
+    // map is never left non-pannable after the engine goes away.
+    if (state.mode === 'draw') {
+      state.mode = 'idle';
+      syncDoubleClickZoom();
+      syncDrawPan();
+    }
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onPageHide);
     map.off('click', onClick);

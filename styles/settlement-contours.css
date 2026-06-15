@@ -193,6 +193,18 @@
   color: var(--accent-fg);
   border-color: var(--accent);
 }
+/* Confirmed-copy state: swap the clipboard glyph for a ✓ tick in accent
+   green for 1.4 s — same affordance as the status bar's copy button. */
+.sc-icon-btn[data-copied="1"] { color: #2da356; }
+[data-theme="dark"] .sc-icon-btn[data-copied="1"] { color: #61d68f; }
+.sc-icon-btn[data-copied="1"] svg { display: none; }
+.sc-icon-btn[data-copied="1"]::after {
+  content: "✓";
+  font-size: 13px;
+  font-family: var(--sans);
+  font-weight: 700;
+  line-height: 1;
+}
 .sc-icon-btn.sc-danger:hover {
   color: #c4402f;
   border-color: color-mix(in srgb, #c4402f 40%, transparent);
