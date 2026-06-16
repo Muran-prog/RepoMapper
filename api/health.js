@@ -1,22 +1,30 @@
 /**
- * /api/health — Health check endpoint.
+ * GET /api/health — liveness + storage connectivity probe. No auth, no IP.
  */
 
 export default async function handler(req, res) {
-  const { dbGet } = await import('./lib/db.js');
-  const { setCORS, handleOptions, getClientIP, json } = await import('./lib/cors.js');
+  const cors = await import('./lib/cors.js');
+  const blob = await import('./lib/blob.js');
 
-  if (handleOptions(req, res)) return;
-  setCORS(req, res);
+  if (cors.handleOptions(req, res)) return;
+  cors.setCORS(req, res);
 
-  const ip = getClientIP(req);
   const start = Date.now();
+  let storage = 'unknown';
+  try {
+    await blob.blobPing();
+    storage = 'connected';
+  } catch (err) {
+    console.error('[health] storage error:', err.message);
+    storage = 'error';
+  }
 
-  let dbStatus = 'unknown';
-  try { await dbGet('meta_users'); dbStatus = 'connected'; } catch { dbStatus = 'error'; }
-
-  return json(res, 200, {
-    ok: true, status: 'healthy', ip, db: dbStatus,
-    latency: Date.now() - start, timestamp: Date.now(), version: '1.0.0',
+  return cors.json(res, 200, {
+    ok: storage === 'connected',
+    status: storage === 'connected' ? 'healthy' : 'degraded',
+    storage,
+    latency: Date.now() - start,
+    timestamp: Date.now(),
+    version: '2.0.0',
   });
 }

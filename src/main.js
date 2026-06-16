@@ -13,10 +13,27 @@ import { mountHUD } from './ui/hud.js';
 import { createPerfMonitor } from './perf/monitor.js';
 import { detectCaps, deriveProfile, watchViewport } from './device.js';
 import { FEATURES } from './config.js';
+import { ensureAuthenticated, installAuthWatcher } from './ui/auth-gate.js';
+import { flushNow } from './api/client.js';
 
 async function boot() {
   const root = document.getElementById('app');
   if (!root) throw new Error('#app container missing from DOM');
+
+  // ----- Authentication gate -------------------------------------------
+  // The map cannot be used without an account. Block here until the user
+  // is logged in; the map is not even created before this resolves.
+  root.dataset.state = 'auth';
+  const user = await ensureAuthenticated();
+  window.__cart_user = user;
+
+  // Re-show the gate if the session expires mid-session. We flush any
+  // queued edits with the restored session, then reload for a clean,
+  // fully-synchronised state — no edits are lost.
+  installAuthWatcher(async () => {
+    try { await flushNow(); } catch {}
+    window.location.reload();
+  });
 
   // Mark the app as booting so CSS can render the splash overlay.
   root.dataset.state = 'booting';

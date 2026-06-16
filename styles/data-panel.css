@@ -372,3 +372,42 @@
   background: #3c1a1a;
   color: #f28b82;
 }
+
+/* =====================================================================
+ *  Account block (added with the username/password account system).
+ * ===================================================================== */
+
+.data-account {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--hairline);
+  margin-bottom: 10px;
+}
+[data-theme="dark"] .data-account { background: rgba(255, 255, 255, 0.04); }
+
+.data-account-id { display: flex; align-items: center; gap: 10px; }
+.data-account-avatar {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-fg);
+}
+.data-account-avatar svg { width: 18px; height: 18px; }
+.data-account-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.data-account-label { font: 500 10.5px/1 var(--sans); color: var(--fg-muted); letter-spacing: .02em; }
+.data-account-name {
+  font: 600 14px/1.2 var(--sans); color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.data-btn-ghost {
+  background: transparent;
+  border: 1px solid var(--hairline);
+}
+.data-btn-ghost:hover:not(:disabled) { background: var(--accent-soft); }
+
+.data-pw-form { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.data-pw-form .data-input { width: 100%; box-sizing: border-box; }

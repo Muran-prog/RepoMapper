@@ -1,5 +1,10 @@
 /**
- * CORS + request helpers for Vercel serverless functions.
+ * HTTP helpers for the serverless API: CORS, body parsing, JSON responses.
+ *
+ * The app is served same-origin with the API on the Vercel deployment, so
+ * CORS is mostly a safety net. When it does apply (local dev, the legacy
+ * GitHub Pages mirror) we reflect a known origin and allow credentials so
+ * the session cookie can flow.
  */
 
 const ALLOWED_ORIGINS = [
@@ -7,22 +12,29 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8080',
   'http://localhost:3000',
   'http://127.0.0.1:8080',
+  'http://127.0.0.1:3000',
 ];
 
 export function setCORS(req, res) {
-  const origin = req.headers.origin || req.headers.referer || '';
+  const origin = req.headers.origin || '';
   const isAllowed =
-    ALLOWED_ORIGINS.some((o) => origin.startsWith(o)) ||
-    origin.includes('.vercel.app');
-  if (isAllowed) {
+    ALLOWED_ORIGINS.some((o) => origin === o) || /\.vercel\.app$/.test(safeHost(origin));
+  if (origin && isAllowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS[0]);
+    res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Client-IP, X-Forwarded-For');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
+}
+
+function safeHost(origin) {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return '';
+  }
 }
 
 export function handleOptions(req, res) {
@@ -34,20 +46,12 @@ export function handleOptions(req, res) {
   return false;
 }
 
-export function getClientIP(req) {
-  return (
-    req.headers['x-client-ip'] ||
-    (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
-    req.headers['x-real-ip'] ||
-    req.socket?.remoteAddress ||
-    'unknown'
-  );
-}
-
 export function parseBody(req) {
   try {
-    if (typeof req.body === 'string') return JSON.parse(req.body);
-    return req.body || {};
+    if (req.body == null) return {};
+    if (typeof req.body === 'string') return req.body ? JSON.parse(req.body) : {};
+    if (Buffer.isBuffer(req.body)) return JSON.parse(req.body.toString('utf8') || '{}');
+    return req.body;
   } catch {
     return {};
   }

@@ -1,0 +1,120 @@
+/* =====================================================================
+ *  Authentication gate — full-screen login / registration overlay.
+ *  Flat, monochrome, theme-aware (uses the shared design tokens).
+ * ===================================================================== */
+
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg-page);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: auth-fade var(--t-fast, 140ms) var(--ease-out, ease) both;
+}
+
+@keyframes auth-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* While the gate is up, hide the splash + keep the app inert behind it. */
+#app[data-auth-gate] .splash { display: none !important; }
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-lg);
+  padding: 28px 26px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.auth-head { display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; }
+.auth-logo { line-height: 0; }
+.auth-title { margin: 0; font: 600 19px/1.2 var(--sans); color: var(--fg); }
+.auth-sub { margin: 0; font: 400 12.5px/1.5 var(--sans); color: var(--fg-muted); }
+
+/* ---- Tabs ---- */
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--hairline);
+}
+.auth-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 10px 8px;
+  font: 600 13px/1 var(--sans);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--t-fast, 140ms), color var(--t-fast, 140ms);
+}
+.auth-tab + .auth-tab { border-left: 1px solid var(--hairline); }
+.auth-tab.is-active { background: var(--accent); color: var(--accent-fg); }
+.auth-tab:not(.is-active):hover { background: var(--accent-soft); color: var(--fg); }
+
+/* ---- Form ---- */
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-field { display: flex; flex-direction: column; gap: 5px; }
+.auth-field > span { font: 600 11.5px/1 var(--sans); color: var(--fg-soft); letter-spacing: .02em; }
+
+.auth-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  font: 400 14px/1.2 var(--sans);
+  color: var(--fg);
+  background: var(--bg-sunken);
+  border: 1px solid var(--hairline);
+  outline: none;
+  transition: border-color var(--t-fast, 140ms), box-shadow var(--t-fast, 140ms);
+}
+.auth-field input:focus { border-color: var(--accent); box-shadow: var(--ring); }
+.auth-field input:disabled { opacity: .6; }
+
+.auth-pass-wrap { position: relative; display: block; }
+.auth-pass-wrap input { padding-right: 38px; }
+.auth-pass-toggle {
+  position: absolute;
+  top: 50%; right: 6px;
+  transform: translateY(-50%);
+  border: 0; background: transparent;
+  font-size: 15px; line-height: 1;
+  padding: 4px 6px; cursor: pointer;
+  opacity: .6;
+}
+.auth-pass-toggle:hover { opacity: 1; }
+
+.auth-error {
+  display: none;
+  font: 500 12.5px/1.4 var(--sans);
+  color: #b00020;
+  background: color-mix(in srgb, #b00020 10%, transparent);
+  border: 1px solid color-mix(in srgb, #b00020 32%, transparent);
+  padding: 8px 10px;
+}
+.auth-error.is-visible { display: block; }
+[data-theme="dark"] .auth-error { color: #ff8a9c; }
+
+.auth-submit {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: 600 14px/1 var(--sans);
+  padding: 12px;
+  cursor: pointer;
+  transition: opacity var(--t-fast, 140ms), background var(--t-fast, 140ms);
+}
+.auth-submit:hover { background: var(--accent-strong); }
+.auth-submit:disabled, .auth-submit.is-busy { opacity: .6; cursor: progress; }
+
+.auth-foot { margin: 0; text-align: center; font: 400 11px/1.4 var(--sans); color: var(--fg-muted); }
