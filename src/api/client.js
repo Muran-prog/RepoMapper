@@ -1,12 +1,16 @@
 /**
- * API client — communicates with the RepoMapper backend.
+ * API client — talks to the account-based RepoMapper backend.
  *
- * Handles all server communication: sync, access control, export/import.
- * Implements automatic retries, offline queuing, and conflict resolution.
+ * Everything is keyed to the logged-in account via an HttpOnly session
+ * cookie (sent automatically with `credentials: 'include'`). There is no
+ * IP anywhere. All endpoints are same-origin on the Vercel deployment.
  *
- * The API base URL is determined at runtime:
- *   - Production: same origin (Vercel deployment)
- *   - Development: http://localhost:3000
+ * Responsibilities:
+ *   • auth        — register / login / logout / me / change password
+ *   • sync        — load / save / merge the account's data
+ *   • export/import
+ *   • resilience  — retries, offline queue, debounced writes
+ *   • events      — sync:* and auth:* notifications for the UI
  */
 
 // ---------------------------------------------------------------------------
@@ -15,16 +19,13 @@
 
 const API_BASE = (() => {
   if (typeof window === 'undefined') return '';
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') {
-    return `${window.location.protocol}//${host}:3000`;
-  }
+  // The API is always served from the same origin as the app (Vercel).
   return window.location.origin;
 })();
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // ms
-const SYNC_DEBOUNCE = 2000; // ms — debounce sync writes
+const SYNC_DEBOUNCE = 2000; // ms
 
 // ---------------------------------------------------------------------------
 // State
@@ -33,63 +34,54 @@ const SYNC_DEBOUNCE = 2000; // ms — debounce sync writes
 let _syncTimer = null;
 let _pendingSync = null;
 let _lastSyncTimestamp = 0;
-let _clientIP = null;
-let _listeners = new Set();
-let _online = navigator.onLine;
+let _currentUser = null;
+let _syncListeners = new Set();
+let _authListeners = new Set();
+let _online = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
-// Track online status
-window.addEventListener('online', () => {
-  _online = true;
-  _flushPendingSync();
-});
-window.addEventListener('offline', () => {
-  _online = false;
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { _online = true; _flushPendingSync(); });
+  window.addEventListener('offline', () => { _online = false; _notifySync('sync:offline', {}); });
+}
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+function _sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function _notifySync(event, data) {
+  for (const fn of _syncListeners) { try { fn(event, data); } catch (e) { console.error('[api] sync listener', e); } }
+}
+function _notifyAuth(event, data) {
+  for (const fn of _authListeners) { try { fn(event, data); } catch (e) { console.error('[api] auth listener', e); } }
+}
+
 async function _fetch(path, options = {}) {
   const url = `${API_BASE}${path}`;
-  const defaults = {
-    headers: { 'Content-Type': 'application/json' },
-  };
-  const merged = { ...defaults, ...options };
-  if (options.headers) {
-    merged.headers = { ...defaults.headers, ...options.headers };
-  }
+  const defaults = { headers: { 'Content-Type': 'application/json' }, credentials: 'include' };
+  const merged = { ...defaults, ...options, credentials: 'include' };
+  merged.headers = { ...defaults.headers, ...(options.headers || {}) };
 
+  let lastErr;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const res = await fetch(url, merged);
-      if (res.ok || res.status < 500) {
+      // 401 means the session is gone — surface it immediately (no retry).
+      if (res.status === 401) {
+        _currentUser = null;
+        _notifyAuth('auth:required', { path });
         return res;
       }
-      // Server error — retry
-      if (attempt < MAX_RETRIES) {
-        await _sleep(RETRY_DELAY * (attempt + 1));
-      }
+      if (res.ok || res.status < 500) return res;
+      if (attempt < MAX_RETRIES) await _sleep(RETRY_DELAY * (attempt + 1));
     } catch (err) {
+      lastErr = err;
       if (attempt >= MAX_RETRIES) throw err;
       await _sleep(RETRY_DELAY * (attempt + 1));
     }
   }
-  throw new Error(`API request failed after ${MAX_RETRIES} retries: ${path}`);
-}
-
-function _sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function _notify(event, data) {
-  for (const fn of _listeners) {
-    try {
-      fn(event, data);
-    } catch (e) {
-      console.error('[api] Listener error:', e);
-    }
-  }
+  throw lastErr || new Error(`API request failed: ${path}`);
 }
 
 async function _flushPendingSync() {
@@ -101,90 +93,128 @@ async function _flushPendingSync() {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Events
 // ---------------------------------------------------------------------------
 
-/**
- * Subscribe to sync events.
- * Events: 'sync:start', 'sync:done', 'sync:error', 'sync:conflict'
- */
-export function onSyncEvent(fn) {
-  _listeners.add(fn);
-  return () => _listeners.delete(fn);
+/** Subscribe to sync events: sync:start | sync:done | sync:error | sync:offline | sync:refresh */
+export function onSyncEvent(fn) { _syncListeners.add(fn); return () => _syncListeners.delete(fn); }
+
+/** Subscribe to auth events: auth:required | auth:login | auth:logout */
+export function onAuthEvent(fn) { _authListeners.add(fn); return () => _authListeners.delete(fn); }
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+export function getCurrentUser() { return _currentUser; }
+
+async function _authCall(path, payload) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    return { ok: false, error: 'Сеть недоступна. Проверьте подключение.' };
+  }
+  let body = {};
+  try { body = await res.json(); } catch {}
+  if (res.ok && body.ok) {
+    _currentUser = body.user || null;
+    return { ok: true, user: _currentUser };
+  }
+  return { ok: false, status: res.status, error: body.error || `Ошибка (${res.status})` };
 }
 
-/**
- * Get the client's IP as seen by the server.
- */
-export async function getMyIP() {
-  if (_clientIP) return _clientIP;
+export function register(username, password) {
+  return _authCall('/api/auth/register', { username, password });
+}
+
+export function login(username, password) {
+  return _authCall('/api/auth/login', { username, password });
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  return _authCall('/api/auth/password', { currentPassword, newPassword });
+}
+
+export async function logout(everywhere = false) {
   try {
-    const res = await _fetch('/api/health');
-    const data = await res.json();
-    _clientIP = data.ip;
-    return _clientIP;
+    await fetch(`${API_BASE}/api/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ everywhere }),
+    });
+  } catch {}
+  _currentUser = null;
+  _notifyAuth('auth:logout', {});
+  return true;
+}
+
+/** Returns the current user object, or null if not authenticated. */
+export async function fetchMe() {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+    if (!res.ok) { _currentUser = null; return null; }
+    const body = await res.json();
+    _currentUser = body.user || null;
+    return _currentUser;
   } catch {
     return null;
   }
 }
 
-/**
- * Load ALL data from the server for the current IP.
- * Returns { data, shared, access, timestamp }.
- */
+// ---------------------------------------------------------------------------
+// Sync
+// ---------------------------------------------------------------------------
+
+/** Load ALL data for the logged-in account. Returns the payload or null. */
 export async function loadFromServer() {
   try {
-    _notify('sync:start', { direction: 'pull' });
+    _notifySync('sync:start', { direction: 'pull' });
     const res = await _fetch('/api/sync');
+    if (res.status === 401) { _notifySync('sync:error', { status: 401 }); return null; }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      _notify('sync:error', err);
+      _notifySync('sync:error', err);
       return null;
     }
     const payload = await res.json();
     _lastSyncTimestamp = payload.timestamp;
-    _clientIP = payload.ip;
-    _notify('sync:done', { direction: 'pull', payload });
+    if (payload.user) _currentUser = payload.user;
+    _notifySync('sync:done', { direction: 'pull', payload });
     return payload;
   } catch (err) {
-    console.error('[api] loadFromServer error:', err);
-    _notify('sync:error', { message: err.message });
+    console.error('[api] loadFromServer:', err);
+    _notifySync('sync:error', { message: err.message });
     return null;
   }
 }
 
-/**
- * Save data to the server (full replace).
- * Accepts { features, prefs, settings, contours }.
- */
+/** Save a full snapshot to the server (replace). */
 export async function saveToServer(data) {
-  if (!_online) {
-    _pendingSync = data;
-    return false;
-  }
-
+  if (!_online) { _pendingSync = data; _notifySync('sync:offline', {}); return false; }
   try {
-    _notify('sync:start', { direction: 'push' });
-    const res = await _fetch('/api/sync', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    _notifySync('sync:start', { direction: 'push' });
+    const res = await _fetch('/api/sync', { method: 'POST', body: JSON.stringify(data) });
+    if (res.status === 401) { _pendingSync = data; _notifySync('sync:error', { status: 401 }); return false; }
     const payload = await res.json();
     _lastSyncTimestamp = payload.timestamp;
-    _notify('sync:done', { direction: 'push', payload });
-    return payload.ok;
+    _notifySync('sync:done', { direction: 'push', payload });
+    return !!payload.ok;
   } catch (err) {
-    console.error('[api] saveToServer error:', err);
+    console.error('[api] saveToServer:', err);
     _pendingSync = data;
-    _notify('sync:error', { message: err.message });
+    _notifySync('sync:error', { message: err.message });
     return false;
   }
 }
 
-/**
- * Debounced save — call this from the UI on every change.
- * Batches rapid updates into a single API call.
- */
+/** Debounced save — call on every change; batches rapid updates. */
 export function debouncedSave(data) {
   _pendingSync = data;
   if (_syncTimer) clearTimeout(_syncTimer);
@@ -198,84 +228,25 @@ export function debouncedSave(data) {
   }, SYNC_DEBOUNCE);
 }
 
-/**
- * Merge data with existing server data.
- */
+/** Flush any pending debounced write immediately (e.g. before unload). */
+export async function flushNow() {
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+  if (_pendingSync) {
+    const d = _pendingSync; _pendingSync = null;
+    return await saveToServer(d);
+  }
+  return true;
+}
+
+/** Merge data with existing server data (union features by id). */
 export async function mergeToServer(data) {
   try {
-    const res = await _fetch('/api/sync', {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    const res = await _fetch('/api/sync', { method: 'PUT', body: JSON.stringify(data) });
+    if (!res.ok) return false;
     return (await res.json()).ok;
   } catch (err) {
-    console.error('[api] mergeToServer error:', err);
+    console.error('[api] mergeToServer:', err);
     return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Access control
-// ---------------------------------------------------------------------------
-
-/**
- * Get current access configuration.
- */
-export async function getAccess() {
-  try {
-    const res = await _fetch('/api/access');
-    return await res.json();
-  } catch (err) {
-    console.error('[api] getAccess error:', err);
-    return null;
-  }
-}
-
-/**
- * Add an IP to the shared list.
- */
-export async function addSharedIP(ip) {
-  try {
-    const res = await _fetch('/api/access', {
-      method: 'POST',
-      body: JSON.stringify({ ip }),
-    });
-    return await res.json();
-  } catch (err) {
-    console.error('[api] addSharedIP error:', err);
-    return null;
-  }
-}
-
-/**
- * Remove an IP from the shared list.
- */
-export async function removeSharedIP(ip) {
-  try {
-    const res = await _fetch('/api/access', {
-      method: 'DELETE',
-      body: JSON.stringify({ ip }),
-    });
-    return await res.json();
-  } catch (err) {
-    console.error('[api] removeSharedIP error:', err);
-    return null;
-  }
-}
-
-/**
- * Replace the entire shared IP list.
- */
-export async function setSharedIPs(ips) {
-  try {
-    const res = await _fetch('/api/access', {
-      method: 'PUT',
-      body: JSON.stringify({ ips }),
-    });
-    return await res.json();
-  } catch (err) {
-    console.error('[api] setSharedIPs error:', err);
-    return null;
   }
 }
 
@@ -283,12 +254,10 @@ export async function setSharedIPs(ips) {
 // Export / Import
 // ---------------------------------------------------------------------------
 
-/**
- * Export all data as a downloadable JSON file.
- */
 export async function exportAllData() {
   try {
     const res = await _fetch('/api/export');
+    if (!res.ok) return false;
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -300,60 +269,47 @@ export async function exportAllData() {
     URL.revokeObjectURL(url);
     return true;
   } catch (err) {
-    console.error('[api] exportAllData error:', err);
+    console.error('[api] exportAllData:', err);
     return false;
   }
 }
 
-/**
- * Import data from a JSON file.
- * @param {object} data — Parsed JSON from the export file
- * @param {string} mode — 'replace' or 'merge'
- */
 export async function importAllData(data, mode = 'replace') {
   try {
-    const res = await _fetch('/api/import', {
-      method: 'POST',
-      body: JSON.stringify({ ...data, mode }),
-    });
+    const res = await _fetch('/api/import', { method: 'POST', body: JSON.stringify({ ...data, mode }) });
     return await res.json();
   } catch (err) {
-    console.error('[api] importAllData error:', err);
+    console.error('[api] importAllData:', err);
     return null;
   }
 }
 
-/**
- * Import data from a local File object.
- */
 export function importFromFile(file, mode = 'replace') {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target.result);
-        const result = await importAllData(data, mode);
-        resolve(result);
-      } catch (err) {
-        reject(new Error('Invalid JSON file'));
+        resolve(await importAllData(data, mode));
+      } catch {
+        reject(new Error('Некорректный JSON-файл'));
       }
     };
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
     reader.readAsText(file);
   });
 }
 
 // ---------------------------------------------------------------------------
-// Auto-sync on page visibility change
+// Auto-refresh on tab focus (keeps devices in sync)
 // ---------------------------------------------------------------------------
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && _online) {
-      // Reload data when tab becomes visible
-      loadFromServer().then((data) => {
-        if (data) _notify('sync:refresh', data);
-      });
+    if (document.visibilityState === 'visible' && _online && _currentUser) {
+      loadFromServer().then((data) => { if (data) _notifySync('sync:refresh', data); });
     }
   });
+  // Best-effort flush of pending writes when leaving the page.
+  window.addEventListener('pagehide', () => { flushNow(); });
 }

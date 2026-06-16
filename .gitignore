@@ -46,3 +46,4 @@ tools/planetiler.jar
 /[0-9]*.png
 /image.png
 /screenshot*.png
+.vercel/

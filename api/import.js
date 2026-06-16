@@ -1,85 +1,60 @@
 /**
- * /api/import — Import a previously exported data blob.
+ * POST /api/import — restore a previously exported data blob into the
+ * logged-in account.
+ *
+ * Body: an export object plus { mode: 'replace' | 'merge' }.
  */
 
 export default async function handler(req, res) {
-  const { dbGet, dbSet, userKey, accessKey, safeIP, registerUser, sanitiseFeatures, sanitisePrefs } = await import('./lib/db.js');
-  const { setCORS, handleOptions, getClientIP, parseBody, json, error } = await import('./lib/cors.js');
+  const cors = await import('./lib/cors.js');
+  const db = await import('./lib/db.js');
 
-  if (handleOptions(req, res)) return;
-  setCORS(req, res);
-  if (req.method !== 'POST') return error(res, 405, 'Method not allowed');
-
-  const ip = getClientIP(req);
-  await registerUser(ip);
+  if (cors.handleOptions(req, res)) return;
+  cors.setCORS(req, res);
+  if (req.method !== 'POST') return cors.error(res, 405, 'Method not allowed');
 
   try {
-    const body = parseBody(req);
-    if (!body.__repomapper_export) return error(res, 400, 'Invalid import format');
-    if (body.version !== 1) return error(res, 400, `Unsupported version: ${body.version}`);
+    const user = await db.authenticate(req);
+    if (!user) return cors.error(res, 401, 'Не авторизован');
 
-    const mode = body.mode || 'replace';
+    const body = cors.parseBody(req);
+    if (!body.__repomapper_export) return cors.error(res, 400, 'Неверный формат файла');
+    if (body.version !== 1) return cors.error(res, 400, `Неподдерживаемая версия: ${body.version}`);
+
     const data = body.data;
-    if (!data || typeof data !== 'object') return error(res, 400, 'Missing data object');
+    if (!data || typeof data !== 'object') return cors.error(res, 400, 'Отсутствует объект data');
 
-    const results = {};
+    const mode = body.mode === 'merge' ? 'merge' : 'replace';
+    const rec = await db.getUserData(user.userId);
+    const imported = [];
 
-    if (data.features) {
-      const features = sanitiseFeatures(data.features?.features || data.features || []);
-      if (mode === 'merge') {
-        const existing = (await dbGet(userKey(ip, 'features'))) || { version: 1, features: [] };
-        const merged = new Map();
-        for (const f of existing.features || []) merged.set(f.id || JSON.stringify(f.geometry), f);
-        for (const f of features) merged.set(f.id || JSON.stringify(f.geometry), f);
-        results.features = await dbSet(userKey(ip, 'features'), { version: 1, features: [...merged.values()], updatedAt: Date.now(), importedAt: Date.now() });
-      } else {
-        results.features = await dbSet(userKey(ip, 'features'), { version: 1, features, updatedAt: Date.now(), importedAt: Date.now() });
-      }
-    }
-
-    if (data.prefs) {
-      const prefs = sanitisePrefs(data.prefs);
-      if (prefs) {
-        if (mode === 'merge') {
-          const existing = (await dbGet(userKey(ip, 'prefs'))) || {};
-          results.prefs = await dbSet(userKey(ip, 'prefs'), { ...existing, ...prefs, updatedAt: Date.now() });
-        } else {
-          results.prefs = await dbSet(userKey(ip, 'prefs'), { ...prefs, updatedAt: Date.now() });
-        }
-      }
-    }
-
-    if (data.settings && typeof data.settings === 'object') {
-      if (mode === 'merge') {
-        const existing = (await dbGet(userKey(ip, 'settings'))) || {};
-        results.settings = await dbSet(userKey(ip, 'settings'), { ...existing, ...data.settings, updatedAt: Date.now() });
-      } else {
-        results.settings = await dbSet(userKey(ip, 'settings'), { ...data.settings, updatedAt: Date.now() });
-      }
-    }
-
-    if (data.contours && typeof data.contours === 'object') {
-      if (mode === 'merge') {
-        const existing = (await dbGet(userKey(ip, 'contours'))) || {};
-        results.contours = await dbSet(userKey(ip, 'contours'), { ...existing, ...data.contours, updatedAt: Date.now() });
-      } else {
-        results.contours = await dbSet(userKey(ip, 'contours'), { ...data.contours, updatedAt: Date.now() });
-      }
-    }
-
-    if (body.importAccess && body.access) {
-      const accessData = {
-        sharedWith: Array.isArray(body.access.sharedWith) ? body.access.sharedWith.map(safeIP).filter(i => i !== 'unknown') : [],
-        createdAt: body.access.createdAt || Date.now(),
-        updatedAt: Date.now(),
+    if (data.features !== undefined) {
+      const incoming = db.sanitiseFeatures(data.features);
+      rec.features = {
+        version: 1,
+        features: mode === 'merge'
+          ? db.mergeFeatures(rec.features?.features || [], incoming)
+          : incoming,
       };
-      results.access = await dbSet(accessKey(ip), accessData);
+      imported.push('features');
+    }
+    if (data.prefs) {
+      const prefs = db.sanitisePrefs(mode === 'merge' ? { ...(rec.prefs || {}), ...data.prefs } : data.prefs);
+      if (prefs) { rec.prefs = prefs; imported.push('prefs'); }
+    }
+    if (data.settings) {
+      const s = db.sanitiseJsonObject(mode === 'merge' ? { ...(rec.settings || {}), ...data.settings } : data.settings);
+      if (s) { rec.settings = s; imported.push('settings'); }
+    }
+    if (data.contours) {
+      const c = db.sanitiseJsonObject(mode === 'merge' ? { ...(rec.contours || {}), ...data.contours } : data.contours);
+      if (c) { rec.contours = c; imported.push('contours'); }
     }
 
-    const allOk = Object.values(results).every(Boolean);
-    return json(res, allOk ? 200 : 207, { ok: allOk, mode, imported: Object.keys(results), results, timestamp: Date.now() });
+    await db.saveUserData(user.userId, rec);
+    return cors.json(res, 200, { ok: true, mode, imported, timestamp: Date.now() });
   } catch (err) {
-    console.error('[import] Error:', err);
-    return error(res, 500, 'Import failed', err.message);
+    console.error('[import]', err);
+    return cors.error(res, 500, 'Import failed', err.message);
   }
 }

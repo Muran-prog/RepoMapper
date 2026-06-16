@@ -95,6 +95,9 @@
  *     sidebar primitives. */
 @import url("./settlement-contours.css");
 
-/* 14. Data management panel — sync, export/import, access control.
+/* 14. Data management panel — account, sync, export/import.
  *     Last panel module so it can inherit all primitives. */
 @import url("./data-panel.css");
+
+/* 15. Authentication gate — full-screen login / registration overlay. */
+@import url("./auth-gate.css");
