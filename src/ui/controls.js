@@ -46,6 +46,8 @@ import { mountInfoTips } from './info-tip.js';
 import { mountSettingsSearch } from './settings-search.js';
 import { accordionMarkup, installAccordions, revealRow } from './accordion.js';
 import { richRow, groupNote, sectionLede, divider, SETTING_ICONS } from './setting-icons.js';
+import { renderDataPanelBody, mountDataPanel, collectLocalState } from './data-panel.js';
+import { debouncedSave, onSyncEvent, loadFromServer } from '../api/client.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -92,6 +94,7 @@ const ICONS = {
   // 1.75-width vocabulary as every other relief glyph so the row
   // reads as a peer of the slope-warning / hillshade / hypso toggles.
   hazard: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20 L10 7 L13 12 L16 8 L21 20 Z"/><line x1="12" y1="13" x2="12" y2="17"/><circle cx="12" cy="19" r="0.6" fill="currentColor"/></svg>`,
+  database: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>`,
   sliders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>`,
   // Magnifier glyph for the settings-search panel. Square block vocabulary
   // (sharp corners) to match the redesigned block UI.
@@ -610,6 +613,7 @@ const SECTIONS = [
   { id: 'draw',     icon: 'draw',     title: 'Рисование' },
   { id: 'contours', icon: 'contour',  title: 'Контуры' },
   { id: 'settings', icon: 'sliders',  title: 'Настройки' },
+  { id: 'data',     icon: 'database', title: 'Данные' },
 ];
 
 /** Render the fixed activity rail (column 1). */
@@ -911,6 +915,7 @@ function renderSidebar(host) {
       ${sectionShell('draw',     renderDrawPanelBody(),     { title: 'Рисование', persistent: true })}
       ${sectionShell('contours', renderContourPanelBody(), { title: 'Контуры', persistent: true })}
       ${sectionShell('settings', renderSettingsPanelBody(), { title: 'Настройки' })}
+      ${sectionShell('data',     renderDataPanelBody(),     { title: 'Данные', persistent: true })}
     </div>
   `;
 }
@@ -1430,7 +1435,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     scrim,
     caps,
   });
-  ['search', 'layers', 'relief', 'hypso', 'places', 'draw', 'contours', 'settings'].forEach((id) =>
+  ['search', 'layers', 'relief', 'hypso', 'places', 'draw', 'contours', 'settings', 'data'].forEach((id) =>
     controller.register(id),
   );
   controller.install({ defaultId: 'layers' });
@@ -1785,6 +1790,12 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   // wiring is needed here — it re-reads the active theme on reinstall.
   installContourUI(map, panelsHost);
 
+  // ----- Data management panel ------------------------------------------
+  //
+  // Unified hub for export/import, access control and server sync.
+  // Mounts after draw so the draw engine reference is available.
+  installDataUI(map, panelsHost);
+
   // ----- Hypso subsystem ----------------------------------------------
   installHypsoUI(map, panelsHost, { caps, profile: effectiveProfile() });
 
@@ -2037,5 +2048,42 @@ function installDrawingUI(map, panelsHost, controller) {
     window.__cart_draw = engine;
     window.__cart_draw_panel = { unmount: unmountPanel, observer };
     window.__cart_draw_tooltip = { unmount: unmountTooltip };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Data management panel — export / import / access / sync
+// ---------------------------------------------------------------------------
+
+function installDataUI(map, panelsHost) {
+  const section = panelsHost.querySelector('.section[data-panel-id="data"]');
+  if (!section) return;
+
+  // Get the draw engine reference (idempotent factory)
+  const drawEngine = createDrawEngine(map);
+
+  // Mount the data panel and wire all its event handlers
+  const panelAPI = mountDataPanel(section, drawEngine);
+
+  // Hook into draw engine changes to auto-sync to server
+  if (drawEngine && drawEngine.on) {
+    drawEngine.on('change', () => {
+      const state = collectLocalState(drawEngine);
+      debouncedSave(state);
+    });
+  }
+
+  // Also sync on localStorage changes (settings, prefs, etc.)
+  window.addEventListener('storage', (e) => {
+    if (e.key && e.key.startsWith('cart:')) {
+      const state = collectLocalState(drawEngine);
+      debouncedSave(state);
+    }
+  });
+
+  // Expose for debugging
+  if (typeof window !== 'undefined') {
+    window.__cart_data_panel = panelAPI;
   }
 }
