@@ -64,6 +64,9 @@
 /* ---- Form ---- */
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .auth-field { display: flex; flex-direction: column; gap: 5px; }
+/* `hidden` must win over the flex display above (author display beats the
+ * UA [hidden] rule), otherwise the confirm field shows in Login mode. */
+.auth-field[hidden] { display: none; }
 .auth-field > span { font: 600 11.5px/1 var(--sans); color: var(--fg-soft); letter-spacing: .02em; }
 
 .auth-field input {
