@@ -25,7 +25,7 @@ const API_BASE = (() => {
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // ms
-const SYNC_DEBOUNCE = 2000; // ms
+const SYNC_DEBOUNCE = 800; // ms
 
 // ---------------------------------------------------------------------------
 // State
@@ -306,10 +306,15 @@ export function importFromFile(file, mode = 'replace') {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && _online && _currentUser) {
+    if (document.visibilityState === 'hidden') {
+      // The user is switching away (other tab / app / incognito window) —
+      // flush any pending debounced write NOW so nothing is left unsynced.
+      flushNow();
+    } else if (document.visibilityState === 'visible' && _online && _currentUser) {
       loadFromServer().then((data) => { if (data) _notifySync('sync:refresh', data); });
     }
   });
   // Best-effort flush of pending writes when leaving the page.
   window.addEventListener('pagehide', () => { flushNow(); });
+  window.addEventListener('beforeunload', () => { flushNow(); });
 }
