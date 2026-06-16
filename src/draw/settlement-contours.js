@@ -1069,6 +1069,54 @@ export function createSettlementContourEngine(map) {
     };
   }
 
+  /**
+   * Replace the entire contour set with `features` (an array of GeoJSON
+   * polygon Features, or a `{ features: [...] }` collection). Used to apply
+   * authoritative server state on login / refresh so contours appear on the
+   * map immediately — without a page reload — and so the in-memory state and
+   * the persisted blob can never diverge (which previously let the unload
+   * flush clobber freshly-synced contours).
+   */
+  function replaceAll(features) {
+    const list = Array.isArray(features)
+      ? features
+      : Array.isArray(features?.features)
+        ? features.features
+        : [];
+
+    state.contours.clear();
+    state.order = [];
+    state.editingId = null;
+    if (state.mode !== 'idle') {
+      state.mode = 'idle';
+      syncDoubleClickZoom();
+      syncDrawPan();
+    }
+    state.draft = null;
+
+    for (const f of list) {
+      if (!isValidContour(f)) continue;
+      const id = typeof f.id === 'string' && f.id ? f.id : nextId();
+      const feature = clone(f);
+      feature.id = id;
+      feature.properties = {
+        kind: KIND,
+        name: feature.properties?.name ?? `Контур ${state.order.length + 1}`,
+        hidden: feature.properties?.hidden === true,
+        createdAt: feature.properties?.createdAt ?? Date.now(),
+      };
+      state.contours.set(id, feature);
+      state.order.push(id);
+    }
+
+    applyCursor();
+    ensureLayers();
+    renderAll();
+    flushPersist();
+    emitChange();
+    emitMode();
+  }
+
   // Flush any pending debounced save before the page goes away so a
   // contour drawn moments before a reload / tab close isn't lost.
   const onPageHide = () => flushPersist();
@@ -1156,6 +1204,7 @@ export function createSettlementContourEngine(map) {
     renameContour,
     flyTo,
     clearAll,
+    replaceAll,
     exportGeoJSON,
     dispose,
   };

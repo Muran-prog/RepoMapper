@@ -21,6 +21,7 @@ yarn-error.log*
 
 # Local tooling (none used by Cart itself, but reserved for future add-ons)
 node_modules/
+.vercel/
 .parcel-cache/
 .cache/
 dist/
