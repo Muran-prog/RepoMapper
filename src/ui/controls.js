@@ -46,7 +46,8 @@ import { mountInfoTips } from './info-tip.js';
 import { mountSettingsSearch } from './settings-search.js';
 import { accordionMarkup, installAccordions, revealRow } from './accordion.js';
 import { richRow, groupNote, sectionLede, divider, SETTING_ICONS } from './setting-icons.js';
-import { renderDataPanelBody, mountDataPanel, collectLocalState } from './data-panel.js';
+import { renderDataPanelBody, mountDataPanel, collectLocalState, isApplyingServerData } from './data-panel.js';
+import { installLocalWriteBus } from '../api/local-bus.js';
 import { debouncedSave, onSyncEvent, loadFromServer } from '../api/client.js';
 
 // ---------------------------------------------------------------------------
@@ -2060,27 +2061,47 @@ function installDataUI(map, panelsHost) {
   const section = panelsHost.querySelector('.section[data-panel-id="data"]');
   if (!section) return;
 
-  // Get the draw engine reference (idempotent factory)
+  // Make same-tab localStorage writes observable (settings / prefs / hypso /
+  // contours). The native `storage` event only fires in OTHER tabs, so
+  // without this every same-tab change was persisted locally but never
+  // synced — the root cause of "synced" data vanishing on another device.
+  installLocalWriteBus();
+
+  // Idempotent factories — these return the same instances the drawing and
+  // contour UIs already mounted.
   const drawEngine = createDrawEngine(map);
+  const contourEngine = createSettlementContourEngine(map);
 
-  // Mount the data panel and wire all its event handlers
-  const panelAPI = mountDataPanel(section, drawEngine);
+  // Mount the data panel and wire all its event handlers. The contour engine
+  // is passed so server data is applied live and collected authoritatively.
+  const panelAPI = mountDataPanel(section, drawEngine, contourEngine);
 
-  // Hook into draw engine changes to auto-sync to server
+  // A single debounced push of the full local snapshot. Skipped while we are
+  // applying server data so a pull never echoes straight back as a push.
+  const triggerSync = () => {
+    if (isApplyingServerData()) return;
+    debouncedSave(collectLocalState(drawEngine, contourEngine));
+  };
+
+  // Auto-sync: freehand draw engine changes (markers, lines, shapes…).
   if (drawEngine && drawEngine.on) {
-    drawEngine.on('change', () => {
-      const state = collectLocalState(drawEngine);
-      debouncedSave(state);
-    });
+    drawEngine.on('change', triggerSync);
   }
 
-  // Also sync on localStorage changes (settings, prefs, etc.)
-  window.addEventListener('storage', (e) => {
-    if (e.key && e.key.startsWith('cart:')) {
-      const state = collectLocalState(drawEngine);
-      debouncedSave(state);
-    }
-  });
+  // Auto-sync: manual settlement-contour changes. This is the path that was
+  // missing entirely — contours only ever touched localStorage before.
+  if (contourEngine && contourEngine.on) {
+    contourEngine.on('change', triggerSync);
+  }
+
+  // Auto-sync on localStorage changes for everything else (UI prefs, map
+  // mode, hypso prefs). `storage` covers OTHER tabs; `cart:local-write`
+  // (from local-bus) covers THIS tab, which `storage` never reports.
+  const onLocalChange = (key) => {
+    if (key && (key === 'cart:*' || key.startsWith('cart:'))) triggerSync();
+  };
+  window.addEventListener('storage', (e) => onLocalChange(e.key));
+  window.addEventListener('cart:local-write', (e) => onLocalChange(e.detail?.key));
 
   // Expose for debugging
   if (typeof window !== 'undefined') {
