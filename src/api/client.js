@@ -238,6 +238,51 @@ export async function flushNow() {
   return true;
 }
 
+/**
+ * Flush the pending write on page unload — RELIABLY.
+ *
+ * A normal `fetch()` started from `pagehide` / `beforeunload` / a hidden
+ * `visibilitychange` is routinely cancelled when the browser tears the page
+ * down, so the last edit before closing a tab could silently never reach the
+ * server. `navigator.sendBeacon()` is the platform primitive made for exactly
+ * this: the request is handed to the browser and guaranteed to be sent even
+ * after the page is gone. It is POST-only and same-origin here, so the session
+ * cookie rides along automatically and no CORS preflight is involved.
+ *
+ * Falls back to `fetch(..., { keepalive: true })` (also unload-survivable)
+ * when sendBeacon is unavailable or refuses the payload (e.g. size cap).
+ */
+export function flushBeacon() {
+  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+  if (!_pendingSync) return true;
+  const data = _pendingSync;
+  const url = `${API_BASE}/api/sync`;
+  const body = JSON.stringify(data);
+
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' });
+      if (navigator.sendBeacon(url, blob)) { _pendingSync = null; return true; }
+    }
+  } catch { /* fall through to keepalive fetch */ }
+
+  // sendBeacon unavailable or rejected the payload — try a keepalive fetch,
+  // which is also allowed to outlive the document.
+  try {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body,
+      keepalive: true,
+    });
+    _pendingSync = null;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Merge data with existing server data (union features by id). */
 export async function mergeToServer(data) {
   try {
@@ -307,14 +352,16 @@ export function importFromFile(file, mode = 'replace') {
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      // The user is switching away (other tab / app / incognito window) —
-      // flush any pending debounced write NOW so nothing is left unsynced.
-      flushNow();
+      // The user is switching away (other tab / app / closing the tab) — this
+      // is the LAST reliable moment to persist, so use the beacon transport
+      // that survives page teardown. `hidden` fires before `pagehide` on a
+      // real close, so this is the primary save-on-exit path.
+      flushBeacon();
     } else if (document.visibilityState === 'visible' && _online && _currentUser) {
       loadFromServer().then((data) => { if (data) _notifySync('sync:refresh', data); });
     }
   });
-  // Best-effort flush of pending writes when leaving the page.
-  window.addEventListener('pagehide', () => { flushNow(); });
-  window.addEventListener('beforeunload', () => { flushNow(); });
+  // Backstops for the actual unload, both using the unload-survivable beacon.
+  window.addEventListener('pagehide', () => { flushBeacon(); });
+  window.addEventListener('beforeunload', () => { flushBeacon(); });
 }
