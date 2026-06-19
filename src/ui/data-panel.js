@@ -13,6 +13,7 @@ import {
   loadFromServer,
   exportAllData,
   importFromFile,
+  importAllData,
   onSyncEvent,
   getCurrentUser,
   logout,
@@ -112,11 +113,57 @@ export function renderDataPanelBody() {
             <input type="file" id="data-import-file" accept=".json" style="display:none" />
           </div>
           <div class="data-status" id="data-export-status"></div>
+
+          <!-- Per-category export / import -->
+          <details class="data-subsection" id="data-scope-wrap">
+            <summary class="data-subsection-title">По категориям отдельно</summary>
+            <div class="data-subsection-body">
+              <p class="data-hint">
+                Экспорт или импорт только выбранной категории — например, только
+                рисование или только контуры.
+              </p>
+              <div class="data-import-options">
+                <label class="data-radio">
+                  <input type="radio" name="scope-import-mode" value="replace" checked />
+                  Замена категории
+                </label>
+                <label class="data-radio">
+                  <input type="radio" name="scope-import-mode" value="merge" />
+                  Объединение
+                </label>
+              </div>
+              ${EXPORT_SCOPES.map((s) => `
+                <div class="data-scope-row" data-scope="${s.id}">
+                  <span class="data-scope-name">${s.label}</span>
+                  <div class="data-scope-actions">
+                    <button type="button" class="data-btn data-btn-ghost data-scope-btn" data-act="export"
+                            title="Экспорт: ${s.label}">${ICONS.download} Экспорт</button>
+                    <label class="data-btn data-btn-ghost data-scope-btn" data-act="import"
+                           title="Импорт: ${s.label}">${ICONS.upload} Импорт
+                      <input type="file" accept=".json,.geojson" data-act="import" hidden />
+                    </label>
+                  </div>
+                </div>
+              `).join('')}
+              <div class="data-status" id="data-scope-status"></div>
+            </div>
+          </details>
         </div>
       </details>
     </div>
   `;
 }
+
+/**
+ * The per-category export/import scopes. Each maps to a subset of the
+ * account's data fields so a user can move just their drawings, just their
+ * contours, or just their settings between accounts / backups.
+ */
+const EXPORT_SCOPES = [
+  { id: 'drawing', label: 'Рисование', fields: ['features', 'prefs'] },
+  { id: 'contours', label: 'Контуры', fields: ['contours'] },
+  { id: 'settings', label: 'Настройки', fields: ['settings'] },
+];
 
 // ---------------------------------------------------------------------------
 // Panel mount (event wiring)
@@ -262,11 +309,122 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
     else updateSyncUI('error');
   });
 
+  // ---- Per-category export / import ----
+  const scopeWrap = host.querySelector('#data-scope-wrap');
+  if (scopeWrap) {
+    const scopeStatus = host.querySelector('#data-scope-status');
+    const scopeMode = () =>
+      host.querySelector('input[name="scope-import-mode"]:checked')?.value || 'replace';
+
+    // Export — delegated click on the per-row "Экспорт" buttons.
+    scopeWrap.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act="export"]');
+      if (!btn) return;
+      const scope = scopeFor(btn);
+      if (!scope) return;
+      btn.disabled = true;
+      showStatus(scopeStatus, `Экспорт «${scope.label}»…`, 'info');
+      try {
+        const ok = await exportScope(scope);
+        showStatus(scopeStatus, ok ? `«${scope.label}» — экспортировано!` : 'Нет данных для экспорта',
+          ok ? 'success' : 'error');
+      } catch (err) {
+        showStatus(scopeStatus, `Ошибка: ${err.message}`, 'error');
+      }
+      btn.disabled = false;
+    });
+
+    // Import — delegated change on the per-row hidden file inputs.
+    scopeWrap.addEventListener('change', async (e) => {
+      const input = e.target.closest('input[type="file"][data-act="import"]');
+      if (!input) return;
+      const file = input.files?.[0];
+      const scope = scopeFor(input);
+      if (!file || !scope) return;
+      showStatus(scopeStatus, `Импорт «${scope.label}»…`, 'info');
+      try {
+        await importScope(file, scope, scopeMode(), drawEngine, contourEngine);
+        showStatus(scopeStatus, `«${scope.label}» — импортировано!`, 'success');
+      } catch (err) {
+        showStatus(scopeStatus, `Ошибка: ${err.message}`, 'error');
+      }
+      input.value = '';
+    });
+  }
+
   // Initial load already happened at boot (initAccountState), and the engines
   // hydrated their features / contours from the account store as they were
   // constructed — so there is nothing to pull here.
 
   return { updateSyncUI, refreshAccount };
+}
+
+// ---------------------------------------------------------------------------
+// Per-category export / import
+// ---------------------------------------------------------------------------
+
+/** Resolve the EXPORT_SCOPES entry for an element inside a `[data-scope]` row. */
+function scopeFor(el) {
+  const id = el.closest('[data-scope]')?.dataset.scope;
+  return EXPORT_SCOPES.find((s) => s.id === id) || null;
+}
+
+/** Download only one category's data as a re-importable export file. */
+async function exportScope(scope) {
+  const payload = await loadFromServer();
+  if (!payload?.data) return false;
+  const data = {};
+  for (const f of scope.fields) {
+    if (payload.data[f] != null) data[f] = payload.data[f];
+  }
+  if (!Object.keys(data).length) return false;
+
+  const envelope = {
+    __repomapper_export: true,
+    version: 1,
+    scope: scope.id,
+    exportedAt: new Date().toISOString(),
+    account: payload.user || null,
+    data,
+  };
+  const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `repomapper-${scope.id}-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return true;
+}
+
+/** Import only one category from a file, leaving the other categories intact. */
+async function importScope(file, scope, mode, drawEngine, contourEngine) {
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    throw new Error('Некорректный JSON-файл');
+  }
+  if (!parsed || !parsed.__repomapper_export) throw new Error('Неверный формат файла');
+
+  const src = parsed.data || {};
+  const data = {};
+  for (const f of scope.fields) {
+    if (src[f] != null) data[f] = src[f];
+  }
+  if (!Object.keys(data).length) throw new Error('В файле нет данных этой категории');
+
+  // /api/import only touches the fields present in `data`, so the other
+  // categories are left untouched regardless of replace/merge.
+  const res = await importAllData({ __repomapper_export: true, version: 1, data }, mode);
+  if (!res?.ok) throw new Error(res?.error || 'Не удалось импортировать');
+
+  // Re-pull and apply so the imported category shows up live.
+  const fresh = await loadFromServer();
+  if (fresh) applyRemote(fresh, { drawEngine, contourEngine });
+  return res;
 }
 
 // ---------------------------------------------------------------------------

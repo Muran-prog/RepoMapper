@@ -336,6 +336,64 @@
   color: var(--text-2, #aaa);
 }
 
+/* ---- Per-category (scoped) export / import ---- */
+
+.data-subsection {
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
+  border-radius: 6px;
+  overflow: hidden;
+}
+[data-theme="dark"] .data-subsection {
+  border-color: rgba(255,255,255,0.08);
+}
+.data-subsection-title {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-2, #555);
+  background: var(--surface-1, #fafafa);
+}
+.data-subsection[open] > .data-subsection-title {
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.08));
+}
+[data-theme="dark"] .data-subsection-title {
+  background: var(--surface-1, #1e2228);
+  color: var(--text-2, #bbb);
+}
+.data-subsection-body {
+  padding: 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.data-scope-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--border, rgba(0,0,0,0.06));
+}
+.data-scope-row:first-of-type { border-top: 0; }
+[data-theme="dark"] .data-scope-row { border-top-color: rgba(255,255,255,0.06); }
+
+.data-scope-name {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-1, #333);
+}
+[data-theme="dark"] .data-scope-name { color: var(--text-1, #ddd); }
+
+.data-scope-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+.data-scope-btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+}
+.data-scope-btn svg { width: 0.82rem; height: 0.82rem; }
+
 /* ---- Status messages ---- */
 
 .data-status {
