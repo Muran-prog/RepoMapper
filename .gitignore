@@ -48,3 +48,4 @@ tools/planetiler.jar
 /image.png
 /screenshot*.png
 .vercel/
+.vercel

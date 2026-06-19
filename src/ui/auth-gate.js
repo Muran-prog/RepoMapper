@@ -155,7 +155,12 @@ function wire(el, resolve) {
   function teardown() {
     if (_overlayEl && _overlayEl.parentNode) _overlayEl.parentNode.removeChild(_overlayEl);
     _overlayEl = null;
-    _resolveActive = null;
+    // NOTE: do NOT clear `_resolveActive` here. teardown() runs *before*
+    // resolve() in the submit handler, and the resolve wrapper reads
+    // `_resolveActive` to fire the promise. Nulling it here made the boot
+    // promise never resolve → infinite loading after register/login (a
+    // reload "fixed" it only because fetchMe() then bypassed the overlay).
+    // The resolve wrapper clears `_resolveActive` itself once it has fired.
     const app = document.getElementById('app');
     if (app) app.removeAttribute('data-auth-gate');
   }
