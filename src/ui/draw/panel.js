@@ -265,20 +265,8 @@ export function renderDrawPanelBody() {
         <button type="button" class="draw-action" data-ctl="draw-delete" title="Удалить выбранный объект (Del)" aria-label="Удалить выбранный">${I.trash}<span>Удалить</span></button>
         <button type="button" class="draw-action draw-danger" data-ctl="draw-clear" title="Удалить все объекты" aria-label="Очистить всё">${I.broom}<span>Очистить всё</span></button>
       </div>
-      ${divider('Файл')}
-      <div class="draw-action-row">
-        <button type="button" class="draw-action draw-io" data-ctl="draw-export" title="Сохранить чертёж в файл GeoJSON" aria-label="Сохранить в GeoJSON">${I.download}<span>Сохранить в файл</span></button>
-        <label class="draw-action draw-io" title="Загрузить чертёж из файла GeoJSON" aria-label="Загрузить из GeoJSON">${I.upload}<span>Загрузить из файла</span>
-          <input type="file" accept=".json,.geojson,application/json,application/geo+json" data-ctl="draw-import-file" hidden>
-        </label>
-      </div>
     </div>
   `;
-}
-
-/** Inline labelled divider for the drawing panel (mirrors setting-icons). */
-function divider(label) {
-  return `<div class="rule-label"><span>${label}</span></div>`;
 }
 
 /**
@@ -450,39 +438,6 @@ export function mountDrawPanel({ engine, host }) {
   $('[data-ctl="draw-clear"]')?.addEventListener('click', () => {
     if (window.confirm('Очистить все нарисованные объекты? Это действие нельзя отменить после перезагрузки.')) {
       engine.clearAll();
-    }
-  });
-
-  // Export
-  $('[data-ctl="draw-export"]')?.addEventListener('click', () => {
-    const data = engine.exportGeoJSON();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/geo+json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cart-draw-${new Date().toISOString().slice(0, 10)}.geojson`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  });
-
-  // Import
-  const importInput = $('[data-ctl="draw-import-file"]');
-  importInput?.addEventListener('change', async () => {
-    const file = importInput.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const n = engine.importGeoJSON(parsed);
-      if (n === 0) {
-        window.alert('В файле не найдено валидных объектов GeoJSON.');
-      }
-    } catch (err) {
-      window.alert(`Не удалось прочитать файл: ${err?.message ?? err}`);
-    } finally {
-      importInput.value = '';
     }
   });
 
