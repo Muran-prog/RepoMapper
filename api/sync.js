@@ -60,8 +60,30 @@ async function handlePost(user, req, res, db, cors) {
     if (prefs) { rec.prefs = prefs; results.prefs = true; }
   }
   if (body.settings !== undefined) {
+    // Full settings replace — used by the import / full-restore path.
     const s = db.sanitiseJsonObject(body.settings);
     if (s) { rec.settings = s; results.settings = true; }
+  }
+  // Per-key settings patch/remove — the auto-sync path. Only the keys the
+  // device actually changed are sent, and they are merged into the existing
+  // `settings.kv` map instead of replacing it. This is what stops one device
+  // (e.g. flipping a layer toggle) from clobbering another device's unrelated
+  // settings — or, before fields were split out, its drawings.
+  if (body.settingsPatch !== undefined || body.settingsRemove !== undefined) {
+    const cur = (rec.settings && typeof rec.settings === 'object') ? rec.settings : {};
+    const kv = (cur.kv && typeof cur.kv === 'object') ? { ...cur.kv } : {};
+    if (body.settingsPatch && typeof body.settingsPatch === 'object') {
+      for (const [k, v] of Object.entries(body.settingsPatch)) {
+        if (typeof k === 'string' && typeof v === 'string') kv[k] = v;
+      }
+    }
+    if (Array.isArray(body.settingsRemove)) {
+      for (const k of body.settingsRemove) {
+        if (typeof k === 'string') delete kv[k];
+      }
+    }
+    const merged = db.sanitiseJsonObject({ ...cur, kv });
+    if (merged) { rec.settings = merged; results.settings = true; }
   }
   if (body.contours !== undefined) {
     const c = db.sanitiseJsonObject(body.contours);

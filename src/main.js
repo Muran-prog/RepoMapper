@@ -14,8 +14,7 @@ import { createPerfMonitor } from './perf/monitor.js';
 import { detectCaps, deriveProfile, watchViewport } from './device.js';
 import { FEATURES } from './config.js';
 import { ensureAuthenticated, installAuthWatcher } from './ui/auth-gate.js';
-import { flushNow } from './api/client.js';
-import { initAccountState } from './state/account-store.js';
+import { initAccountState, flushPending } from './state/account-store.js';
 
 async function boot() {
   const root = document.getElementById('app');
@@ -32,7 +31,7 @@ async function boot() {
   // queued edits with the restored session, then reload for a clean,
   // fully-synchronised state — no edits are lost.
   installAuthWatcher(async () => {
-    try { await flushNow(); } catch {}
+    try { await flushPending(); } catch {}
     window.location.reload();
   });
 

@@ -32,7 +32,7 @@
  * so their public APIs are unchanged — only the persistence target moved.
  */
 
-import { loadFromServer, saveToServer, debouncedSave } from '../api/client.js';
+import { loadFromServer, postSync, beaconSync, isOnline } from '../api/client.js';
 
 // ---------------------------------------------------------------------------
 // Routing — which kv keys map to which dedicated server field.
@@ -42,6 +42,12 @@ import { loadFromServer, saveToServer, debouncedSave } from '../api/client.js';
 const FEATURES_KEY = 'cart:draw:features:v1';
 const DRAW_PREFS_KEY = 'cart:draw:prefs:v1';
 const CONTOURS_KEY = 'cart:settlement-contours:v1';
+
+/** The three keys that map to dedicated, full-replace server fields. */
+const STRUCTURED_KEYS = new Set([FEATURES_KEY, DRAW_PREFS_KEY, CONTOURS_KEY]);
+
+/** Debounce window before a batch of edits is pushed to the server. */
+const FLUSH_DEBOUNCE_MS = 800;
 
 // ---------------------------------------------------------------------------
 // State
@@ -61,6 +67,20 @@ let _ready = false;
  * A counter (not a boolean) so nested suspensions compose safely.
  */
 let _suspend = 0;
+
+// --- Dirty tracking -------------------------------------------------------
+// We never push a full snapshot. Instead we track exactly which keys changed
+// since the last successful save and send ONLY those. That is what keeps one
+// device from clobbering another's untouched state: flipping a layer toggle
+// pushes just that one settings key, never the drawings or contours.
+
+/** kv keys with unsynced local changes. */
+let _dirty = new Set();
+/** Settings keys deleted locally and not yet removed on the server. */
+let _removed = new Set();
+
+let _flushTimer = null;
+let _inFlight = false;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -96,16 +116,30 @@ export const kv = {
     const next = String(value);
     if (_kv[key] === next) return; // no-op write → no needless server push
     _kv[key] = next;
-    schedulePersist();
+    _dirty.add(key);
+    _removed.delete(key);
+    scheduleFlush();
   },
   removeItem(key) {
     if (!(key in _kv)) return;
     delete _kv[key];
-    schedulePersist();
+    if (STRUCTURED_KEYS.has(key)) {
+      // A structured field cleared — push its (now default/empty) value.
+      _dirty.add(key);
+    } else {
+      // A settings key deleted — tell the server to drop it.
+      _dirty.delete(key);
+      _removed.add(key);
+    }
+    scheduleFlush();
   },
   clear() {
+    for (const key of Object.keys(_kv)) {
+      if (STRUCTURED_KEYS.has(key)) _dirty.add(key);
+      else _removed.add(key);
+    }
     _kv = Object.create(null);
-    schedulePersist();
+    scheduleFlush();
   },
 };
 
@@ -113,32 +147,56 @@ export const kv = {
 // Snapshot ↔ server mapping
 // ---------------------------------------------------------------------------
 
-/** Build the full server snapshot from the current in-memory kv. */
-function buildSnapshot() {
-  const settingsKv = {};
-  for (const key of Object.keys(_kv)) {
-    if (key === FEATURES_KEY || key === DRAW_PREFS_KEY || key === CONTOURS_KEY) continue;
-    settingsKv[key] = _kv[key];
+/**
+ * Build a PARTIAL server payload from the given dirty / removed key sets —
+ * only the structured fields that changed, plus a per-key settings patch and
+ * a list of removed settings keys. Untouched fields are simply absent, so the
+ * server never overwrites them.
+ */
+function buildPayload(dirty, removed) {
+  const payload = {};
+
+  if (dirty.has(FEATURES_KEY)) {
+    payload.features = parseOr(_kv[FEATURES_KEY], { version: 1, features: [] });
   }
-  return {
-    features: parseOr(_kv[FEATURES_KEY], { version: 1, features: [] }),
-    prefs: parseOr(_kv[DRAW_PREFS_KEY], null),
-    contours: parseOr(_kv[CONTOURS_KEY], null),
-    settings: { kv: settingsKv },
-  };
+  if (dirty.has(DRAW_PREFS_KEY)) {
+    const prefs = parseOr(_kv[DRAW_PREFS_KEY], null);
+    if (prefs) payload.prefs = prefs;
+  }
+  if (dirty.has(CONTOURS_KEY)) {
+    payload.contours = parseOr(_kv[CONTOURS_KEY], { version: 1, features: [] });
+  }
+
+  const patch = {};
+  for (const key of dirty) {
+    if (STRUCTURED_KEYS.has(key)) continue;
+    if (_kv[key] !== undefined) patch[key] = _kv[key];
+  }
+  if (Object.keys(patch).length) payload.settingsPatch = patch;
+  if (removed.size) payload.settingsRemove = [...removed];
+
+  return payload;
 }
 
-/** Populate `_kv` from a server `data` object (boot hydrate / remote apply). */
-function hydrateFromServer(data) {
+/**
+ * Populate `_kv` from a server `data` object (boot hydrate / remote apply).
+ *
+ * @param {object} data
+ * @param {boolean} [preserveDirty=false] When applying a remote refresh, keep
+ *   locally-changed-but-not-yet-saved keys instead of letting the server copy
+ *   overwrite them (otherwise a focus-refresh could drop a pending edit).
+ */
+function hydrateFromServer(data, preserveDirty = false) {
   if (!data || typeof data !== 'object') return;
+  const skip = (key) => preserveDirty && (_dirty.has(key) || _removed.has(key));
 
-  if (data.features && Array.isArray(data.features.features)) {
+  if (data.features && Array.isArray(data.features.features) && !skip(FEATURES_KEY)) {
     _kv[FEATURES_KEY] = JSON.stringify(data.features);
   }
-  if (data.prefs && typeof data.prefs === 'object') {
+  if (data.prefs && typeof data.prefs === 'object' && !skip(DRAW_PREFS_KEY)) {
     _kv[DRAW_PREFS_KEY] = JSON.stringify(data.prefs);
   }
-  if (data.contours && typeof data.contours === 'object') {
+  if (data.contours && typeof data.contours === 'object' && !skip(CONTOURS_KEY)) {
     _kv[CONTOURS_KEY] = JSON.stringify(data.contours);
   }
 
@@ -147,31 +205,64 @@ function hydrateFromServer(data) {
     if (settings.kv && typeof settings.kv === 'object') {
       // New format — a flat map of cart:* keys → stored strings.
       for (const [k, v] of Object.entries(settings.kv)) {
-        if (typeof v === 'string') _kv[k] = v;
+        if (typeof v === 'string' && !skip(k)) _kv[k] = v;
       }
     } else {
       // Legacy format — { uiPrefs, mapMode, hypsoPrefs }. Map it forward so
       // existing accounts keep their settings on first load after upgrade.
-      if (settings.uiPrefs) _kv['cart:ui:prefs:v1'] = JSON.stringify(settings.uiPrefs);
-      if (typeof settings.mapMode === 'string') _kv['cart:map-mode'] = settings.mapMode;
-      if (settings.hypsoPrefs) _kv['cart:hypso:prefs:v1'] = JSON.stringify(settings.hypsoPrefs);
+      if (settings.uiPrefs && !skip('cart:ui:prefs:v1')) _kv['cart:ui:prefs:v1'] = JSON.stringify(settings.uiPrefs);
+      if (typeof settings.mapMode === 'string' && !skip('cart:map-mode')) _kv['cart:map-mode'] = settings.mapMode;
+      if (settings.hypsoPrefs && !skip('cart:hypso:prefs:v1')) _kv['cart:hypso:prefs:v1'] = JSON.stringify(settings.hypsoPrefs);
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Persistence
+// Persistence — debounced, partial, success-aware.
 // ---------------------------------------------------------------------------
 
-function schedulePersist() {
+function scheduleFlush() {
   if (_suspend > 0 || !_ready) return;
-  debouncedSave(buildSnapshot());
+  if (_flushTimer) clearTimeout(_flushTimer);
+  _flushTimer = setTimeout(() => { _flushTimer = null; flush(); }, FLUSH_DEBOUNCE_MS);
 }
 
-/** Force an immediate (non-debounced) push of the current snapshot. */
-export async function persistNow() {
-  if (_suspend > 0) return false;
-  return saveToServer(buildSnapshot());
+/**
+ * Push the current dirty set to the server. Clears only the keys that were
+ * actually confirmed saved — anything changed mid-flight stays dirty and is
+ * picked up by the next flush. Never runs two pushes at once.
+ */
+async function flush() {
+  if (_suspend > 0 || !_ready || _inFlight) return;
+  if (!_dirty.size && !_removed.size) return;
+  if (!isOnline()) return; // wait for the 'online' event to retry
+
+  _inFlight = true;
+  const sentDirty = new Set(_dirty);
+  const sentRemoved = new Set(_removed);
+  let ok = false;
+  try {
+    const res = await postSync(buildPayload(sentDirty, sentRemoved));
+    ok = !!res.ok;
+  } catch {
+    ok = false;
+  }
+  _inFlight = false;
+
+  if (ok) {
+    for (const k of sentDirty) _dirty.delete(k);
+    for (const k of sentRemoved) _removed.delete(k);
+  }
+
+  // New edits arrived during the push, or it failed — try again soon.
+  if (_dirty.size || _removed.size) scheduleFlush();
+}
+
+/** Force an immediate flush and await it (used by the re-auth path). */
+export async function flushPending() {
+  if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  await flush();
+  return !_dirty.size && !_removed.size;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,10 +313,12 @@ function migrateAndClearLocalStorage() {
       // Only import drawings/contours if the account currently has none.
       if (featuresCount(_kv[key]) === 0 && featuresCount(val) > 0) {
         _kv[key] = val;
+        _dirty.add(key);
         imported = true;
       }
     } else if (!(key in _kv)) {
       _kv[key] = val;
+      _dirty.add(key);
       imported = true;
     }
   }
@@ -247,7 +340,7 @@ function seedFromLocalStorageReadOnly() {
   for (const key of listCartKeys(ls)) {
     try {
       const val = ls.getItem(key);
-      if (val != null && !(key in _kv)) _kv[key] = val;
+      if (val != null && !(key in _kv)) { _kv[key] = val; _dirty.add(key); }
     } catch { /* ignore */ }
   }
 }
@@ -286,11 +379,12 @@ export async function initAccountState() {
   }
 
   _ready = true;
+  installLifecycle();
 
-  // If migration pulled in legacy local data, push the merged snapshot now
-  // so the account reflects it immediately (don't wait for the next edit).
+  // If migration pulled in legacy local data, push it now (the migrated keys
+  // were marked dirty) so the account reflects it immediately.
   if (needsPersist) {
-    try { await persistNow(); } catch { /* will retry on next edit */ }
+    try { await flush(); } catch { /* will retry on next edit / online */ }
   }
 
   return true;
@@ -299,6 +393,36 @@ export async function initAccountState() {
 /** Has the account state finished its initial load? */
 export function isAccountStateReady() {
   return _ready;
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle — reconnect retry + reliable save-on-exit. Installed once, after
+// the first successful init, so these only ever fire for a ready store.
+// ---------------------------------------------------------------------------
+
+let _lifecycleInstalled = false;
+
+function installLifecycle() {
+  if (_lifecycleInstalled || typeof window === 'undefined') return;
+  _lifecycleInstalled = true;
+
+  // Came back online — retry whatever is still dirty.
+  window.addEventListener('online', () => { scheduleFlush(); });
+
+  // Save-on-exit. A hidden tab is the last reliable moment before a close, so
+  // beacon the pending dirty set then (beacon survives page teardown). pagehide
+  // / beforeunload are backstops. We do NOT clear the dirty set here: if the
+  // tab is merely being backgrounded the next flush is harmless, and if it is
+  // truly closing it no longer matters.
+  const beaconNow = () => {
+    if (!_dirty.size && !_removed.size) return;
+    beaconSync(buildPayload(_dirty, _removed));
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') beaconNow();
+  });
+  window.addEventListener('pagehide', beaconNow);
+  window.addEventListener('beforeunload', beaconNow);
 }
 
 // ---------------------------------------------------------------------------
@@ -321,24 +445,34 @@ export function applyRemote(payload, { drawEngine, contourEngine } = {}) {
 
   _suspend++;
   try {
-    hydrateFromServer(data);
+    // preserveDirty: never let an incoming refresh overwrite a key the user
+    // has changed locally but we haven't managed to save yet.
+    hydrateFromServer(data, true);
 
-    const feats = parseOr(_kv[FEATURES_KEY], null);
-    if (feats?.features && drawEngine?.importGeoJSON) {
-      try {
-        drawEngine.importGeoJSON({ type: 'FeatureCollection', features: feats.features });
-      } catch (e) { console.error('[account-store] apply features:', e); }
+    // Only push a field into its live engine if we didn't just preserve a
+    // local pending edit for it (otherwise we'd revert the user's own change).
+    if (!_dirty.has(FEATURES_KEY)) {
+      const feats = parseOr(_kv[FEATURES_KEY], null);
+      if (feats?.features && drawEngine?.importGeoJSON) {
+        try {
+          drawEngine.importGeoJSON({ type: 'FeatureCollection', features: feats.features });
+        } catch (e) { console.error('[account-store] apply features:', e); }
+      }
     }
 
-    const prefs = parseOr(_kv[DRAW_PREFS_KEY], null);
-    if (prefs && drawEngine?.setPrefs) {
-      try { drawEngine.setPrefs(prefs); } catch (e) { console.error('[account-store] apply prefs:', e); }
+    if (!_dirty.has(DRAW_PREFS_KEY)) {
+      const prefs = parseOr(_kv[DRAW_PREFS_KEY], null);
+      if (prefs && drawEngine?.setPrefs) {
+        try { drawEngine.setPrefs(prefs); } catch (e) { console.error('[account-store] apply prefs:', e); }
+      }
     }
 
-    const contours = parseOr(_kv[CONTOURS_KEY], null);
-    if (contours && contourEngine?.replaceAll) {
-      try { contourEngine.replaceAll(contours.features || contours); }
-      catch (e) { console.error('[account-store] apply contours:', e); }
+    if (!_dirty.has(CONTOURS_KEY)) {
+      const contours = parseOr(_kv[CONTOURS_KEY], null);
+      if (contours && contourEngine?.replaceAll) {
+        try { contourEngine.replaceAll(contours.features || contours); }
+        catch (e) { console.error('[account-store] apply contours:', e); }
+      }
     }
   } finally {
     _suspend--;

@@ -25,22 +25,24 @@ const API_BASE = (() => {
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // ms
-const SYNC_DEBOUNCE = 800; // ms
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
-let _syncTimer = null;
-let _pendingSync = null;
 let _lastSyncTimestamp = 0;
 let _currentUser = null;
 let _syncListeners = new Set();
 let _authListeners = new Set();
 let _online = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
+/** True when the browser reports a network connection. */
+export function isOnline() { return _online; }
+
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => { _online = true; _flushPendingSync(); });
+  // Reconnect handling (flushing queued writes) lives in the account store,
+  // which owns the dirty set; it listens for 'online' itself.
+  window.addEventListener('online', () => { _online = true; });
   window.addEventListener('offline', () => { _online = false; _notifySync('sync:offline', {}); });
 }
 
@@ -82,14 +84,6 @@ async function _fetch(path, options = {}) {
     }
   }
   throw lastErr || new Error(`API request failed: ${path}`);
-}
-
-async function _flushPendingSync() {
-  if (_pendingSync && _online) {
-    const data = _pendingSync;
-    _pendingSync = null;
-    await saveToServer(data);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -195,79 +189,65 @@ export async function loadFromServer() {
   }
 }
 
-/** Save a full snapshot to the server (replace). */
-export async function saveToServer(data) {
-  if (!_online) { _pendingSync = data; _notifySync('sync:offline', {}); return false; }
+/**
+ * POST a (usually partial) payload to /api/sync. Transport only — debounce,
+ * dirty-tracking and offline retry are owned by the account store, which is
+ * the single source of truth for what still needs saving. Returns a result
+ * object so the caller can decide what to clear on success.
+ *
+ * @param {object} payload  { features?, prefs?, contours?, settings?,
+ *                            settingsPatch?, settingsRemove? }
+ * @returns {Promise<{ok:boolean,status?:number,timestamp?:number}>}
+ */
+export async function postSync(payload) {
+  if (!_online) { _notifySync('sync:offline', {}); return { ok: false, offline: true }; }
   try {
     _notifySync('sync:start', { direction: 'push' });
-    const res = await _fetch('/api/sync', { method: 'POST', body: JSON.stringify(data) });
-    if (res.status === 401) { _pendingSync = data; _notifySync('sync:error', { status: 401 }); return false; }
-    const payload = await res.json();
-    _lastSyncTimestamp = payload.timestamp;
-    _notifySync('sync:done', { direction: 'push', payload });
-    return !!payload.ok;
-  } catch (err) {
-    console.error('[api] saveToServer:', err);
-    _pendingSync = data;
-    _notifySync('sync:error', { message: err.message });
-    return false;
-  }
-}
-
-/** Debounced save — call on every change; batches rapid updates. */
-export function debouncedSave(data) {
-  _pendingSync = data;
-  if (_syncTimer) clearTimeout(_syncTimer);
-  _syncTimer = setTimeout(async () => {
-    _syncTimer = null;
-    if (_pendingSync) {
-      const d = _pendingSync;
-      _pendingSync = null;
-      await saveToServer(d);
+    const res = await _fetch('/api/sync', { method: 'POST', body: JSON.stringify(payload) });
+    if (res.status === 401) { _notifySync('sync:error', { status: 401 }); return { ok: false, status: 401 }; }
+    const body = await res.json().catch(() => ({}));
+    if (body.timestamp) _lastSyncTimestamp = body.timestamp;
+    if (body.ok) {
+      _notifySync('sync:done', { direction: 'push', payload: body });
+      return { ok: true, status: res.status, timestamp: body.timestamp };
     }
-  }, SYNC_DEBOUNCE);
-}
-
-/** Flush any pending debounced write immediately (e.g. before unload). */
-export async function flushNow() {
-  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
-  if (_pendingSync) {
-    const d = _pendingSync; _pendingSync = null;
-    return await saveToServer(d);
+    _notifySync('sync:error', body);
+    return { ok: false, status: res.status };
+  } catch (err) {
+    console.error('[api] postSync:', err);
+    _notifySync('sync:error', { message: err.message });
+    return { ok: false, error: err.message };
   }
-  return true;
 }
 
 /**
- * Flush the pending write on page unload — RELIABLY.
+ * Send a payload on page unload — RELIABLY.
  *
  * A normal `fetch()` started from `pagehide` / `beforeunload` / a hidden
  * `visibilitychange` is routinely cancelled when the browser tears the page
  * down, so the last edit before closing a tab could silently never reach the
  * server. `navigator.sendBeacon()` is the platform primitive made for exactly
  * this: the request is handed to the browser and guaranteed to be sent even
- * after the page is gone. It is POST-only and same-origin here, so the session
+ * after the page is gone. POST-only and same-origin here, so the session
  * cookie rides along automatically and no CORS preflight is involved.
  *
  * Falls back to `fetch(..., { keepalive: true })` (also unload-survivable)
  * when sendBeacon is unavailable or refuses the payload (e.g. size cap).
+ *
+ * @param {object} payload  same shape as postSync
+ * @returns {boolean} true if the browser accepted the request for delivery
  */
-export function flushBeacon() {
-  if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
-  if (!_pendingSync) return true;
-  const data = _pendingSync;
+export function beaconSync(payload) {
   const url = `${API_BASE}/api/sync`;
-  const body = JSON.stringify(data);
+  const body = JSON.stringify(payload);
 
   try {
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
       const blob = new Blob([body], { type: 'application/json' });
-      if (navigator.sendBeacon(url, blob)) { _pendingSync = null; return true; }
+      if (navigator.sendBeacon(url, blob)) return true;
     }
   } catch { /* fall through to keepalive fetch */ }
 
-  // sendBeacon unavailable or rejected the payload — try a keepalive fetch,
-  // which is also allowed to outlive the document.
   try {
     fetch(url, {
       method: 'POST',
@@ -276,21 +256,8 @@ export function flushBeacon() {
       body,
       keepalive: true,
     });
-    _pendingSync = null;
     return true;
   } catch {
-    return false;
-  }
-}
-
-/** Merge data with existing server data (union features by id). */
-export async function mergeToServer(data) {
-  try {
-    const res = await _fetch('/api/sync', { method: 'PUT', body: JSON.stringify(data) });
-    if (!res.ok) return false;
-    return (await res.json()).ok;
-  } catch (err) {
-    console.error('[api] mergeToServer:', err);
     return false;
   }
 }
@@ -347,21 +314,17 @@ export function importFromFile(file, mode = 'replace') {
 
 // ---------------------------------------------------------------------------
 // Auto-refresh on tab focus (keeps devices in sync)
+//
+// When the tab becomes visible again, pull the latest account state so edits
+// made on another device show up. The store applies it (preserving any local
+// unsynced edits). Saving-on-exit is owned by the account store (it holds the
+// dirty set and beacons it on hidden / pagehide / beforeunload).
 // ---------------------------------------------------------------------------
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      // The user is switching away (other tab / app / closing the tab) — this
-      // is the LAST reliable moment to persist, so use the beacon transport
-      // that survives page teardown. `hidden` fires before `pagehide` on a
-      // real close, so this is the primary save-on-exit path.
-      flushBeacon();
-    } else if (document.visibilityState === 'visible' && _online && _currentUser) {
+    if (document.visibilityState === 'visible' && _online && _currentUser) {
       loadFromServer().then((data) => { if (data) _notifySync('sync:refresh', data); });
     }
   });
-  // Backstops for the actual unload, both using the unload-survivable beacon.
-  window.addEventListener('pagehide', () => { flushBeacon(); });
-  window.addEventListener('beforeunload', () => { flushBeacon(); });
 }
