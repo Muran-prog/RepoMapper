@@ -50,10 +50,24 @@ async function handlePost(user, req, res, db, cors) {
   const body = cors.parseBody(req);
   const rec = await db.getUserData(user.userId);
   const results = {};
+  const rejected = [];
+
+  // A field that would push a stored blob past the 4 MB cap is NOT saved
+  // silently — it is recorded in `rejected` so the client can tell the user
+  // (and stop retrying a payload that can never fit) instead of believing the
+  // save succeeded.
+  const fits = (field, value) => {
+    const bytes = db.jsonByteLength(value);
+    if (bytes > db.MAX_JSON_BYTES) {
+      rejected.push({ field, bytes, limit: db.MAX_JSON_BYTES });
+      return false;
+    }
+    return true;
+  };
 
   if (body.features !== undefined) {
-    rec.features = { version: 1, features: db.sanitiseFeatures(body.features) };
-    results.features = true;
+    const value = { version: 1, features: db.sanitiseFeatures(body.features) };
+    if (fits('features', value)) { rec.features = value; results.features = true; }
   }
   if (body.prefs !== undefined) {
     const prefs = db.sanitisePrefs(body.prefs);
@@ -61,8 +75,10 @@ async function handlePost(user, req, res, db, cors) {
   }
   if (body.settings !== undefined) {
     // Full settings replace — used by the import / full-restore path.
-    const s = db.sanitiseJsonObject(body.settings);
-    if (s) { rec.settings = s; results.settings = true; }
+    if (fits('settings', body.settings)) {
+      const s = db.sanitiseJsonObject(body.settings);
+      if (s) { rec.settings = s; results.settings = true; }
+    }
   }
   // Per-key settings patch/remove — the auto-sync path. Only the keys the
   // device actually changed are sent, and they are merged into the existing
@@ -82,16 +98,23 @@ async function handlePost(user, req, res, db, cors) {
         if (typeof k === 'string') delete kv[k];
       }
     }
-    const merged = db.sanitiseJsonObject({ ...cur, kv });
-    if (merged) { rec.settings = merged; results.settings = true; }
+    const next = { ...cur, kv };
+    if (fits('settings', next)) {
+      const merged = db.sanitiseJsonObject(next);
+      if (merged) { rec.settings = merged; results.settings = true; }
+    }
   }
   if (body.contours !== undefined) {
-    const c = db.sanitiseJsonObject(body.contours);
-    if (c) { rec.contours = c; results.contours = true; }
+    if (fits('contours', body.contours)) {
+      const c = db.sanitiseJsonObject(body.contours);
+      if (c) { rec.contours = c; results.contours = true; }
+    }
   }
 
   await db.saveUserData(user.userId, rec);
-  return cors.json(res, 200, { ok: true, results, timestamp: Date.now() });
+  // `ok` stays true (the request was processed and everything that fit was
+  // saved); `rejected` flags any field that was too large to store.
+  return cors.json(res, 200, { ok: true, results, rejected, timestamp: Date.now() });
 }
 
 async function handlePut(user, req, res, db, cors) {

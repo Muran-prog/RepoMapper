@@ -266,14 +266,19 @@ export function sanitisePrefs(raw) {
   return result;
 }
 
-/** Settings / contours are opaque JSON blobs; we only cap their size. */
-const MAX_JSON_BYTES = 4 * 1024 * 1024; // 4 MB per field — generous
+/** Per-field byte cap for stored JSON blobs (features/settings/contours). */
+export const MAX_JSON_BYTES = 4 * 1024 * 1024; // 4 MB per field — generous
+
+/** Serialized byte length of a value, or Infinity if it can't be stringified. */
+export function jsonByteLength(raw) {
+  try { return Buffer.byteLength(JSON.stringify(raw)); } catch { return Infinity; }
+}
 
 export function sanitiseJsonObject(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   try {
     const s = JSON.stringify(raw);
-    if (s.length > MAX_JSON_BYTES) return null;
+    if (Buffer.byteLength(s) > MAX_JSON_BYTES) return null;
     return JSON.parse(s);
   } catch {
     return null;

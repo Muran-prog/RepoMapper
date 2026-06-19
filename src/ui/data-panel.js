@@ -155,10 +155,10 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
   refreshAccount();
 
   // ---- Sync status ----
-  function updateSyncUI(state) {
+  function updateSyncUI(state, message) {
     if (!syncBar) return;
     syncBar.className = `data-sync-bar data-sync-${state}`;
-    const text = {
+    const text = message || {
       syncing: 'Синхронизация…',
       done: 'Данные синхронизированы',
       error: 'Ошибка синхронизации',
@@ -171,7 +171,12 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
     switch (event) {
       case 'sync:start': updateSyncUI('syncing'); break;
       case 'sync:done': updateSyncUI('done'); refreshAccount(); break;
-      case 'sync:error': updateSyncUI('error'); break;
+      case 'sync:error':
+        // A "too large" rejection is not a transient error — tell the user
+        // exactly what didn't save so they can trim it, rather than leaving
+        // them thinking everything synced.
+        updateSyncUI('error', data?.tooLarge ? tooLargeMessage(data.rejected) : undefined);
+        break;
       case 'sync:offline': updateSyncUI('offline'); break;
       case 'sync:refresh':
         updateSyncUI('done');
@@ -267,6 +272,27 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const FIELD_LABELS = {
+  features: 'метки и рисунки',
+  contours: 'контуры',
+  settings: 'настройки',
+  prefs: 'настройки рисования',
+};
+
+/** Build a human message for a server "payload too large" rejection. */
+function tooLargeMessage(rejected) {
+  if (!rejected || !rejected.length) {
+    // Whole-request 413 — no per-field breakdown available.
+    return 'Не сохранено: слишком большой объём данных. Удалите часть меток или контуров.';
+  }
+  const parts = rejected.map((r) => {
+    const mb = (Number(r.bytes) / (1024 * 1024)).toFixed(1);
+    const limitMb = Math.round(Number(r.limit) / (1024 * 1024));
+    return `${FIELD_LABELS[r.field] || r.field} — ${mb} МБ (лимит ${limitMb} МБ)`;
+  });
+  return `Не сохранено: слишком много данных: ${parts.join(', ')}. Удалите часть, чтобы сохранить.`;
+}
 
 function showStatus(el, text, type) {
   if (!el) return;

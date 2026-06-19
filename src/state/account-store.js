@@ -78,9 +78,24 @@ let _suspend = 0;
 let _dirty = new Set();
 /** Settings keys deleted locally and not yet removed on the server. */
 let _removed = new Set();
+/**
+ * Keys whose last save was rejected by the server because the field was too
+ * large (>4 MB). Retrying the identical payload can't help, so these are
+ * parked here instead of left in `_dirty` (which would retry-spam). A fresh
+ * edit to the key clears it from here and gives it another chance.
+ */
+let _blocked = new Set();
 
 let _flushTimer = null;
 let _inFlight = false;
+
+/** Which server field a kv key maps to. */
+function fieldForKey(key) {
+  if (key === FEATURES_KEY) return 'features';
+  if (key === DRAW_PREFS_KEY) return 'prefs';
+  if (key === CONTOURS_KEY) return 'contours';
+  return 'settings';
+}
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -118,6 +133,7 @@ export const kv = {
     _kv[key] = next;
     _dirty.add(key);
     _removed.delete(key);
+    _blocked.delete(key); // changed value → worth trying again
     scheduleFlush();
   },
   removeItem(key) {
@@ -240,21 +256,34 @@ async function flush() {
   _inFlight = true;
   const sentDirty = new Set(_dirty);
   const sentRemoved = new Set(_removed);
-  let ok = false;
+  let res = { ok: false };
   try {
-    const res = await postSync(buildPayload(sentDirty, sentRemoved));
-    ok = !!res.ok;
+    res = await postSync(buildPayload(sentDirty, sentRemoved));
   } catch {
-    ok = false;
+    res = { ok: false };
   }
   _inFlight = false;
 
-  if (ok) {
-    for (const k of sentDirty) _dirty.delete(k);
+  if (res.ok) {
+    // Fields the server refused because they were too large (>4 MB).
+    const rejectedFields = new Set((res.rejected || []).map((r) => r.field));
+    for (const k of sentDirty) {
+      _dirty.delete(k);
+      // If its field was rejected, park it (don't retry the same oversized
+      // payload) until the user changes that key again.
+      if (rejectedFields.has(fieldForKey(k))) _blocked.add(k);
+    }
+    // Removals only shrink the blob, so they never hit the size cap.
     for (const k of sentRemoved) _removed.delete(k);
+  } else if (res.tooLarge) {
+    // Whole-body 413 — no per-field info. Park everything we tried to send so
+    // we don't retry-spam an oversized payload; a fresh edit un-blocks a key.
+    // Removals are tiny, so keep them to retry on their own.
+    for (const k of sentDirty) { _dirty.delete(k); _blocked.add(k); }
   }
 
-  // New edits arrived during the push, or it failed — try again soon.
+  // New edits arrived during the push, or it failed (network) — try again.
+  // Blocked keys are no longer in _dirty, so this won't spin on oversize data.
   if (_dirty.size || _removed.size) scheduleFlush();
 }
 

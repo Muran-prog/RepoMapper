@@ -205,11 +205,25 @@ export async function postSync(payload) {
     _notifySync('sync:start', { direction: 'push' });
     const res = await _fetch('/api/sync', { method: 'POST', body: JSON.stringify(payload) });
     if (res.status === 401) { _notifySync('sync:error', { status: 401 }); return { ok: false, status: 401 }; }
+    if (res.status === 413) {
+      // The whole request body exceeded the platform limit (~4.5 MB) before
+      // our handler could split it per-field. Treat as a non-retryable size
+      // failure: surface it and let the store block the offending keys.
+      _notifySync('sync:error', { tooLarge: true, rejected: [] });
+      return { ok: false, status: 413, tooLarge: true, rejected: [] };
+    }
     const body = await res.json().catch(() => ({}));
     if (body.timestamp) _lastSyncTimestamp = body.timestamp;
     if (body.ok) {
-      _notifySync('sync:done', { direction: 'push', payload: body });
-      return { ok: true, status: res.status, timestamp: body.timestamp };
+      const rejected = Array.isArray(body.rejected) ? body.rejected : [];
+      if (rejected.length) {
+        // The save was processed but one or more fields were too large to
+        // store — surface it so the user knows their data did NOT all save.
+        _notifySync('sync:error', { tooLarge: true, rejected });
+      } else {
+        _notifySync('sync:done', { direction: 'push', payload: body });
+      }
+      return { ok: true, status: res.status, timestamp: body.timestamp, results: body.results || {}, rejected };
     }
     _notifySync('sync:error', body);
     return { ok: false, status: res.status };
