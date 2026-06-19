@@ -19,6 +19,13 @@ const LOGO_SVG = `<svg viewBox="0 0 32 32" width="40" height="40" aria-hidden="t
   <path d="M6 17 L13 23 L26 9" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
+const TAB_ICON_LOGIN = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+  <polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>`;
+const TAB_ICON_REGISTER = `<svg viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+  <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`;
+
 function buildOverlay() {
   const el = document.createElement('div');
   el.className = 'auth-gate';
@@ -26,48 +33,81 @@ function buildOverlay() {
   el.setAttribute('aria-modal', 'true');
   el.setAttribute('aria-label', 'Вход в аккаунт');
   el.innerHTML = `
-    <div class="auth-card">
-      <div class="auth-head">
-        <div class="auth-logo">${LOGO_SVG}</div>
-        <h1 class="auth-title">Cart · Украина</h1>
-        <p class="auth-sub">Войдите в аккаунт, чтобы открыть карту. Все ваши метки,
-          контуры, рисунки и настройки привязаны к аккаунту и доступны на любом устройстве.</p>
+    <div class="auth-window">
+      <div class="auth-titlebar">
+        <span class="auth-traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="auth-titlebar-name">cart://авторизация</span>
+        <span class="auth-titlebar-spacer"></span>
+        <span class="auth-titlebar-tag">Украина</span>
       </div>
 
-      <div class="auth-tabs" role="tablist">
-        <button class="auth-tab" data-mode="login" role="tab" aria-selected="true">Вход</button>
-        <button class="auth-tab" data-mode="register" role="tab" aria-selected="false">Регистрация</button>
+      <div class="auth-body">
+        <aside class="auth-aside">
+          <div class="auth-brand">
+            <span class="auth-logo">${LOGO_SVG}</span>
+            <span class="auth-brand-text">
+              <h1 class="auth-title">Cart · Украина</h1>
+              <span class="auth-kicker">интерактивная карта</span>
+            </span>
+          </div>
+          <p class="auth-sub">Войдите в аккаунт, чтобы открыть карту. Метки, контуры,
+            рисунки и настройки привязаны к аккаунту и доступны на любом устройстве.</p>
+          <ul class="auth-points">
+            <li>Метки, линии, фигуры и измерения</li>
+            <li>Ручные контуры поселений</li>
+            <li>Рельеф, гипсометрия и слои</li>
+            <li>Синхронизация между устройствами</li>
+          </ul>
+          <p class="auth-aside-foot">Без email. Только имя пользователя и пароль.</p>
+        </aside>
+
+        <section class="auth-main">
+          <div class="auth-tabs" role="tablist">
+            <button class="auth-tab" data-mode="login" role="tab" aria-selected="true">
+              ${TAB_ICON_LOGIN}<span>Вход</span>
+            </button>
+            <button class="auth-tab" data-mode="register" role="tab" aria-selected="false">
+              ${TAB_ICON_REGISTER}<span>Регистрация</span>
+            </button>
+          </div>
+
+          <form class="auth-form" autocomplete="on" novalidate>
+            <label class="auth-field">
+              <span>Имя пользователя</span>
+              <input name="username" type="text" autocomplete="username" autocapitalize="none"
+                     spellcheck="false" inputmode="text" maxlength="32"
+                     placeholder="например, kartograf" required />
+            </label>
+
+            <label class="auth-field">
+              <span>Пароль</span>
+              <span class="auth-pass-wrap">
+                <input name="password" type="password" autocomplete="current-password"
+                       maxlength="200" placeholder="минимум 8 символов" required />
+                <button type="button" class="auth-pass-toggle" tabindex="-1" aria-label="Показать пароль">👁</button>
+              </span>
+            </label>
+
+            <label class="auth-field auth-field-confirm" hidden>
+              <span>Повторите пароль</span>
+              <input name="confirm" type="password" autocomplete="new-password"
+                     maxlength="200" placeholder="повторите пароль" />
+            </label>
+
+            <div class="auth-error" role="alert" aria-live="assertive"></div>
+
+            <button type="submit" class="auth-submit">Войти</button>
+          </form>
+        </section>
       </div>
 
-      <form class="auth-form" autocomplete="on" novalidate>
-        <label class="auth-field">
-          <span>Имя пользователя</span>
-          <input name="username" type="text" autocomplete="username" autocapitalize="none"
-                 spellcheck="false" inputmode="text" maxlength="32"
-                 placeholder="например, kartograf" required />
-        </label>
-
-        <label class="auth-field">
-          <span>Пароль</span>
-          <span class="auth-pass-wrap">
-            <input name="password" type="password" autocomplete="current-password"
-                   maxlength="200" placeholder="минимум 8 символов" required />
-            <button type="button" class="auth-pass-toggle" tabindex="-1" aria-label="Показать пароль">👁</button>
-          </span>
-        </label>
-
-        <label class="auth-field auth-field-confirm" hidden>
-          <span>Повторите пароль</span>
-          <input name="confirm" type="password" autocomplete="new-password"
-                 maxlength="200" placeholder="повторите пароль" />
-        </label>
-
-        <div class="auth-error" role="alert" aria-live="assertive"></div>
-
-        <button type="submit" class="auth-submit">Войти</button>
-      </form>
-
-      <p class="auth-foot">Без email. Только имя пользователя и пароль.</p>
+      <div class="auth-statusbar" aria-hidden="true">
+        <span class="auth-status-item auth-status-accent">● защищено</span>
+        <span class="auth-status-item">scrypt · cookie</span>
+        <span class="auth-status-spacer"></span>
+        <span class="auth-status-item">UTF-8</span>
+        <span class="auth-status-item">UA</span>
+      </div>
     </div>
   `;
   return el;
