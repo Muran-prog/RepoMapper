@@ -61,20 +61,18 @@
  */
 
 import { HYPSO } from '../../config.js';
+import { kv } from '../../state/account-store.js';
 
 const PREFS_KEY = 'cart:hypso:prefs:v1';
 const CUSTOM_VERSION = 1;
 
+/**
+ * Persistence handle. Backed by the account store (server-synced, in-memory)
+ * rather than localStorage — see src/state/account-store.js. Hypso prefs and
+ * custom ramps now sync across devices like everything else.
+ */
 function ls() {
-  try {
-    if (typeof window === 'undefined') return null;
-    const s = window.localStorage;
-    // Touch to make sure access doesn't throw (Safari private mode).
-    s.getItem(PREFS_KEY);
-    return s;
-  } catch {
-    return null;
-  }
+  return kv;
 }
 
 /**

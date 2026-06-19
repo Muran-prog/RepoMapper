@@ -18,6 +18,7 @@ import {
   logout,
   changePassword,
 } from '../api/client.js';
+import { applyRemote } from '../state/account-store.js';
 
 // ---------------------------------------------------------------------------
 // Icons (Lucide-style)
@@ -119,24 +120,14 @@ export function renderDataPanelBody() {
 
 // ---------------------------------------------------------------------------
 // Panel mount (event wiring)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Server-apply guard
 //
-// While we are applying authoritative server data to the local engines /
-// localStorage, the writes we make would otherwise re-trigger the auto-sync
-// listeners and echo the very same data straight back to the server (and, in
-// a multi-device race, could clobber a newer write). The sync wiring checks
-// this flag and skips while it is set.
+// The account store (src/state/account-store.js) owns all persistence: it
+// hydrates the whole account at boot and pushes every change to the server.
+// This panel only drives the account UI (login info, password, export/import)
+// and the *visible* refresh paths — re-applying authoritative server data to
+// the live engines via `applyRemote()` on manual refresh, tab-focus refresh,
+// or after an import. There is no local-state collection or echo guard here.
 // ---------------------------------------------------------------------------
-
-let _applyingServer = false;
-
-/** True while server data is being applied locally — sync triggers must skip. */
-export function isApplyingServerData() {
-  return _applyingServer;
-}
 
 export function mountDataPanel(host, drawEngine, contourEngine) {
   if (!host) return;
@@ -184,7 +175,7 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
       case 'sync:offline': updateSyncUI('offline'); break;
       case 'sync:refresh':
         updateSyncUI('done');
-        if (data?.data) applyServerData(data, drawEngine, contourEngine);
+        if (data?.data) applyRemote(data, { drawEngine, contourEngine });
         break;
     }
   });
@@ -245,7 +236,7 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
       if (result?.ok) {
         showStatus(exportStatus, 'Импорт завершён! Обновляем данные…', 'success');
         const fresh = await loadFromServer();
-        if (fresh) applyServerData(fresh, drawEngine, contourEngine);
+        if (fresh) applyRemote(fresh, { drawEngine, contourEngine });
         showStatus(exportStatus, 'Все данные восстановлены!', 'success');
       } else {
         showStatus(exportStatus, `Ошибка импорта: ${result?.error || 'неизвестная ошибка'}`, 'error');
@@ -262,12 +253,13 @@ export function mountDataPanel(host, drawEngine, contourEngine) {
     updateSyncUI('syncing');
     const data = await loadFromServer();
     refreshBtn.disabled = false;
-    if (data) { applyServerData(data, drawEngine, contourEngine); updateSyncUI('done'); }
+    if (data) { applyRemote(data, { drawEngine, contourEngine }); updateSyncUI('done'); }
     else updateSyncUI('error');
   });
 
-  // ---- Initial load from server ----
-  initialSync(drawEngine, contourEngine);
+  // Initial load already happened at boot (initAccountState), and the engines
+  // hydrated their features / contours from the account store as they were
+  // constructed — so there is nothing to pull here.
 
   return { updateSyncUI, refreshAccount };
 }
@@ -283,151 +275,4 @@ function showStatus(el, text, type) {
   if (type === 'success') {
     setTimeout(() => { el.textContent = ''; el.className = 'data-status'; }, 5000);
   }
-}
-
-/**
- * Apply authoritative server data to the local engines + localStorage.
- *
- * Crucially this applies LIVE: features into the draw engine, contours into
- * the contour engine (so they render immediately without a reload), and the
- * settings/prefs blobs into localStorage for cold-boot restore. The whole
- * pass runs under the `_applyingServer` guard so the writes it performs do
- * not echo straight back to the server via the auto-sync listeners.
- */
-export function applyServerData(serverData, drawEngine, contourEngine) {
-  if (!serverData?.data) return;
-  const { features, prefs, settings, contours } = serverData.data;
-
-  _applyingServer = true;
-  try {
-    if (features?.features && drawEngine) {
-      try {
-        drawEngine.importGeoJSON({ type: 'FeatureCollection', features: features.features });
-      } catch (e) { console.error('[data-panel] import features:', e); }
-    }
-    if (prefs && drawEngine) {
-      try { drawEngine.setPrefs(prefs); } catch (e) { console.error('[data-panel] apply prefs:', e); }
-    }
-    if (settings) {
-      try {
-        if (settings.uiPrefs) localStorage.setItem('cart:ui:prefs:v1', JSON.stringify(settings.uiPrefs));
-        if (settings.mapMode) localStorage.setItem('cart:map-mode', settings.mapMode);
-        if (settings.hypsoPrefs) localStorage.setItem('cart:hypso:prefs:v1', JSON.stringify(settings.hypsoPrefs));
-      } catch (e) { console.error('[data-panel] apply settings:', e); }
-    }
-    if (contours) {
-      // Persist for cold-boot…
-      try { localStorage.setItem('cart:settlement-contours:v1', JSON.stringify(contours)); }
-      catch (e) { console.error('[data-panel] persist contours:', e); }
-      // …and push into the live engine so they appear right now and the
-      // in-memory state matches the persisted blob (no unload clobber).
-      if (contourEngine?.replaceAll) {
-        try { contourEngine.replaceAll(contours.features || contours); }
-        catch (e) { console.error('[data-panel] apply contours:', e); }
-      }
-    }
-  } finally {
-    _applyingServer = false;
-  }
-}
-
-/**
- * Initial sync after login: the account is the source of truth.
- *   • If the server has data, apply it (so you see your data on any device).
- *   • If the server is empty but this device has local features (e.g. legacy
- *     pre-account drawings), push them up once so nothing is lost.
- */
-async function initialSync(drawEngine, contourEngine) {
-  try {
-    const serverData = await loadFromServer();
-    if (!serverData) return;
-
-    const d = serverData.data || {};
-    const serverHasData =
-      (d.features?.features?.length || 0) > 0 ||
-      (d.contours?.features?.length || 0) > 0 ||
-      !!d.prefs ||
-      (d.settings && Object.keys(d.settings).length > 0);
-
-    if (serverHasData) {
-      // The account is the source of truth — apply everything it holds.
-      applyServerData(serverData, drawEngine, contourEngine);
-      return;
-    }
-
-    // Server empty — migrate ANY local-only data up so nothing is lost.
-    // (Previously this only checked features, silently dropping local
-    // contours / settings / prefs created before the first sync.)
-    const local = collectLocalState(drawEngine, contourEngine);
-    const hasLocal =
-      (local.features?.features?.length || 0) > 0 ||
-      (local.contours?.features?.length || 0) > 0 ||
-      !!local.prefs ||
-      (local.settings && Object.keys(local.settings).length > 0);
-    if (hasLocal) {
-      const { saveToServer } = await import('../api/client.js');
-      await saveToServer(local);
-    }
-  } catch (e) {
-    console.error('[data-panel] initial sync failed:', e);
-  }
-}
-
-/**
- * Collect all current local state for syncing to the server.
- *
- * Features and contours are read from the LIVE engines when available (not
- * localStorage), which is authoritative and avoids a race: each engine
- * debounces its own localStorage write, so reading localStorage right after
- * an engine `change` event could miss the very edit that triggered the sync.
- */
-export function collectLocalState(drawEngine, contourEngine) {
-  const state = {};
-
-  if (drawEngine) {
-    try {
-      const geojson = drawEngine.exportGeoJSON?.();
-      if (geojson?.features) state.features = { version: 1, features: geojson.features };
-    } catch {
-      try {
-        const raw = localStorage.getItem('cart:draw:features:v1');
-        if (raw) state.features = JSON.parse(raw);
-      } catch {}
-    }
-  }
-
-  try {
-    const raw = localStorage.getItem('cart:draw:prefs:v1');
-    if (raw) state.prefs = JSON.parse(raw);
-  } catch {}
-
-  try {
-    const settings = {};
-    const uiRaw = localStorage.getItem('cart:ui:prefs:v1');
-    if (uiRaw) settings.uiPrefs = JSON.parse(uiRaw);
-    const modeRaw = localStorage.getItem('cart:map-mode');
-    if (modeRaw) settings.mapMode = modeRaw;
-    const hypsoRaw = localStorage.getItem('cart:hypso:prefs:v1');
-    if (hypsoRaw) settings.hypsoPrefs = JSON.parse(hypsoRaw);
-    state.settings = settings;
-  } catch {}
-
-  // Contours: prefer the live engine so a contour drawn moments ago is
-  // included even before its own debounced persist has flushed.
-  let gotContours = false;
-  if (contourEngine?.exportGeoJSON) {
-    try {
-      const gj = contourEngine.exportGeoJSON();
-      state.contours = { version: 1, features: gj?.features || [] };
-      gotContours = true;
-    } catch {}
-  }
-  if (!gotContours) {
-    try {
-      const raw = localStorage.getItem('cart:settlement-contours:v1');
-      if (raw) state.contours = JSON.parse(raw);
-    } catch {}
-  }
-
-  return state;
 }

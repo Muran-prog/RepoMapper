@@ -50,6 +50,8 @@
  *                                          mutates persisted features.
  */
 
+import { kv } from '../state/account-store.js';
+
 const FEATURES_KEY = 'cart:draw:features:v1';
 const PREFS_KEY = 'cart:draw:prefs:v1';
 
@@ -61,16 +63,14 @@ const PREFS_KEY = 'cart:draw:prefs:v1';
  */
 const VALID_MODES = new Set(['none', 'sequence', 'mesh', 'hub', 'optimal']);
 
-/** Probe localStorage availability without throwing. */
+/**
+ * Persistence handle. Backed by the account store (server-synced, in-memory)
+ * rather than localStorage — see src/state/account-store.js. The draw engine
+ * writes features/prefs through here on every change, which the store routes
+ * to the account's `features` / `prefs` server fields.
+ */
 function ls() {
-  try {
-    if (typeof window === 'undefined') return null;
-    const s = window.localStorage;
-    s.getItem(FEATURES_KEY);
-    return s;
-  } catch {
-    return null;
-  }
+  return kv;
 }
 
 /** @returns {DrawPrefs} */

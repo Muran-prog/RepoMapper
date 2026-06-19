@@ -26,12 +26,15 @@
  * stable + unique within the document.
  */
 
+import { kv } from '../state/account-store.js';
+
 const STORE_KEY = 'cart:ui:accordion:v1';
 
+// Persisted through the account store (server-synced, in-memory) rather than
+// localStorage — see src/state/account-store.js.
 function loadState() {
   try {
-    if (typeof window === 'undefined') return {};
-    return JSON.parse(window.localStorage?.getItem(STORE_KEY) || '{}') || {};
+    return JSON.parse(kv.getItem(STORE_KEY) || '{}') || {};
   } catch {
     return {};
   }
@@ -39,8 +42,7 @@ function loadState() {
 
 function saveState(state) {
   try {
-    if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(STORE_KEY, JSON.stringify(state));
+    kv.setItem(STORE_KEY, JSON.stringify(state));
   } catch {
     /* best-effort */
   }

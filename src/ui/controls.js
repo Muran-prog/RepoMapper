@@ -46,9 +46,8 @@ import { mountInfoTips } from './info-tip.js';
 import { mountSettingsSearch } from './settings-search.js';
 import { accordionMarkup, installAccordions, revealRow } from './accordion.js';
 import { richRow, groupNote, sectionLede, divider, SETTING_ICONS } from './setting-icons.js';
-import { renderDataPanelBody, mountDataPanel, collectLocalState, isApplyingServerData } from './data-panel.js';
-import { installLocalWriteBus } from '../api/local-bus.js';
-import { debouncedSave, onSyncEvent, loadFromServer } from '../api/client.js';
+import { renderDataPanelBody, mountDataPanel } from './data-panel.js';
+import { kv } from '../state/account-store.js';
 
 // ---------------------------------------------------------------------------
 // Icon SVGs — Lucide-style line icons. Single-stroke, 1.75 width, rounded
@@ -189,7 +188,7 @@ const FOREST_MARKUP_PREF_KEYS = Object.freeze({
 function loadWorldcoverTintPref(fallback) {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(WORLDCOVER_TINT_PREF_KEY);
+    const raw = kv.getItem(WORLDCOVER_TINT_PREF_KEY);
     if (raw === '1') return true;
     if (raw === '0') return false;
     return fallback;
@@ -201,7 +200,7 @@ function loadWorldcoverTintPref(fallback) {
 function saveWorldcoverTintPref(value) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(WORLDCOVER_TINT_PREF_KEY, value ? '1' : '0');
+    kv.setItem(WORLDCOVER_TINT_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -210,7 +209,7 @@ function saveWorldcoverTintPref(value) {
 function loadCanopyHeightTintPref(fallback) {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(CANOPY_HEIGHT_TINT_PREF_KEY);
+    const raw = kv.getItem(CANOPY_HEIGHT_TINT_PREF_KEY);
     if (raw === '1') return true;
     if (raw === '0') return false;
     return fallback;
@@ -222,7 +221,7 @@ function loadCanopyHeightTintPref(fallback) {
 function saveCanopyHeightTintPref(value) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(CANOPY_HEIGHT_TINT_PREF_KEY, value ? '1' : '0');
+    kv.setItem(CANOPY_HEIGHT_TINT_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -231,7 +230,7 @@ function saveCanopyHeightTintPref(value) {
 function loadForestLeafTypePref(fallback) {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(FOREST_LEAF_TYPE_PREF_KEY);
+    const raw = kv.getItem(FOREST_LEAF_TYPE_PREF_KEY);
     if (raw === '1') return true;
     if (raw === '0') return false;
     return fallback;
@@ -243,7 +242,7 @@ function loadForestLeafTypePref(fallback) {
 function saveForestLeafTypePref(value) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(FOREST_LEAF_TYPE_PREF_KEY, value ? '1' : '0');
+    kv.setItem(FOREST_LEAF_TYPE_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -252,7 +251,7 @@ function saveForestLeafTypePref(value) {
 function loadForestCoverPref(fallback) {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(FOREST_COVER_PREF_KEY);
+    const raw = kv.getItem(FOREST_COVER_PREF_KEY);
     if (raw === '1') return true;
     if (raw === '0') return false;
     return fallback;
@@ -264,7 +263,7 @@ function loadForestCoverPref(fallback) {
 function saveForestCoverPref(value) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(FOREST_COVER_PREF_KEY, value ? '1' : '0');
+    kv.setItem(FOREST_COVER_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -273,7 +272,7 @@ function saveForestCoverPref(value) {
 function loadModeBlockView(fallback = 'expanded') {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(MODE_BLOCK_VIEW_PREF_KEY);
+    const raw = kv.getItem(MODE_BLOCK_VIEW_PREF_KEY);
     return MODE_BLOCK_VIEWS.includes(raw) ? raw : fallback;
   } catch {
     return fallback;
@@ -284,7 +283,7 @@ function saveModeBlockView(value) {
   try {
     if (typeof window === 'undefined') return;
     if (!MODE_BLOCK_VIEWS.includes(value)) return;
-    window.localStorage?.setItem(MODE_BLOCK_VIEW_PREF_KEY, value);
+    kv.setItem(MODE_BLOCK_VIEW_PREF_KEY, value);
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -293,7 +292,7 @@ function saveModeBlockView(value) {
 function loadHazardousTerrainPref(fallback) {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(HAZARDOUS_TERRAIN_PREF_KEY);
+    const raw = kv.getItem(HAZARDOUS_TERRAIN_PREF_KEY);
     if (raw === '1') return true;
     if (raw === '0') return false;
     return fallback;
@@ -305,7 +304,7 @@ function loadHazardousTerrainPref(fallback) {
 function saveHazardousTerrainPref(value) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(HAZARDOUS_TERRAIN_PREF_KEY, value ? '1' : '0');
+    kv.setItem(HAZARDOUS_TERRAIN_PREF_KEY, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -315,7 +314,7 @@ function saveHazardousTerrainPref(value) {
 function loadBoolPref(key, fallback) {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage?.getItem(key);
+    const raw = kv.getItem(key);
     if (raw === '1') return true;
     if (raw === '0') return false;
     return fallback;
@@ -328,7 +327,7 @@ function loadBoolPref(key, fallback) {
 function saveBoolPref(key, value) {
   try {
     if (typeof window === 'undefined') return;
-    window.localStorage?.setItem(key, value ? '1' : '0');
+    kv.setItem(key, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -1026,7 +1025,7 @@ class SidebarController {
 
   _persist() {
     try {
-      window.localStorage?.setItem(
+      kv.setItem(
         SIDEBAR_PREF_KEY,
         JSON.stringify({ activeId: this.activeId, collapsed: this.collapsed }),
       );
@@ -1035,7 +1034,7 @@ class SidebarController {
 
   _restore(defaultId) {
     let pref = {};
-    try { pref = JSON.parse(window.localStorage?.getItem(SIDEBAR_PREF_KEY) || '{}') || {}; }
+    try { pref = JSON.parse(kv.getItem(SIDEBAR_PREF_KEY) || '{}') || {}; }
     catch { pref = {}; }
     // On mobile default to collapsed so the map is the priority.
     const startCollapsed = this.mqMobile.matches ? true : !!pref.collapsed;
@@ -2061,47 +2060,21 @@ function installDataUI(map, panelsHost) {
   const section = panelsHost.querySelector('.section[data-panel-id="data"]');
   if (!section) return;
 
-  // Make same-tab localStorage writes observable (settings / prefs / hypso /
-  // contours). The native `storage` event only fires in OTHER tabs, so
-  // without this every same-tab change was persisted locally but never
-  // synced — the root cause of "synced" data vanishing on another device.
-  installLocalWriteBus();
-
   // Idempotent factories — these return the same instances the drawing and
   // contour UIs already mounted.
   const drawEngine = createDrawEngine(map);
   const contourEngine = createSettlementContourEngine(map);
 
-  // Mount the data panel and wire all its event handlers. The contour engine
-  // is passed so server data is applied live and collected authoritatively.
+  // Mount the data panel (account info, sync status, export / import). The
+  // engines are passed so a manual / focus / import refresh can re-apply
+  // authoritative server data to them live.
+  //
+  // There is no auto-sync wiring here anymore: every persisted write — draw
+  // features, contours, layer toggles, UI prefs, hypso settings — flows
+  // through the account store's `kv` shim (src/state/account-store.js), which
+  // owns the single debounced push to the server. No write-bus, no storage
+  // listeners, no echo guards scattered across call sites.
   const panelAPI = mountDataPanel(section, drawEngine, contourEngine);
-
-  // A single debounced push of the full local snapshot. Skipped while we are
-  // applying server data so a pull never echoes straight back as a push.
-  const triggerSync = () => {
-    if (isApplyingServerData()) return;
-    debouncedSave(collectLocalState(drawEngine, contourEngine));
-  };
-
-  // Auto-sync: freehand draw engine changes (markers, lines, shapes…).
-  if (drawEngine && drawEngine.on) {
-    drawEngine.on('change', triggerSync);
-  }
-
-  // Auto-sync: manual settlement-contour changes. This is the path that was
-  // missing entirely — contours only ever touched localStorage before.
-  if (contourEngine && contourEngine.on) {
-    contourEngine.on('change', triggerSync);
-  }
-
-  // Auto-sync on localStorage changes for everything else (UI prefs, map
-  // mode, hypso prefs). `storage` covers OTHER tabs; `cart:local-write`
-  // (from local-bus) covers THIS tab, which `storage` never reports.
-  const onLocalChange = (key) => {
-    if (key && (key === 'cart:*' || key.startsWith('cart:'))) triggerSync();
-  };
-  window.addEventListener('storage', (e) => onLocalChange(e.key));
-  window.addEventListener('cart:local-write', (e) => onLocalChange(e.detail?.key));
 
   // Expose for debugging
   if (typeof window !== 'undefined') {

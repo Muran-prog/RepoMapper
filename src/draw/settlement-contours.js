@@ -53,6 +53,7 @@
 
 import { getTokens } from '../style/tokens.js';
 import { settlementPerimeterLayers } from '../style/settlements.js';
+import { kv } from '../state/account-store.js';
 import {
   listVertices,
   listMidpoints,
@@ -139,15 +140,11 @@ function fmtCoord(lngLat) {
 // Persistence (defensive — storage may be unavailable / quota-limited).
 // ---------------------------------------------------------------------------
 
+// Persisted through the account store (server-synced, in-memory) rather than
+// localStorage — see src/state/account-store.js. Contour edits flush through
+// here on change, which the store routes to the account's `contours` field.
 function storage() {
-  try {
-    if (typeof window === 'undefined') return null;
-    const s = window.localStorage;
-    s.getItem(STORE_KEY);
-    return s;
-  } catch {
-    return null;
-  }
+  return kv;
 }
 
 function isValidContour(f) {

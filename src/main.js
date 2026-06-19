@@ -15,6 +15,7 @@ import { detectCaps, deriveProfile, watchViewport } from './device.js';
 import { FEATURES } from './config.js';
 import { ensureAuthenticated, installAuthWatcher } from './ui/auth-gate.js';
 import { flushNow } from './api/client.js';
+import { initAccountState } from './state/account-store.js';
 
 async function boot() {
   const root = document.getElementById('app');
@@ -34,6 +35,14 @@ async function boot() {
     try { await flushNow(); } catch {}
     window.location.reload();
   });
+
+  // ----- Account state -------------------------------------------------
+  // The server is the single source of truth for every persisted setting,
+  // preference, drawing and contour. Load the whole account snapshot ONCE,
+  // here, before the map or any UI is built — so every synchronous helper
+  // read below (map mode, draw features, hypso ramps, layer toggles…) sees
+  // the hydrated, account-correct values. No localStorage in steady state.
+  await initAccountState();
 
   // Mark the app as booting so CSS can render the splash overlay.
   root.dataset.state = 'booting';

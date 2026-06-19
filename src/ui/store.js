@@ -37,20 +37,17 @@ import {
   DEFAULT_MAP_MODE,
   MAP_MODE_STORAGE_KEY,
 } from '../config.js';
+import { kv } from '../state/account-store.js';
 
 const KEY = 'cart:ui:prefs:v1';
 
-/** Probe localStorage availability without throwing. */
+/**
+ * Persistence handle. Backed by the account store (server-synced, in-memory)
+ * rather than localStorage — see src/state/account-store.js. Kept as a tiny
+ * accessor so the load/save code below stays unchanged.
+ */
 function ls() {
-  try {
-    if (typeof window === 'undefined') return null;
-    const s = window.localStorage;
-    // Touch to make sure access doesn't throw (Safari private mode).
-    s.getItem(KEY);
-    return s;
-  } catch {
-    return null;
-  }
+  return kv;
 }
 
 /**
