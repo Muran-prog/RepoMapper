@@ -37,8 +37,8 @@
  *                                   every collision; emitted last so it
  *                                   paints on top of everything)
  *  23. Forest-mode markup         — flat-view-only accents (forestCover)
- *  24. Coordinate grid            — game-style "battleship" reference
- *                                   overlay (grid flag); emitted dead-last
+ *  24. Coordinate grid            — 1 km reference overlay (grid flag);
+ *                                   emitted dead-last
  *                                   so its lines + labels sit above all
  *
  * Land-only mask: layers 5–6 (hypso + hillshade) sit BELOW the water
@@ -701,8 +701,8 @@ export function composeLayers(opts = {}) {
     );
   }
 
-  // 24: Game-style coordinate grid — the "battleship" reference overlay.
-  //     Emitted dead-last so its bright lines + labels read on top of the
+  // 24: Coordinate grid — the 1 km reference overlay. Emitted dead-last
+  //     so its bright lines + close-zoom labels read on top of the
   //     entire stack (basemap, relief, roads AND labels). Gated by both
   //     the `grid` flag and the inline-GeoJSON source's presence, so the
   //     composer never references a source that wasn't added.

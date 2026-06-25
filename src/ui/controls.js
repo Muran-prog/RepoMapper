@@ -169,8 +169,8 @@ const CARPATHIAN_TRAILS_PREF_KEY = 'cart:features:carpathianTrails';
 // Default ON; persists so a user who turns the heavy orange look off
 // doesn't see it return on every reload.
 const ROADS_ORANGE_BOLD_PREF_KEY = 'cart:features:roadsOrangeBold';
-// Game-style coordinate grid — off by default; persist an ON choice so the
-// battleship overlay survives a reload.
+// 1 km coordinate grid — off by default; persist an ON choice so the
+// reference overlay survives a reload.
 const GRID_PREF_KEY = 'cart:features:grid';
 // Forest-mode markup accents — independent sub-toggles that only act
 // while forestCover is on. They persist alongside the forestCover choice
@@ -682,9 +682,9 @@ function renderLayersPanelBody() {
       meta: '1',
       open: false,
       body: `
-        ${groupNote('Тактическая сетка как в играх: столбцы — буквы (A–J), строки — цифры (1–7). Каждая клетка получает обозначение как в морском бое — A1, B7, J3.')}
+        ${groupNote('Сетка 1 км на 1 км поверх карты. Линии появляются на рабочем приближении, а подпись клетки показывается только на крупном зуме, когда квадрат уже читается.')}
         <div class="rows">
-          ${richRow({ ctl: 'grid', title: 'Координатная сетка', desc: 'Чёткая игровая сетка с подписями клеток (A1, B7…) поверх карты', rowAttr: 'data-ctl-row="grid"' })}
+          ${richRow({ ctl: 'grid', title: 'Координатная сетка', desc: 'Сетка 1 км на 1 км; подписи клеток появляются при приближении', rowAttr: 'data-ctl-row="grid"' })}
         </div>
       `,
     })}
@@ -1294,7 +1294,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         ROADS_ORANGE_BOLD_PREF_KEY,
         FEATURES.roadsOrangeBold,
       ),
-      // Game-style coordinate grid — off by default; the user's ON choice
+      // 1 km coordinate grid — off by default; the user's ON choice
       // persists under `cart:features:grid` so the overlay survives reload.
       grid: loadBoolPref(GRID_PREF_KEY, FEATURES.grid),
     },
@@ -1597,7 +1597,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         saveBoolPref(ROADS_ORANGE_BOLD_PREF_KEY, el.checked);
       }
       // Coordinate grid — persist the user's choice (default off) so an
-      // ON decision restores the battleship overlay after a reload.
+      // ON decision restores the reference overlay after a reload.
       if (key === 'grid') {
         saveBoolPref(GRID_PREF_KEY, el.checked);
       }

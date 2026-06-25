@@ -443,7 +443,7 @@ function profileToLayerOpts(profileConfig, features) {
     // factory and src/style/index.js for the z-order placement.
     hikingRoutes:
       features.hikingRoutes && profileConfig.enableCarpathianOverlay,
-    // Game-style coordinate grid — profile-independent (pure geometry,
+    // 1 km coordinate grid — profile-independent (pure geometry,
     // no tiles), so it rides straight through from the feature flag.
     grid: features.grid,
     colorRelief: features.colorRelief, // runtime-checked downstream

@@ -43,6 +43,7 @@ import {
   detectHypsoCaps,
   findActiveHypsoLayer,
 } from '../style/hypso/index.js';
+import { syncGridSource } from '../style/grid.js';
 
 export function installInteractionTuning(map, { caps } = {}) {
   const isTouch = !!caps?.isTouch;
@@ -120,6 +121,15 @@ export function installInteractionTuning(map, { caps } = {}) {
   installHillshadeLifecycle(map, { reduceMotion });
   installHypsoLifecycle(map, { reduceMotion });
   installHypsoZoomBinding(map);
+  installGridLifecycle(map);
+}
+
+function installGridLifecycle(map) {
+  const sync = () => syncGridSource(map);
+  map.on('styledata', sync);
+  map.on('moveend', sync);
+  map.on('zoomend', sync);
+  map.once('load', sync);
 }
 
 /**

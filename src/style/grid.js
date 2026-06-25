@@ -1,26 +1,11 @@
 /**
- * Game-style coordinate grid — a toggleable "battleship" overlay.
+ * Coordinate grid — a toggleable 1 km reference overlay.
  *
- * Draws a crisp lettered/numbered reference grid over the Ukrainian
- * extent, exactly like the tactical map grids in games (PUBG, DayZ):
- * columns are letters (A, B, C, …) running west→east, rows are numbers
- * (1, 2, 3, …) running north→south, so every cell has a battleship-style
- * designation — "A1" top-left, "B7", "J3", etc.
- *
- * It's a pure-geometry overlay computed from constants (no network, no
- * tiles), surfaced through a single inline-GeoJSON source so it survives
- * every `setStyle` rebuild like any other style feature. Gated by the
- * `grid` feature flag + the source's presence in composeLayers.
- *
- * Visibility is the whole point ("очень хорошо видно"): bright white
- * lines ride on a dark blurred casing so they read on any basemap
- * (light Cart paper OR dark satellite imagery), and the labels carry a
- * strong dark halo. Amber edge headers (letters along the top, numbers
- * down the left) frame the grid like the in-game reference.
- *
- * The grid is anchored to the world, not the screen — it pans and zooms
- * with the map, so a cell always covers the same ground. Labels use
- * allow-overlap/ignore-placement so they never get culled by collision.
+ * The source is intentionally dynamic: a 1 km grid across Ukraine would be
+ * thousands of lines and well over a million cell labels if emitted at once.
+ * We keep the style source empty at compose time, then populate only the
+ * current viewport from interactions.js. Labels are generated only at close
+ * zooms where an individual square is readable.
  */
 
 import { UKRAINE_BOUNDS } from '../config.js';
@@ -33,20 +18,22 @@ export const GRID_LAYERS = Object.freeze({
   casing: 'cart-grid-casing',
   line: 'cart-grid-line',
   cellLabel: 'cart-grid-cell-label',
-  edgeLabel: 'cart-grid-edge-label',
 });
 
-/**
- * Grid resolution. 10 columns × 7 rows yields cells that read close to
- * square on screen at the country overview (Web Mercator stretches
- * latitude by ~sec(48°)≈1.5, so a wider lon step balances a taller lat
- * step), and keeps the A–J / 1–7 labels uncluttered.
- */
-const COLS = 10;
-const ROWS = 7;
+/** One grid square is 1 km × 1 km. */
+export const GRID_CELL_SIZE_METERS = 1000;
 
-/** Densify long grid edges so they stay pin-straight under reprojection. */
-const SEGMENTS = 24;
+/** The grid is too dense to be useful below neighbourhood zooms. */
+export const GRID_LINE_MIN_ZOOM = 9.5;
+export const GRID_LABEL_MIN_ZOOM = 12;
+
+const EARTH_RADIUS_METERS = 6_371_008.8;
+const DEG_PER_METER_LAT = 180 / (Math.PI * EARTH_RADIUS_METERS);
+const VIEW_PADDING_CELLS = 2;
+const MAX_DYNAMIC_LABELS = 2500;
+
+/** Densify long grid edges so they stay smooth under globe/projection changes. */
+const SEGMENTS = 12;
 
 /** Column index (0-based) → spreadsheet-style letter (A…Z, AA…). */
 export function columnLetter(i) {
@@ -59,110 +46,235 @@ export function columnLetter(i) {
   return s;
 }
 
+function emptyGridGeoJSON() {
+  return { type: 'FeatureCollection', features: [] };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-/**
- * Build the grid as a single FeatureCollection:
- *   • `kind:'line'`  — every meridian + parallel of the grid (densified)
- *   • `kind:'cell'`  — one label point per cell at its centre ("B7")
- *   • `kind:'edge'`  — header letters along the top, numbers down the left
- *
- * @param {object} [opts]
- * @param {[[number,number],[number,number]]} [opts.bounds] [[w,s],[e,n]]
- * @param {number} [opts.cols]
- * @param {number} [opts.rows]
- */
-export function buildGridGeoJSON(opts = {}) {
-  const bounds = opts.bounds ?? UKRAINE_BOUNDS;
-  const cols = opts.cols ?? COLS;
-  const rows = opts.rows ?? ROWS;
+function toRad(deg) {
+  return (deg * Math.PI) / 180;
+}
 
+function gridMetrics(bounds = UKRAINE_BOUNDS) {
   const [[w, s], [e, n]] = bounds;
-  const stepLon = (e - w) / cols;
-  const stepLat = (n - s) / rows;
-  const features = [];
+  const refLat = (s + n) / 2;
+  const stepLat = GRID_CELL_SIZE_METERS * DEG_PER_METER_LAT;
+  const stepLon = stepLat / Math.max(0.01, Math.cos(toRad(refLat)));
 
-  // Vertical lines (meridians) at every column boundary.
-  for (let i = 0; i <= cols; i += 1) {
-    const lon = w + i * stepLon;
-    const coords = [];
-    for (let k = 0; k <= SEGMENTS; k += 1) {
-      coords.push([lon, lerp(s, n, k / SEGMENTS)]);
-    }
-    features.push({
-      type: 'Feature',
-      properties: { kind: 'line' },
-      geometry: { type: 'LineString', coordinates: coords },
-    });
+  return {
+    w,
+    s,
+    e,
+    n,
+    stepLon,
+    stepLat,
+    cols: Math.ceil((e - w) / stepLon),
+    rows: Math.ceil((n - s) / stepLat),
+  };
+}
+
+function expandBounds(bounds, metrics) {
+  const [[w, s], [e, n]] = bounds;
+  return [
+    [w - metrics.stepLon * VIEW_PADDING_CELLS, s - metrics.stepLat * VIEW_PADDING_CELLS],
+    [e + metrics.stepLon * VIEW_PADDING_CELLS, n + metrics.stepLat * VIEW_PADDING_CELLS],
+  ];
+}
+
+function intersectBounds(a, b) {
+  const [[aw, as], [ae, an]] = a;
+  const [[bw, bs], [be, bn]] = b;
+  const w = Math.max(aw, bw);
+  const s = Math.max(as, bs);
+  const e = Math.min(ae, be);
+  const n = Math.min(an, bn);
+  if (w >= e || s >= n) return null;
+  return [[w, s], [e, n]];
+}
+
+function queryBoundsFor(viewportBounds, metrics) {
+  return intersectBounds(
+    expandBounds(viewportBounds, metrics),
+    [[metrics.w, metrics.s], [metrics.e, metrics.n]],
+  );
+}
+
+function lineCoords(lonOrLat, start, end, axis) {
+  const coords = [];
+  for (let k = 0; k <= SEGMENTS; k += 1) {
+    const v = lerp(start, end, k / SEGMENTS);
+    coords.push(axis === 'lon' ? [lonOrLat, v] : [v, lonOrLat]);
   }
+  return coords;
+}
 
-  // Horizontal lines (parallels) at every row boundary.
-  for (let j = 0; j <= rows; j += 1) {
-    const lat = s + j * stepLat;
-    const coords = [];
-    for (let k = 0; k <= SEGMENTS; k += 1) {
-      coords.push([lerp(w, e, k / SEGMENTS), lat]);
-    }
-    features.push({
-      type: 'Feature',
-      properties: { kind: 'line' },
-      geometry: { type: 'LineString', coordinates: coords },
-    });
-  }
+function dynamicRanges(metrics, query) {
+  const [[qw, qs], [qe, qn]] = query;
+  return {
+    colLineStart: clamp(Math.floor((qw - metrics.w) / metrics.stepLon), 0, metrics.cols),
+    colLineEnd: clamp(Math.ceil((qe - metrics.w) / metrics.stepLon), 0, metrics.cols),
+    rowLineStart: clamp(Math.floor((metrics.n - qn) / metrics.stepLat), 0, metrics.rows),
+    rowLineEnd: clamp(Math.ceil((metrics.n - qs) / metrics.stepLat), 0, metrics.rows),
+    colCellStart: clamp(Math.floor((qw - metrics.w) / metrics.stepLon), 0, metrics.cols - 1),
+    colCellEnd: clamp(Math.floor((qe - metrics.w) / metrics.stepLon), 0, metrics.cols - 1),
+    rowCellStart: clamp(Math.floor((metrics.n - qn) / metrics.stepLat), 0, metrics.rows - 1),
+    rowCellEnd: clamp(Math.floor((metrics.n - qs) / metrics.stepLat), 0, metrics.rows - 1),
+  };
+}
 
-  // Per-cell centre labels — the battleship designation "<letter><row>".
-  // Row 1 sits at the NORTH edge (top), so we count rows down from `n`.
-  for (let j = 0; j < rows; j += 1) {
-    const latCenter = n - (j + 0.5) * stepLat;
-    for (let i = 0; i < cols; i += 1) {
-      const lonCenter = w + (i + 0.5) * stepLon;
+function gridSignature(viewportBounds, zoom, fullBounds = UKRAINE_BOUNDS) {
+  if (zoom < GRID_LINE_MIN_ZOOM) return 'empty';
+  const metrics = gridMetrics(fullBounds);
+  const query = queryBoundsFor(viewportBounds, metrics);
+  if (!query) return 'outside';
+  const r = dynamicRanges(metrics, query);
+  return [
+    zoom >= GRID_LABEL_MIN_ZOOM ? 'labels' : 'lines',
+    r.colLineStart,
+    r.colLineEnd,
+    r.rowLineStart,
+    r.rowLineEnd,
+    r.colCellStart,
+    r.colCellEnd,
+    r.rowCellStart,
+    r.rowCellEnd,
+  ].join('|');
+}
+
+function mapViewportBounds(map) {
+  const b = map.getBounds?.();
+  if (!b) return UKRAINE_BOUNDS;
+  return [
+    [b.getWest(), b.getSouth()],
+    [b.getEast(), b.getNorth()],
+  ];
+}
+
+function addCellLabels(features, metrics, query, ranges) {
+  const [[qw, qs], [qe, qn]] = query;
+  const cols = ranges.colCellEnd - ranges.colCellStart + 1;
+  const rows = ranges.rowCellEnd - ranges.rowCellStart + 1;
+  if (cols <= 0 || rows <= 0 || cols * rows > MAX_DYNAMIC_LABELS) return;
+
+  for (let j = ranges.rowCellStart; j <= ranges.rowCellEnd; j += 1) {
+    const lat = metrics.n - (j + 0.5) * metrics.stepLat;
+    if (lat < qs || lat > qn || lat < metrics.s || lat > metrics.n) continue;
+
+    for (let i = ranges.colCellStart; i <= ranges.colCellEnd; i += 1) {
+      const lon = metrics.w + (i + 0.5) * metrics.stepLon;
+      if (lon < qw || lon > qe || lon < metrics.w || lon > metrics.e) continue;
       features.push({
         type: 'Feature',
         properties: { kind: 'cell', label: `${columnLetter(i)}${j + 1}` },
-        geometry: { type: 'Point', coordinates: [lonCenter, latCenter] },
+        geometry: { type: 'Point', coordinates: [lon, lat] },
       });
     }
   }
+}
 
-  // Edge headers — letters along the top, numbers down the left, inset a
-  // touch so they sit just inside the frame rather than straddling it.
-  const insetLat = stepLat * 0.16;
-  const insetLon = stepLon * 0.16;
-  for (let i = 0; i < cols; i += 1) {
+/**
+ * Build the visible 1 km grid as a FeatureCollection:
+ *   • `kind:'line'` — meridians/parallels spaced at 1 km
+ *   • `kind:'cell'` — close-zoom cell label points only
+ *
+ * @param {object} [opts]
+ * @param {[[number,number],[number,number]]} [opts.bounds] Full grid bounds.
+ * @param {[[number,number],[number,number]]} [opts.viewportBounds] Current map viewport.
+ * @param {number} [opts.zoom] Current map zoom.
+ */
+export function buildGridGeoJSON(opts = {}) {
+  const zoom = opts.zoom ?? GRID_LINE_MIN_ZOOM;
+  if (zoom < GRID_LINE_MIN_ZOOM) return emptyGridGeoJSON();
+
+  const bounds = opts.bounds ?? UKRAINE_BOUNDS;
+  const metrics = gridMetrics(bounds);
+  const viewportBounds = opts.viewportBounds ?? bounds;
+  const query = queryBoundsFor(viewportBounds, metrics);
+  if (!query) return emptyGridGeoJSON();
+
+  const [[qw, qs], [qe, qn]] = query;
+  const ranges = dynamicRanges(metrics, query);
+  const features = [];
+
+  // Vertical lines (north/south) at every 1 km column boundary.
+  for (let i = ranges.colLineStart; i <= ranges.colLineEnd; i += 1) {
+    const lon = metrics.w + i * metrics.stepLon;
+    if (lon < metrics.w || lon > metrics.e) continue;
     features.push({
       type: 'Feature',
-      properties: { kind: 'edge', label: columnLetter(i) },
-      geometry: {
-        type: 'Point',
-        coordinates: [w + (i + 0.5) * stepLon, n - insetLat],
-      },
+      properties: { kind: 'line' },
+      geometry: { type: 'LineString', coordinates: lineCoords(lon, qs, qn, 'lon') },
     });
   }
-  for (let j = 0; j < rows; j += 1) {
+
+  // Horizontal lines (west/east) at every 1 km row boundary.
+  for (let j = ranges.rowLineStart; j <= ranges.rowLineEnd; j += 1) {
+    const lat = metrics.n - j * metrics.stepLat;
+    if (lat < metrics.s || lat > metrics.n) continue;
     features.push({
       type: 'Feature',
-      properties: { kind: 'edge', label: `${j + 1}` },
-      geometry: {
-        type: 'Point',
-        coordinates: [w + insetLon, n - (j + 0.5) * stepLat],
-      },
+      properties: { kind: 'line' },
+      geometry: { type: 'LineString', coordinates: lineCoords(lat, qw, qe, 'lat') },
     });
+  }
+
+  if (zoom >= GRID_LABEL_MIN_ZOOM) {
+    addCellLabels(features, metrics, query, ranges);
   }
 
   return { type: 'FeatureCollection', features };
 }
 
-/** Inline-GeoJSON source spec for the grid. */
-export function gridSourceSpec(opts = {}) {
-  return { type: 'geojson', data: buildGridGeoJSON(opts) };
+/** Inline-GeoJSON source spec for the dynamic grid. */
+export function gridSourceSpec() {
+  return { type: 'geojson', data: emptyGridGeoJSON() };
+}
+
+/** Update the live grid source with the current viewport slice. */
+export function syncGridSource(map) {
+  if (!map || typeof map.getSource !== 'function') return;
+
+  let source;
+  try {
+    source = map.getSource(GRID_SOURCE_ID);
+  } catch {
+    return;
+  }
+
+  const cart = map._cart ?? {};
+  if (!source || typeof source.setData !== 'function') {
+    cart.gridSourceRef = null;
+    cart.gridSig = '';
+    if (map._cart) map._cart = cart;
+    return;
+  }
+
+  if (cart.gridSourceRef !== source) {
+    cart.gridSourceRef = source;
+    cart.gridSig = '';
+  }
+
+  const zoom = map.getZoom?.() ?? 0;
+  const viewportBounds = mapViewportBounds(map);
+  const sig = gridSignature(viewportBounds, zoom);
+  if (cart.gridSig === sig) return;
+
+  cart.gridSig = sig;
+  source.setData(buildGridGeoJSON({ viewportBounds, zoom }));
+  if (map._cart) map._cart = cart;
 }
 
 /**
- * Grid layer stack — casing → line → cell labels → edge headers.
- * White lines on a dark blurred casing read on any basemap; labels
- * carry a strong halo and never collide-cull.
+ * Grid layer stack — casing → line → cell labels.
+ * White lines on a dark blurred casing read on any basemap; labels appear
+ * only once individual 1 km cells have enough screen space.
  *
  * @param {object} t  theme tokens (for the font stack)
  * @param {object} [opts]
@@ -179,15 +291,15 @@ export function gridLayers(t, opts = {}) {
       type: 'line',
       source,
       filter: lineFilter,
-      minzoom: 0,
+      minzoom: GRID_LINE_MIN_ZOOM,
       layout: { 'line-cap': 'butt', 'line-join': 'round' },
       paint: {
         'line-color': '#0b1018',
-        'line-opacity': 0.5,
-        'line-blur': 0.6,
+        'line-opacity': 0.58,
+        'line-blur': 0.7,
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          3, 2.2, 7, 3.6, 11, 5.5, 15, 7,
+          9.5, 4.6, 11, 7.4, 14, 11, 17, 14,
         ],
       },
     },
@@ -197,24 +309,24 @@ export function gridLayers(t, opts = {}) {
       type: 'line',
       source,
       filter: lineFilter,
-      minzoom: 0,
+      minzoom: GRID_LINE_MIN_ZOOM,
       layout: { 'line-cap': 'butt', 'line-join': 'round' },
       paint: {
         'line-color': '#ffffff',
-        'line-opacity': 0.85,
+        'line-opacity': 0.94,
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          3, 0.7, 7, 1.3, 11, 2, 15, 2.6,
+          9.5, 1.8, 11, 3, 14, 4.6, 17, 5.8,
         ],
       },
     },
-    // Per-cell battleship designation ("B7"), always visible.
+    // Per-cell designation ("AB123"), generated only near the viewport.
     {
       id: GRID_LAYERS.cellLabel,
       type: 'symbol',
       source,
       filter: ['==', ['get', 'kind'], 'cell'],
-      minzoom: 0,
+      minzoom: GRID_LABEL_MIN_ZOOM,
       layout: {
         'text-field': ['get', 'label'],
         'text-font': t.font.bold,
@@ -222,39 +334,15 @@ export function gridLayers(t, opts = {}) {
         'text-ignore-placement': true,
         'text-size': [
           'interpolate', ['linear'], ['zoom'],
-          4, 11, 6, 14, 9, 19, 12, 26, 15, 32,
+          12, 12, 14, 16, 17, 22,
         ],
       },
       paint: {
         'text-color': '#ffffff',
-        'text-opacity': 0.92,
+        'text-opacity': 0.94,
         'text-halo-color': '#0b1018',
-        'text-halo-width': 1.7,
+        'text-halo-width': 1.8,
         'text-halo-blur': 0.4,
-      },
-    },
-    // Amber header letters/numbers framing the grid edges.
-    {
-      id: GRID_LAYERS.edgeLabel,
-      type: 'symbol',
-      source,
-      filter: ['==', ['get', 'kind'], 'edge'],
-      minzoom: 0,
-      layout: {
-        'text-field': ['get', 'label'],
-        'text-font': t.font.bold,
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-        'text-size': [
-          'interpolate', ['linear'], ['zoom'],
-          4, 13, 7, 18, 10, 26, 13, 34,
-        ],
-      },
-      paint: {
-        'text-color': '#ffd54a',
-        'text-halo-color': '#1b1402',
-        'text-halo-width': 2,
-        'text-halo-blur': 0.3,
       },
     },
   ];

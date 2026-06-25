@@ -886,9 +886,9 @@ export const FEATURES = Object.freeze({
   settlementOutline: true,
 
   /**
-   * Game-style coordinate grid — a toggleable "battleship" reference
-   * overlay (lettered columns A–J, numbered rows 1–7) drawn over the
-   * Ukrainian extent. Pure-geometry, network-free; see src/style/grid.js.
+   * Coordinate grid — a toggleable 1 km × 1 km reference overlay drawn
+   * over the Ukrainian extent. Pure-geometry, network-free, and populated
+   * dynamically near the current viewport; see src/style/grid.js.
    *
    * Default OFF — it's an opt-in tactical aid, surfaced through the
    * «Координатная сетка» toggle in the Layers panel. The user's choice

@@ -115,9 +115,9 @@ export function composeSources({
     data: SETTLEMENTS_SUPPLEMENT,
   };
 
-  // Game-style coordinate grid — inline GeoJSON, only emitted when the
-  // `grid` feature flag is on so the battleship overlay's source +
-  // layers appear/disappear together on each style rebuild.
+  // 1 km coordinate grid — inline GeoJSON source, only emitted when the
+  // `grid` feature flag is on. The source starts empty and interactions.js
+  // fills it with the current viewport slice so labels don't explode.
   if (features.grid) {
     sources[GRID_SOURCE_ID] = gridSourceSpec();
   }
