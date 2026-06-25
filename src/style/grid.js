@@ -299,7 +299,7 @@ export function gridLayers(t, opts = {}) {
         'line-blur': 0.7,
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          9.5, 4.6, 11, 7.4, 14, 11, 17, 14,
+          9.5, 2.3, 11, 3.7, 14, 5.5, 17, 7,
         ],
       },
     },
@@ -316,7 +316,7 @@ export function gridLayers(t, opts = {}) {
         'line-opacity': 0.94,
         'line-width': [
           'interpolate', ['linear'], ['zoom'],
-          9.5, 1.8, 11, 3, 14, 4.6, 17, 5.8,
+          9.5, 0.9, 11, 1.5, 14, 2.3, 17, 2.9,
         ],
       },
     },
