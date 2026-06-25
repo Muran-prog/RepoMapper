@@ -15,6 +15,7 @@ import { detectCaps, deriveProfile, watchViewport } from './device.js';
 import { FEATURES } from './config.js';
 import { ensureAuthenticated, installAuthWatcher } from './ui/auth-gate.js';
 import { initAccountState, flushPending } from './state/account-store.js';
+import { loadControlPrefs } from './ui/store.js';
 
 async function boot() {
   const root = document.getElementById('app');
@@ -49,9 +50,13 @@ async function boot() {
   // ----- Device detection ----------------------------------------------
   const caps = detectCaps();
   const profile = deriveProfile(caps);
+  const controlPrefs = loadControlPrefs();
+  const effectiveProfile = controlPrefs.qualityChoice === 'auto'
+    ? profile
+    : controlPrefs.qualityChoice;
 
   // Stamp data-attributes on <html> so CSS can use them as selectors.
-  applyDeviceAttributes(caps, profile);
+  applyDeviceAttributes(caps, effectiveProfile);
 
   // ----- DOM refs ------------------------------------------------------
   const mapEl = document.getElementById('map');
@@ -62,14 +67,19 @@ async function boot() {
   // ----- Map -----------------------------------------------------------
   let map;
   try {
-    map = await createMap(mapEl, { caps, profile });
+    map = await createMap(mapEl, {
+      caps,
+      profile: effectiveProfile,
+      theme: controlPrefs.theme,
+      featureOverrides: controlPrefs.layerFeatures,
+    });
   } catch (err) {
     showFatal(root, err);
     throw err;
   }
 
   installInteractionTuning(map, { caps });
-  mountControls(map, sidebar, scrim, { caps, profile });
+  mountControls(map, sidebar, scrim, { caps, profile, controlPrefs });
 
   if (FEATURES.hud) {
     const perf = createPerfMonitor(map);
@@ -81,7 +91,9 @@ async function boot() {
   // Reflect orientation / viewport changes on <html> so CSS can react. We
   // never re-derive the *performance* profile (RAM/CPU don't change), but
   // we do want the layout media-query data to stay current for JS too.
-  watchViewport((newCaps) => applyDeviceAttributes(newCaps, profile));
+  watchViewport((newCaps) =>
+    applyDeviceAttributes(newCaps, document.documentElement.dataset.profile || effectiveProfile),
+  );
 
   // ----- First-paint signal -------------------------------------------
   map.once('idle', () => {

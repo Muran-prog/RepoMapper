@@ -28,9 +28,16 @@
 import { applyStyle, applyMapMode } from '../map/createMap.js';
 import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
 import { getProfileConfig } from '../device.js';
-import { FEATURES, DEFAULT_THEME, MAP_MODES, DEFAULT_MAP_MODE } from '../config.js';
+import { DEFAULT_THEME } from '../config.js';
 import { mountHypsoUI } from './hypso/index.js';
-import { loadUiPrefs, saveUiPrefs, loadMapMode } from './store.js';
+import {
+  loadUiPrefs,
+  saveUiPrefs,
+  loadMapMode,
+  loadControlPrefs,
+  saveControlPrefs,
+  saveLayerFeaturePref,
+} from './store.js';
 import { mountModeSwitcher } from './mode-switcher.js';
 import { createDrawEngine } from '../draw/index.js';
 import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
@@ -122,152 +129,15 @@ const ICONS = {
 };
 
 // ---------------------------------------------------------------------------
-// Persisted feature flags.
-//
-// Most relief feature flags are device-profile-driven and reset to
-// FEATURES defaults on every cold boot. The Land cover overlay is
-// special: the operator points TERRAIN.worldcover.url at a hosted
-// archive once and then the user's on/off choice should survive a
-// reload (otherwise the toggle reads as "off by default" forever
-// even after they enable it). Stored under a per-feature key so we
-// can grow the set without churning the schema of `cart:ui:prefs:v1`.
-//
-// Canopy height shares the same lifecycle reasoning: once an
-// operator wires the URL up, the user's choice should outlive the
-// page. Both keys live under `cart:features:*` for consistency.
-// ---------------------------------------------------------------------------
-
-const WORLDCOVER_TINT_PREF_KEY = 'cart:features:worldcoverTint';
-const CANOPY_HEIGHT_TINT_PREF_KEY = 'cart:features:canopyHeightTint';
 // Base-map block view mode — how the "Базовая карта" chooser is presented:
 //   'expanded'  — full card list inside the sidebar (default)
 //   'collapsed' — heading only; cards hidden behind the chevron
 //   'detached'  — block removed from the sidebar, shown as a floating
 //                 rail button + popover instead.
+// ---------------------------------------------------------------------------
+
 const MODE_BLOCK_VIEW_PREF_KEY = 'cart:ui:modeBlockView';
 const MODE_BLOCK_VIEWS = ['expanded', 'collapsed', 'detached'];
-// Forest leaf-type biom polygons share the same lifecycle as the two
-// raster relief overlays above: the operator rebuilds and re-uploads
-// carpathian-osm.pmtiles once, then the user's on/off choice should
-// outlive the page. Stored under the same `cart:features:*` namespace
-// so the persistence shape stays consistent.
-const FOREST_LEAF_TYPE_PREF_KEY = 'cart:features:forestLeafType';
-// Forest-cover overlay (vivid green highlight of every wooded polygon).
-// Pure stylistic preference with no operator-side data, but we still
-// persist it so a user who turns this Google-Earth-style overlay ON sees
-// it survive a reload — same `cart:features:*` namespace as the rest.
-const FOREST_COVER_PREF_KEY = 'cart:features:forestCover';
-// Hazardous-terrain overlay (extreme peaks, cliffs, dangerous passes).
-// Defaults to ON and the user choice persists so a user who turns the
-// "danger" markers off doesn't see them re-appear after every reload.
-const HAZARDOUS_TERRAIN_PREF_KEY = 'cart:features:hazardousTerrain';
-// Carpathian trail web (the bold red trail lines) — default ON; the user's
-// "off" choice must outlive the page like the other operator-hosted overlays.
-const CARPATHIAN_TRAILS_PREF_KEY = 'cart:features:carpathianTrails';
-// Bold orange road treatment — orange fills + amber casings + glow +
-// boosted widths on the hierarchy network (the «жирные оранжевые дороги»).
-// Default ON; persists so a user who turns the heavy orange look off
-// doesn't see it return on every reload.
-const ROADS_ORANGE_BOLD_PREF_KEY = 'cart:features:roadsOrangeBold';
-// 1 km coordinate grid — off by default; persist an ON choice so the
-// reference overlay survives a reload.
-const GRID_PREF_KEY = 'cart:features:grid';
-// Forest-mode markup accents — independent sub-toggles that only act
-// while forestCover is on. They persist alongside the forestCover choice
-// so a user's customised forest view survives a reload. Keyed by feature
-// name under the same `cart:features:*` namespace and read/written through
-// the generic loadBoolPref/saveBoolPref helpers below (no need for a
-// bespoke function pair per flag).
-const FOREST_MARKUP_PREF_KEYS = Object.freeze({
-  forestCities: 'cart:features:forestCities',
-  forestWaterAccent: 'cart:features:forestWaterAccent',
-  forestRoadsBold: 'cart:features:forestRoadsBold',
-  forestRoadsOrange: 'cart:features:forestRoadsOrange',
-});
-
-function loadWorldcoverTintPref(fallback) {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = kv.getItem(WORLDCOVER_TINT_PREF_KEY);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveWorldcoverTintPref(value) {
-  try {
-    if (typeof window === 'undefined') return;
-    kv.setItem(WORLDCOVER_TINT_PREF_KEY, value ? '1' : '0');
-  } catch {
-    /* quota / serialise — best-effort */
-  }
-}
-
-function loadCanopyHeightTintPref(fallback) {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = kv.getItem(CANOPY_HEIGHT_TINT_PREF_KEY);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveCanopyHeightTintPref(value) {
-  try {
-    if (typeof window === 'undefined') return;
-    kv.setItem(CANOPY_HEIGHT_TINT_PREF_KEY, value ? '1' : '0');
-  } catch {
-    /* quota / serialise — best-effort */
-  }
-}
-
-function loadForestLeafTypePref(fallback) {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = kv.getItem(FOREST_LEAF_TYPE_PREF_KEY);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveForestLeafTypePref(value) {
-  try {
-    if (typeof window === 'undefined') return;
-    kv.setItem(FOREST_LEAF_TYPE_PREF_KEY, value ? '1' : '0');
-  } catch {
-    /* quota / serialise — best-effort */
-  }
-}
-
-function loadForestCoverPref(fallback) {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = kv.getItem(FOREST_COVER_PREF_KEY);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveForestCoverPref(value) {
-  try {
-    if (typeof window === 'undefined') return;
-    kv.setItem(FOREST_COVER_PREF_KEY, value ? '1' : '0');
-  } catch {
-    /* quota / serialise — best-effort */
-  }
-}
 
 function loadModeBlockView(fallback = 'expanded') {
   try {
@@ -284,50 +154,6 @@ function saveModeBlockView(value) {
     if (typeof window === 'undefined') return;
     if (!MODE_BLOCK_VIEWS.includes(value)) return;
     kv.setItem(MODE_BLOCK_VIEW_PREF_KEY, value);
-  } catch {
-    /* quota / serialise — best-effort */
-  }
-}
-
-function loadHazardousTerrainPref(fallback) {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = kv.getItem(HAZARDOUS_TERRAIN_PREF_KEY);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveHazardousTerrainPref(value) {
-  try {
-    if (typeof window === 'undefined') return;
-    kv.setItem(HAZARDOUS_TERRAIN_PREF_KEY, value ? '1' : '0');
-  } catch {
-    /* quota / serialise — best-effort */
-  }
-}
-
-/** Generic tri-state boolean pref read ('1' → true, '0' → false, else fallback). */
-function loadBoolPref(key, fallback) {
-  try {
-    if (typeof window === 'undefined') return fallback;
-    const raw = kv.getItem(key);
-    if (raw === '1') return true;
-    if (raw === '0') return false;
-    return fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-/** Generic boolean pref write — best-effort, swallows quota errors. */
-function saveBoolPref(key, value) {
-  try {
-    if (typeof window === 'undefined') return;
-    kv.setItem(key, value ? '1' : '0');
   } catch {
     /* quota / serialise — best-effort */
   }
@@ -1133,8 +959,9 @@ class SidebarController {
  * @param {object} ctx
  * @param {DeviceCaps} ctx.caps
  * @param {string} ctx.profile
+ * @param {object} [ctx.controlPrefs]
  */
-export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
+export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs } = {}) {
   installNativeControls(map, { caps });
 
   const app = document.getElementById('app');
@@ -1215,88 +1042,60 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   app.appendChild(modePopover);
 
   // ----- State the user can toggle -------------------------------------
+  const restoredPrefs = controlPrefs ?? loadControlPrefs();
   const state = {
-    theme: DEFAULT_THEME,
-    qualityChoice: 'auto',
+    theme: restoredPrefs.theme,
+    qualityChoice: restoredPrefs.qualityChoice,
     detectedProfile: profile ?? 'medium',
+    exaggeration: restoredPrefs.exaggeration,
     // Read from the map's stored state if available so we stay in
     // sync with what createMap() actually applied; loadMapMode() is
     // a safe fallback for tests that mount controls without a real
     // _cart attached.
     mode: map._cart?.mode ?? loadMapMode(),
     layerFeatures: {
-      labels: FEATURES.labels,
-      pois: FEATURES.pois,
-      buildings3D: FEATURES.buildings3D,
-      hillshade: FEATURES.hillshade,
-      terrain3D: FEATURES.terrain3D,
-      contours: FEATURES.contours,
-      hypsometricTint: FEATURES.hypsometricTint,
-      bathymetry: FEATURES.bathymetry,
-      textureShading: FEATURES.textureShading,
-      skyViewFactor: FEATURES.skyViewFactor,
-      worldcoverTint: loadWorldcoverTintPref(FEATURES.worldcoverTint),
-      canopyHeightTint: loadCanopyHeightTintPref(FEATURES.canopyHeightTint),
+      labels: restoredPrefs.layerFeatures.labels,
+      pois: restoredPrefs.layerFeatures.pois,
+      buildings3D: restoredPrefs.layerFeatures.buildings3D,
+      hillshade: restoredPrefs.layerFeatures.hillshade,
+      terrain3D: restoredPrefs.layerFeatures.terrain3D,
+      contours: restoredPrefs.layerFeatures.contours,
+      hypsometricTint: restoredPrefs.layerFeatures.hypsometricTint,
+      bathymetry: restoredPrefs.layerFeatures.bathymetry,
+      textureShading: restoredPrefs.layerFeatures.textureShading,
+      skyViewFactor: restoredPrefs.layerFeatures.skyViewFactor,
+      worldcoverTint: restoredPrefs.layerFeatures.worldcoverTint,
+      canopyHeightTint: restoredPrefs.layerFeatures.canopyHeightTint,
       // Forest leaf-type biom polygons. Off in FEATURES until the
       // operator rebuilds carpathian-osm.pmtiles with the new
       // forest_polygon source-layer; once they flip the toggle on
       // (here or via the UI) the choice survives reload.
-      forestLeafType: loadForestLeafTypePref(FEATURES.forestLeafType),
+      forestLeafType: restoredPrefs.layerFeatures.forestLeafType,
       // Forest-cover overlay — vivid green forest highlight from the
-      // global base vector source. Pure stylistic preference, but the
-      // user's ON choice persists under `cart:features:forestCover`.
-      forestCover: loadForestCoverPref(FEATURES.forestCover),
+      // global base vector source.
+      forestCover: restoredPrefs.layerFeatures.forestCover,
       // Forest-mode markup accents — independent sub-toggles that only act
       // while forestCover is on. Persisted alongside the forestCover choice
       // so a customised forest view survives a reload.
-      forestCities: loadBoolPref(
-        FOREST_MARKUP_PREF_KEYS.forestCities,
-        FEATURES.forestCities,
-      ),
-      forestWaterAccent: loadBoolPref(
-        FOREST_MARKUP_PREF_KEYS.forestWaterAccent,
-        FEATURES.forestWaterAccent,
-      ),
-      forestRoadsBold: loadBoolPref(
-        FOREST_MARKUP_PREF_KEYS.forestRoadsBold,
-        FEATURES.forestRoadsBold,
-      ),
-      forestRoadsOrange: loadBoolPref(
-        FOREST_MARKUP_PREF_KEYS.forestRoadsOrange,
-        FEATURES.forestRoadsOrange,
-      ),
-      slopeWarning: FEATURES.slopeWarning,
-      ridgeOverlay: FEATURES.ridgeOverlay,
-      carpathian: FEATURES.carpathian,
-      // Carpathian trail web — bold red trail lines, on by default; the
-      // user's choice persists under `cart:features:carpathianTrails` so an
-      // "off" decision (hide the red clutter) outlives the page.
-      carpathianTrails: loadBoolPref(
-        CARPATHIAN_TRAILS_PREF_KEY,
-        FEATURES.carpathianTrails,
-      ),
-      // Hazardous-terrain overlay — on by default; user choice persists
-      // under `cart:features:hazardousTerrain` for the same reason
-      // worldcover/canopy/forestLeaf do (operator-side data is hosted,
-      // so the user's "off" decision should outlive the page).
-      hazardousTerrain: loadHazardousTerrainPref(FEATURES.hazardousTerrain),
+      forestCities: restoredPrefs.layerFeatures.forestCities,
+      forestWaterAccent: restoredPrefs.layerFeatures.forestWaterAccent,
+      forestRoadsBold: restoredPrefs.layerFeatures.forestRoadsBold,
+      forestRoadsOrange: restoredPrefs.layerFeatures.forestRoadsOrange,
+      slopeWarning: restoredPrefs.layerFeatures.slopeWarning,
+      ridgeOverlay: restoredPrefs.layerFeatures.ridgeOverlay,
+      carpathian: restoredPrefs.layerFeatures.carpathian,
+      // Carpathian trail web — bold red trail lines, on by default.
+      carpathianTrails: restoredPrefs.layerFeatures.carpathianTrails,
+      // Hazardous-terrain overlay — on by default.
+      hazardousTerrain: restoredPrefs.layerFeatures.hazardousTerrain,
       // Settlement outlines — heavy road-style violet frame around
       // residential / suburb / quarter / neighbourhood polygons.
-      // Pure stylistic preference (no operator-side data is involved
-      // — the polygons ship in the upstream OMT tiles), so we don't
-      // persist it: every cold boot starts from the FEATURES default.
-      settlementOutline: FEATURES.settlementOutline,
+      settlementOutline: restoredPrefs.layerFeatures.settlementOutline,
       // Bold orange road treatment — orange fills + casings + glow +
-      // boosted widths on hierarchy roads. Default ON; the user's choice
-      // (especially "off") persists under `cart:features:roadsOrangeBold`
-      // so the heavy orange look doesn't return on every reload.
-      roadsOrangeBold: loadBoolPref(
-        ROADS_ORANGE_BOLD_PREF_KEY,
-        FEATURES.roadsOrangeBold,
-      ),
-      // 1 km coordinate grid — off by default; the user's ON choice
-      // persists under `cart:features:grid` so the overlay survives reload.
-      grid: loadBoolPref(GRID_PREF_KEY, FEATURES.grid),
+      // boosted widths on hierarchy roads.
+      roadsOrangeBold: restoredPrefs.layerFeatures.roadsOrangeBold,
+      // 1 km coordinate grid — off by default.
+      grid: restoredPrefs.layerFeatures.grid,
     },
   };
   const effectiveProfile = () =>
@@ -1316,7 +1115,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   // The active mode is stamped on `<html>` so CSS can dim irrelevant
   // panels (Relief / Hypso are Cart-only) without JS having to chase
   // every input on every switch. The applyMapMode call already
-  // persists the choice via localStorage; we just keep `state.mode`
+  // persists the choice via the account store; we just keep `state.mode`
   // in sync so subsequent style rebuilds (theme / quality switches)
   // route through the right branch.
   const syncModeAttr = () => {
@@ -1459,6 +1258,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   syncTheme();
   themeBtn?.addEventListener('click', async () => {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    saveControlPrefs({ theme: state.theme });
     syncTheme();
     await rebuildStyle();
   });
@@ -1475,6 +1275,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   // ----- Quality picker (in the Settings panel) -----------------------
   const qualBtns = panelsHost.querySelectorAll('[data-ctl=quality] button');
   const syncQuality = () => {
+    document.documentElement.dataset.profile = effectiveProfile();
     qualBtns.forEach((b) =>
       b.classList.toggle('on', b.dataset.value === state.qualityChoice),
     );
@@ -1484,6 +1285,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     b.addEventListener('click', async () => {
       if (state.qualityChoice === b.dataset.value) return;
       state.qualityChoice = b.dataset.value;
+      saveControlPrefs({ qualityChoice: state.qualityChoice });
       syncQuality();
       await rebuildStyle();
     }),
@@ -1543,29 +1345,12 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
     });
     els.forEach((el) => el.addEventListener('change', async () => {
       state.layerFeatures[key] = el.checked;
+      saveLayerFeaturePref(key, el.checked);
       // Mirror the new state onto any sibling checkboxes for this flag.
       els.forEach((other) => {
         if (other !== el && other.checked !== el.checked) other.checked = el.checked;
       });
-      // The Land cover toggle is the one feature whose user choice
-      // outlives the page — persist it through `cart:features:*`
-      // keys so a refresh restores the user's selection. Other
-      // feature toggles intentionally reset to FEATURES defaults
-      // each cold boot (they're tied to the device profile).
-      if (key === 'worldcoverTint') saveWorldcoverTintPref(el.checked);
-      // Canopy height shares the same persistence reasoning — once
-      // an operator wires `TERRAIN.canopyHeight.url` the user's
-      // selection should outlive the page.
-      if (key === 'canopyHeightTint') saveCanopyHeightTintPref(el.checked);
-      // Forest leaf-type follows the same pattern: once the operator
-      // rebuilds carpathian-osm.pmtiles with the forest_polygon
-      // source-layer, the user's on/off choice persists across
-      // reloads under `cart:features:forestLeafType`.
-      if (key === 'forestLeafType') saveForestLeafTypePref(el.checked);
-      // Forest-cover overlay — persist the user's choice so the green
-      // forest highlight survives a reload once enabled.
       if (key === 'forestCover') {
-        saveForestCoverPref(el.checked);
         // Enabling the flat forest view: level the camera to a top-down
         // pitch so the map reads truly flat (no oblique pseudo-3D), to
         // match the Google-Earth landcover reference. The relief/3D
@@ -1582,31 +1367,6 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         // Reveal the forest-mode markup sub-panel only while forest-cover
         // is on — its toggles have no effect outside this mode.
         setForestMarkupPanelVisible(el.checked);
-      }
-      // Hazardous-terrain overlay defaults to ON; the user's choice
-      // (especially "off") needs to outlive the page so the markers
-      // don't reappear on every reload.
-      if (key === 'hazardousTerrain') saveHazardousTerrainPref(el.checked);
-      // Carpathian trail web defaults to ON; persist the user's choice
-      // (especially "off") so the red trail lines don't reappear on reload.
-      if (key === 'carpathianTrails') saveBoolPref(CARPATHIAN_TRAILS_PREF_KEY, el.checked);
-      // Bold orange roads default to ON; persist the user's choice
-      // (especially "off") so the heavy orange treatment doesn't
-      // reappear on every reload.
-      if (key === 'roadsOrangeBold') {
-        saveBoolPref(ROADS_ORANGE_BOLD_PREF_KEY, el.checked);
-      }
-      // Coordinate grid — persist the user's choice (default off) so an
-      // ON decision restores the reference overlay after a reload.
-      if (key === 'grid') {
-        saveBoolPref(GRID_PREF_KEY, el.checked);
-      }
-      // Forest-mode markup accents — persist each independent sub-toggle
-      // so a customised forest view survives a reload. The flags only
-      // emit layers inside the forestCover block, so toggling them while
-      // forest-cover is off simply stores the preference for next time.
-      if (key in FOREST_MARKUP_PREF_KEYS) {
-        saveBoolPref(FOREST_MARKUP_PREF_KEYS[key], el.checked);
       }
       // Any user-driven change to one of the four managed flags is
       // the natural deactivation signal for the Flat hypso preset —
@@ -1651,42 +1411,6 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   forestMarkupPanel = panelsHost.querySelector('[data-forest-markup-panel]');
   setForestMarkupPanelVisible(!!state.layerFeatures.forestCover);
 
-  // ----- Cold-load reconcile of persisted layer prefs ------------------
-  //
-  // createMap() paints the first frame straight from the FEATURES
-  // defaults (main.js passes no featureOverrides). Several layer toggles,
-  // however, persist the user's choice across reloads via the
-  // `cart:features:*` keys, and `state.layerFeatures` is seeded from those
-  // restored prefs above. When a restored pref diverges from its default,
-  // the first paint would show the DEFAULT while the checkbox shows the
-  // RESTORED value — a silent map/control mismatch (e.g. forest-cover
-  // toggled ON last session renders OFF until the user clicks it again).
-  //
-  // Re-apply the restored feature state exactly once so the rendered map
-  // matches the controls. rebuildStyle() routes through resolveFeatures()
-  // (so reduced-motion / profile guards still win) and is idempotent, and
-  // the guard means a user whose prefs equal the defaults pays no extra
-  // style build.
-  const PERSISTED_FEATURE_KEYS = [
-    'worldcoverTint',
-    'canopyHeightTint',
-    'forestLeafType',
-    'forestCover',
-    'forestCities',
-    'forestWaterAccent',
-    'forestRoadsBold',
-    'forestRoadsOrange',
-    'hazardousTerrain',
-    'carpathianTrails',
-    'roadsOrangeBold',
-    'grid',
-  ];
-  if (PERSISTED_FEATURE_KEYS.some((k) => state.layerFeatures[k] !== FEATURES[k])) {
-    rebuildStyle().catch(() => {
-      /* first-paint reconcile is best-effort — never break boot */
-    });
-  }
-
   // ----- Flat hypsometric preset --------------------------------------
   //
   // Atomic batch-patch of the four managed flags + a single applyStyle
@@ -1713,6 +1437,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
           (k) => state.layerFeatures[k] !== target[k],
         );
         Object.assign(state.layerFeatures, target);
+        for (const k of FLAT_HYPSO_KEYS) saveLayerFeaturePref(k, state.layerFeatures[k]);
         // Reflect new flag values on the regular feature checkboxes
         // so the panel rows match state immediately.
         for (const k of FLAT_HYPSO_KEYS) {
@@ -1727,6 +1452,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
         // User unticked the preset directly — restore Hillshade so the
         // computed predicate pivots away from "flat hypso" cleanly.
         state.layerFeatures.hillshade = true;
+        saveLayerFeaturePref('hillshade', true);
         const hsRow = panelsHost.querySelector('[data-ctl=hillshade]');
         if (hsRow) hsRow.checked = true;
         syncFlatHypsoCheckbox();
@@ -1739,6 +1465,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
   const slider = panelsHost.querySelector('[data-ctl=exaggeration]');
   const readout = panelsHost.querySelector('[data-ctl=exaggeration-readout]');
   if (slider) {
+    slider.value = String(state.exaggeration);
     const updateFill = () => {
       const min = Number(slider.min);
       const max = Number(slider.max);
@@ -1746,14 +1473,16 @@ export function mountControls(map, sidebar, scrim, { caps, profile } = {}) {
       const pct = ((v - min) / (max - min)) * 100;
       slider.style.setProperty('--fill', `${pct}%`);
     };
-    const update = () => {
+    const update = ({ persist = true } = {}) => {
       const v = Number(slider.value);
+      state.exaggeration = v;
       if (readout) readout.textContent = `${v.toFixed(1)}×`;
       setUserExaggeration(map, v);
       updateFill();
+      if (persist) saveControlPrefs({ exaggeration: v });
     };
-    slider.addEventListener('input', update);
-    update();
+    slider.addEventListener('input', () => update());
+    update({ persist: false });
   }
 
   // ----- Preset buttons (Places panel) --------------------------------
@@ -1915,10 +1644,9 @@ function installHypsoUI(map, panelsHost, { caps, profile } = {}) {
   }
 
   // Cold-load: if forest-cover restored ON, the flat preset is active, so
-  // the elevation legend must start hidden to match (the wired change
-  // handler keeps it in sync on subsequent toggles). Read the persisted
-  // pref directly — this runs in installHypsoUI, which has no `state`.
-  if (loadForestCoverPref(FEATURES.forestCover)) {
+  // the elevation legend must start hidden to match. The restored map state
+  // is authoritative here because createMap() received the saved controls.
+  if (map._cart?.features?.forestCover) {
     legendHost.hidden = true;
   }
 

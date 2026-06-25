@@ -18,7 +18,7 @@
 // ---------------------------------------------------------------------------
 
 const API_BASE = (() => {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === 'undefined' || !window.location) return '';
   // The API is always served from the same origin as the app (Vercel).
   return window.location.origin;
 })();
@@ -335,7 +335,7 @@ export function importFromFile(file, mode = 'replace') {
 // dirty set and beacons it on hidden / pagehide / beforeunload).
 // ---------------------------------------------------------------------------
 
-if (typeof document !== 'undefined') {
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && _online && _currentUser) {
       loadFromServer().then((data) => { if (data) _notifySync('sync:refresh', data); });

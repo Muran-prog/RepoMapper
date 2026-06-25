@@ -78,6 +78,7 @@ function check(name, cond) {
   if (!cond) failures++;
 }
 
+const { kv } = await import('../src/state/account-store.js');
 const { createSettlementContourEngine } = await import('../src/draw/settlement-contours.js');
 
 // =====================================================================
@@ -125,7 +126,7 @@ check('polygon geometry type', map.getSource('cart-settlement-contours').data.fe
 // =====================================================================
 console.log('Persistence:');
 await new Promise((r) => setTimeout(r, 400)); // let the debounced save flush
-const raw = store.get('cart:settlement-contours:v1');
+const raw = kv.getItem('cart:settlement-contours:v1');
 check('persisted blob written', !!raw && JSON.parse(raw).features.length === 1);
 const map2 = makeMap();
 const engine2 = createSettlementContourEngine(map2);

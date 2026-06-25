@@ -81,8 +81,12 @@ if (typeof globalThis.requestAnimationFrame === 'undefined') {
  * one block cannot contaminate the next. Every test that touches the
  * engine starts with a clean slate.
  */
-function resetStorage() { fakeStorage.clear(); }
+function resetStorage() {
+  fakeStorage.clear();
+  kv?.clear?.();
+}
 
+const { kv } = await import('../src/state/account-store.js');
 const { createDrawEngine } = await import('../src/draw/engine.js');
 
 /** Mulberry32 PRNG — seed-stable random generator for reproducibility. */
@@ -774,7 +778,7 @@ const PTS = [
 // ---------------------------------------------------------------------------
 {
   resetStorage();
-  fakeStorage.set(
+  kv.setItem(
     'cart:draw:prefs:v1',
     JSON.stringify({ tool: 'marker', connectionMode: 'optimal' }),
   );
@@ -795,7 +799,7 @@ const PTS = [
 
   // Tampered / foreign mode coerces to 'none'.
   resetStorage();
-  fakeStorage.set(
+  kv.setItem(
     'cart:draw:prefs:v1',
     JSON.stringify({ connectionMode: 'not-a-real-mode' }),
   );
