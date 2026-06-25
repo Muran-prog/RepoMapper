@@ -3,8 +3,8 @@
  */
 
 export default async function handler(req, res) {
-  const cors = await import('./lib/cors.js');
-  const blob = await import('./lib/blob.js');
+  const cors = await import('../server/lib/cors.js');
+  const blob = await import('../server/lib/blob.js');
 
   if (cors.handleOptions(req, res)) return;
   cors.setCORS(req, res);

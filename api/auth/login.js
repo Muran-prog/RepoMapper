@@ -11,9 +11,9 @@ const WINDOW_MS = 15 * 60 * 1000; // attempts counted within this window
 const LOCK_MS = 15 * 60 * 1000; // lock duration once exceeded
 
 export default async function handler(req, res) {
-  const cors = await import('../lib/cors.js');
-  const auth = await import('../lib/auth.js');
-  const db = await import('../lib/db.js');
+  const cors = await import('../../server/lib/cors.js');
+  const auth = await import('../../server/lib/auth.js');
+  const db = await import('../../server/lib/db.js');
 
   if (cors.handleOptions(req, res)) return;
   cors.setCORS(req, res);
