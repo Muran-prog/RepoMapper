@@ -89,6 +89,44 @@ export const SUPPLEMENTAL_SETTLEMENTS = [
       [24.535679, 48.163941],
     ],
   },
+  {
+    name: 'Новобіличі',
+    note:
+      'Village (село Новобіличі) absorbed into the Sviatoshynskyi district of ' +
+      'Kyiv. OSM models it only as a place=neighbourhood node with no ' +
+      'administrative boundary relation, so the standard settlement outline ' +
+      'cannot match it. Ring reconstructed from the building-footprint cluster ' +
+      '(695 buildings) plus the rural residential land-use polygons around the ' +
+      'place node, then buffered, merged and simplified into a single ring ' +
+      '(~900×900 m, ~57 ha). Verified to contain the place node and exclude ' +
+      'neighbouring places (село Біличі, Академмістечко, Сахалін).',
+    ring: [
+      [30.350747, 50.480863],
+      [30.355523, 50.478637],
+      [30.35577, 50.478321],
+      [30.356496, 50.478261],
+      [30.356669, 50.47789],
+      [30.357124, 50.477738],
+      [30.357609, 50.477235],
+      [30.357366, 50.475666],
+      [30.356198, 50.474275],
+      [30.354282, 50.473274],
+      [30.35191, 50.472816],
+      [30.349444, 50.472971],
+      [30.347258, 50.473714],
+      [30.346109, 50.474505],
+      [30.346093, 50.474862],
+      [30.345686, 50.474934],
+      [30.345015, 50.476231],
+      [30.345414, 50.476259],
+      [30.345523, 50.47651],
+      [30.345379, 50.476854],
+      [30.344939, 50.476886],
+      [30.345209, 50.478013],
+      [30.346377, 50.479404],
+      [30.348293, 50.480404],
+    ],
+  },
 ];
 
 // ---------------------------------------------------------------------------
