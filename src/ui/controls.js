@@ -553,7 +553,7 @@ function renderReliefPanelBody() {
     ${accordionMarkup({
       id: 'relief-cover',
       title: 'Растительность и покров',
-      meta: '4',
+      meta: '5',
       open: false,
       body: `
         <div class="rows">
@@ -561,6 +561,7 @@ function renderReliefPanelBody() {
           ${richRow({ ctl: 'canopyHeightTint', title: 'Высота крон леса', desc: 'Тёмные участки — высокие старые леса, светлые — молодые', rowAttr: 'data-ctl-row="canopyHeightTint"' })}
           ${richRow({ ctl: 'forestLeafType', title: 'Породы леса', desc: 'Хвойный, лиственный и смешанный — каждый своим оттенком', rowAttr: 'data-ctl-row="forestLeafType"' })}
           ${richRow({ ctl: 'forestCover', title: 'Сплошной лесной покров', desc: 'Зелёная подсветка всех лесов в плоском режиме, как в Google Earth', rowAttr: 'data-ctl-row="forestCover"' })}
+          ${richRow({ ctl: 'swampCover', title: 'Болота и топи', desc: 'Оранжевая карта водно-болотных угодий по проходимости — от влажных лугов до непроходимых топей', rowAttr: 'data-ctl-row="swampCover"' })}
         </div>
         ${accordionMarkup({
           id: 'relief-forest-markup',
@@ -1389,6 +1390,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
   wireToggle('canopyHeightTint');
   wireToggle('forestLeafType');
   wireToggle('forestCover');
+  wireToggle('swampCover');
   wireToggle('forestCities');
   wireToggle('forestWaterAccent');
   wireToggle('forestRoadsBold');

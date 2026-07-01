@@ -85,6 +85,22 @@ function toVectorPmtilesSource(spec) {
 }
 
 /**
+ * Build a `geojson` source spec from a `{ data, attribution }` config, or
+ * return null when no `data` URL is configured. Used for the classified
+ * wetland archive (swampCover Tier B), which ships as a static GeoJSON file
+ * rather than PMTiles so it needs no tile host / HTTP-range support.
+ *
+ * @param {object|null|undefined} spec
+ * @returns {object|null}
+ */
+function toGeojsonSource(spec) {
+  if (!spec || typeof spec.data !== 'string' || spec.data.length === 0) return null;
+  const source = { type: 'geojson', data: spec.data };
+  if (spec.attribution) source.attribution = spec.attribution;
+  return source;
+}
+
+/**
  * @typedef {object} SourceComposeOpts
  * @property {object}  vectorSource        Resolved `openmaptiles` vector source spec.
  * @property {object}  [terrain=TERRAIN]
@@ -238,6 +254,16 @@ export function composeSources({
     if (forest10m) sources['forest-10m'] = forest10m;
   }
 
+  // Classified wetland archive (swampCover Tier B). Source-gated exactly like
+  // forest-10m: when the GeoJSON isn't configured the composer skips the
+  // classified swamp layers and swampCover falls back to the global
+  // OpenMapTiles landcover wetland wash (Tier A). Only added when swampCover
+  // is on.
+  if (features.swampCover) {
+    const wetlands = toGeojsonSource(terrain.wetlands);
+    if (wetlands) sources['wetlands'] = wetlands;
+  }
+
   // Static contour archive (only when mode='static' or 'hybrid').
   if (
     features.contours &&
@@ -289,6 +315,10 @@ export function sourceAvailability(sources) {
     // crisp forestCover layers in src/style/index.js; when absent the
     // overlay falls back to the global OpenMapTiles landcover forest.
     forest10m: 'forest-10m' in sources,
+    // Classified wetland archive (GeoJSON). Gates the graded swampCover
+    // classified layers in src/style/index.js; when absent the overlay falls
+    // back to the global OpenMapTiles landcover wetland wash.
+    wetlands: 'wetlands' in sources,
     contoursStatic: 'contours-static' in sources,
   };
 }

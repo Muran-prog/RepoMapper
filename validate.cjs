@@ -106,6 +106,9 @@ async function main() {
       // Forest-cover overlay reads the global base vector source, so it
       // has no Carpathian/device-profile gate — the raw user flag wins.
       forestCover: features.forestCover,
+      // Swamp-cover overlay — same (global base vector source); deliberately
+      // NOT wired into the flat-preset coupling below (pure additive overlay).
+      swampCover: features.swampCover,
       // Hazardous-terrain overlay also rides the umbrella Carpathian
       // capability since the data lives in carpathian-osm.pmtiles.
       hazardousTerrain:
@@ -225,6 +228,8 @@ async function main() {
       hasForestPolygonSource: has.forestPolygon,
       forestCover: effectiveFeatures.forestCover,
       hasForest10mSource: has.forest10m,
+      swampCover: effectiveFeatures.swampCover,
+      hasWetlandsSource: has.wetlands,
       // Forest-mode markup accents — passed straight through; the style
       // builder only emits them inside the forestCover block, so they're
       // structurally forest-mode-only.
@@ -1460,6 +1465,142 @@ async function main() {
   }
   console.log(`Forest-cover overlay invariants: ${forestCoverFails === 0 ? 'all OK' : `${forestCoverFails} FAILED`}`);
   if (forestCoverFails > 0) failed += forestCoverFails;
+
+  // =====================================================================
+  // Swamp-cover overlay invariants — the wetland sibling of forest-cover.
+  // Tier A (`swampcover_base_*`) reads the GLOBAL openmaptiles/landcover
+  // wetland (emitted on the flag alone); Tier B (`swampcover_fill/edge`)
+  // reads the classified `wetlands` GeoJSON and paints a data-driven graded
+  // palette. Asserts flag gating, sources, paint order, the ADDITIVE
+  // behaviour (relief STAYS — the one difference from forest-cover), the
+  // data-driven tier palette, and the graceful null-source fallback.
+  // =====================================================================
+  console.log();
+  console.log('Swamp-cover overlay invariants:');
+  let swampCoverFails = 0;
+  const swampBaseIds = ['swampcover_base_fill', 'swampcover_base_edge'];
+  const swampClsIds = ['swampcover_fill', 'swampcover_edge'];
+  const swampAllIds = [...swampBaseIds, ...swampClsIds];
+
+  const swampOff = buildStyle({
+    theme: 'light', profile: 'high',
+    features: { ...FEATURES, swampCover: false }, sourceStubs: {},
+  });
+  if (swampOff.layers.filter((l) => swampAllIds.includes(l.id)).length === 0) {
+    console.log('  OK   flag OFF -> no swamp-cover layers emitted');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL flag OFF but swamp-cover layers emitted');
+  }
+
+  const swampOn = buildStyle({
+    theme: 'light', profile: 'high',
+    features: { ...FEATURES, swampCover: true }, sourceStubs: {},
+  });
+  const scL = swampOn.layers;
+  for (const id of swampAllIds) {
+    if (scL.some((l) => l.id === id)) {
+      console.log(`  OK   ${id} present`);
+    } else {
+      swampCoverFails++;
+      console.log(`  FAIL ${id} not emitted with feature flag on`);
+    }
+  }
+  for (const id of swampBaseIds) {
+    const layer = scL.find((l) => l.id === id);
+    if (layer && layer.source === 'openmaptiles' && layer['source-layer'] === 'landcover') {
+      console.log(`  OK   ${id} reads openmaptiles/landcover`);
+    } else if (layer) {
+      swampCoverFails++;
+      console.log(`  FAIL ${id} wrong source: ${layer.source}/${layer['source-layer']}`);
+    }
+  }
+  for (const id of swampClsIds) {
+    const layer = scL.find((l) => l.id === id);
+    if (layer && layer.source === 'wetlands') {
+      console.log(`  OK   ${id} reads wetlands source`);
+    } else if (layer) {
+      swampCoverFails++;
+      console.log(`  FAIL ${id} wrong source: ${layer.source}`);
+    }
+  }
+  const scPos = swampAllIds.map((id) => scL.findIndex((l) => l.id === id));
+  if (scPos.every((p) => p >= 0) && scPos[0] < scPos[1] && scPos[1] < scPos[2] && scPos[2] < scPos[3]) {
+    console.log('  OK   base fill->edge, classified fill->edge order');
+  } else {
+    swampCoverFails++;
+    console.log(`  FAIL swamp-cover layers not in expected order: ${JSON.stringify(scPos)}`);
+  }
+  const scFill = scL.find((l) => l.id === 'swampcover_fill');
+  if (scFill && Array.isArray(scFill.paint['fill-color']) && scFill.paint['fill-color'][0] === 'match') {
+    console.log('  OK   classified fill-color is a data-driven match on tier');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL classified fill-color is not a tier match expression');
+  }
+  const scBaseFill = scL.find((l) => l.id === 'swampcover_base_fill');
+  if (scBaseFill && typeof scBaseFill.paint['fill-color'] === 'string') {
+    console.log('  OK   base fill-color is a flat (unclassified) colour');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL base fill-color should be a flat colour string');
+  }
+  // ADDITIVE — relief must STAY (no flat preset) with swamp-cover on.
+  if (scL.some((l) => /^hillshade_/.test(l.id))) {
+    console.log('  OK   additive: hillshade still present with swamp-cover on');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL additive: hillshade suppressed -- swamp-cover must NOT force flat preset');
+  }
+  if (swampOn.terrain) {
+    console.log('  OK   additive: 3D terrain block kept with swamp-cover on');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL additive: 3D terrain suppressed -- swamp-cover must NOT force flat preset');
+  }
+  // Z-order: base fill AFTER water_fill; classified edge BEFORE first road.
+  const scWaterIdx = scL.findIndex((l) => l.id === 'water_fill');
+  if (scWaterIdx !== -1 && scPos[0] > scWaterIdx) {
+    console.log(`  OK   swampcover_base_fill (idx ${scPos[0]}) paints after water_fill (idx ${scWaterIdx})`);
+  } else {
+    swampCoverFails++;
+    console.log(`  FAIL swampcover_base_fill must paint AFTER water_fill (fill=${scPos[0]}, water=${scWaterIdx})`);
+  }
+  const scRoadIdx = scL.findIndex((l) => /^road/.test(l.id));
+  if (scRoadIdx !== -1 && scPos[3] >= 0 && scPos[3] < scRoadIdx) {
+    console.log(`  OK   swampcover_edge (idx ${scPos[3]}) paints before first road (idx ${scRoadIdx})`);
+  } else if (scRoadIdx !== -1) {
+    swampCoverFails++;
+    console.log(`  FAIL swamp-cover layers must paint BEFORE roads (edge=${scPos[3]}, road=${scRoadIdx})`);
+  }
+  // Graceful fallback: swampCover ON but archive data null -> classified
+  // layers + `wetlands` source suppressed, base wash stays.
+  const swampNoSrc = buildStyle({
+    theme: 'light', profile: 'high',
+    features: { ...FEATURES, swampCover: true }, sourceStubs: {},
+    terrainOverride: { ...TERRAIN, wetlands: { ...TERRAIN.wetlands, data: null } },
+  });
+  if (swampNoSrc.layers.filter((l) => swampClsIds.includes(l.id)).length === 0) {
+    console.log('  OK   no wetlands source -> classified layers suppressed (fallback)');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL classified layers emitted without source');
+  }
+  if (swampNoSrc.layers.some((l) => l.id === 'swampcover_base_fill')) {
+    console.log('  OK   base swampcover_base_fill still present in fallback');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL base swampcover_base_fill missing in fallback');
+  }
+  if (!swampNoSrc.sources['wetlands']) {
+    console.log('  OK   wetlands source omitted when data null');
+  } else {
+    swampCoverFails++;
+    console.log('  FAIL wetlands source present despite null data');
+  }
+  console.log(`Swamp-cover overlay invariants: ${swampCoverFails === 0 ? 'all OK' : `${swampCoverFails} FAILED`}`);
+  if (swampCoverFails > 0) failed += swampCoverFails;
+
 
   // ---------------------------------------------------------------------
   // High-detail 10 m forest invariants — the Carpathian-only vector

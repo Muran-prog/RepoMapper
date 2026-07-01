@@ -96,6 +96,7 @@ import {
 } from './carpathian.js';
 import { hikingRouteLayers } from './hiking-routes.js';
 import { forestCoverLayers, forestCoverHiDetailLayers } from './forest-cover.js';
+import { swampCoverLayers, swampCoverClassifiedLayers } from './swamp-cover.js';
 import { forestMarkupLayers } from './forest-markup.js';
 import { hazardLayers } from './hazards.js';
 import { gridLayers } from './grid.js';
@@ -299,6 +300,11 @@ export function composeLayers(opts = {}) {
     hasForestPolygonSource = false,
     hasForest10mSource = false,
     forestCover = false,
+    // Swamp-cover overlay (wetland sibling of forestCover). `swampCover`
+    // emits the global unclassified wetland wash on the flag alone;
+    // `hasWetlandsSource` additionally gates the graded classified layers.
+    swampCover = false,
+    hasWetlandsSource = false,
     // Forest-mode markup accents — only emitted inside the forestCover
     // block (block 23). Each is an independent sub-flag surfaced through
     // the forest-mode sub-panel; defaults mirror src/config.js FEATURES.
@@ -496,6 +502,24 @@ export function composeLayers(opts = {}) {
     // no data, so the global forest remains the visible surface.
     if (hasForest10mSource) {
       stack.push(...forestCoverHiDetailLayers(t));
+    }
+  }
+
+  // 7d: Swamp-cover overlay — the wetland sibling of 7c. A graded ORANGE
+  //     highlight of every wetland, keyed to traversability. Tier A reads the
+  //     GLOBAL OpenMapTiles `landcover` class=wetland (always present, emitted
+  //     on the flag alone) as an unclassified country-wide wash; Tier B, the
+  //     classified GeoJSON archive, paints the per-subtype graded palette on
+  //     top and is source-gated on `hasWetlandsSource`. Sits immediately after
+  //     the forest overlay so the two thematic land-cover layers share the
+  //     same z-band (above relief + water mask, below texture/contours/roads/
+  //     labels). Unlike forestCover this is purely additive — it never forces
+  //     the flat preset (see resolveFeatures in createMap.js), so relief still
+  //     reads through around the sparse wetlands.
+  if (swampCover) {
+    stack.push(...swampCoverLayers(t));
+    if (hasWetlandsSource) {
+      stack.push(...swampCoverClassifiedLayers(t));
     }
   }
 

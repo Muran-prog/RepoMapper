@@ -53,6 +53,8 @@ export const SETTING_ICONS = Object.freeze({
   canopyHeightTint: svg('<path d="M12 3 L9 8 L11 8 L8 12 L10 12 L7 16 L17 16 L14 12 L16 12 L13 8 L15 8 z"/><path d="M12 16 V21"/>'),
   forestLeafType: svg('<path d="M6 17 L9 8 L12 17 z"/><path d="M9 17 V20"/><circle cx="16" cy="12" r="4"/><path d="M16 16 V20"/>'),
   forestCover: svg('<path d="M5 16 L8 9 L11 16 z" fill="currentColor" stroke="none"/><path d="M13 17 L16.5 8 L20 17 z" fill="currentColor" stroke="none"/><path d="M8 16 V19 M16.5 17 V20" stroke-width="1.4"/>'),
+  // Reeds / cattails over water ripples — reads as a wetland at 18–20 px.
+  swampCover: svg('<path d="M3 16.5 Q6 15 9 16.5 T15 16.5 T21 16.5"/><path d="M3 19.5 Q6 18 9 19.5 T15 19.5 T21 19.5" opacity="0.5"/><path d="M9 16.5 V8"/><path d="M14 16.5 V6.2"/><ellipse cx="9" cy="6.6" rx="1.25" ry="2.1" fill="currentColor" stroke="none"/><ellipse cx="14" cy="4.8" rx="1.25" ry="2.1" fill="currentColor" stroke="none"/><path d="M9 11 L6.7 9 M14 9.4 L16.3 7.4" opacity="0.6"/>'),
   forestCities: svg('<path d="M4 21 V11 L9 8 V21 z"/><path d="M9 21 V6 L15 9 V21 z"/><path d="M12 12 H12.01 M12 16 H12.01"/>'),
   forestWaterAccent: svg('<path d="M5 6 Q 9 3 12 6 T 19 6"/><path d="M5 12 Q 9 9 12 12 T 19 12"/><path d="M5 18 Q 9 15 12 18 T 19 18"/>'),
   forestRoadsBold: svg('<path d="M9 21 L11 3"/><path d="M15 21 L13 3"/><path d="M12 6 V9 M12 12 V15"/>'),

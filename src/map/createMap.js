@@ -252,6 +252,10 @@ async function buildStyle({ theme, features, profileConfig, layerOpts, caps, hyp
     // top of the global landcover forest; when absent it falls back to
     // the global landcover forest alone.
     hasForest10mSource: has.forest10m,
+    // Classified wetland archive (swampCover Tier B). When present the graded
+    // orange classified layers paint over the global landcover wetland wash;
+    // when absent swampCover falls back to that unclassified wash alone.
+    hasWetlandsSource: has.wetlands,
     hasContoursSource,
     contoursSourceId,
     contoursMinzoom: CONTOURS.minzoom,
@@ -417,6 +421,13 @@ function profileToLayerOpts(profileConfig, features) {
     // present). See src/style/forest-cover.js + the 7c block in
     // src/style/index.js.
     forestCover: features.forestCover,
+    // Swamp-cover overlay — like forestCover it reads the always-present
+    // global landcover source, so there's no capability to AND against; the
+    // renderer emits it on the raw user flag alone (the classified Tier B is
+    // additionally source-gated on hasWetlandsSource in composeLayers).
+    // Pure additive overlay — NOT wired into the flat-preset block above, so
+    // relief/3D/contours stay on while swamps are shown.
+    swampCover: features.swampCover,
     // Forest-mode markup accents — independent sub-flags surfaced through
     // the forest-mode sub-panel. They are pure user preferences (no
     // device-profile knob) and only have an effect inside the forestCover

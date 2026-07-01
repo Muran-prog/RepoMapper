@@ -383,6 +383,33 @@ export const TERRAIN = Object.freeze({
     attribution:
       '<a href="https://esa-worldcover.org" target="_blank" rel="noopener">ESA WorldCover 10m 2021 v200</a> · CC BY 4.0',
   }),
+
+  /**
+   * Classified wetland VECTOR overlay — the data behind the `swampCover`
+   * layer's graded orange traversability palette. Built offline by
+   * `tools/build-wetlands.sh` (→ `tools/build_wetlands.py`): raw OSM
+   * `natural=wetland` polygons are fetched via Overpass, each classified into
+   * a traversability tier from its `wetland=<subtype>` subtag, simplified, and
+   * written as GeoJSON with a compact `tier` property.
+   *
+   * Why raw OSM and not the base tiles: `swampCover`'s Tier A already paints
+   * the GLOBAL OpenMapTiles `landcover` class=wetland, but the published
+   * OpenFreeMap build collapses every wetland to subclass='wetland' (verified
+   * by decoding live z12–z14 tiles), so the subtype we need only survives in
+   * the raw OSM tags. This archive supplies it.
+   *
+   * Source-gated exactly like `forest10m`: when `data` is null / the archive
+   * is unreachable the composer skips the classified layers and `swampCover`
+   * falls back to the Tier A unclassified wash, so cold-boot stays turn-key.
+   * Served as a local static file (no PMTiles host / HTTP range needed).
+   *
+   * License: © OpenStreetMap contributors — ODbL.
+   */
+  wetlands: Object.freeze({
+    data: 'data/ukraine-wetlands.geojson',
+    attribution:
+      '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+  }),
 });
 
 /**
@@ -811,6 +838,22 @@ export const FEATURES = Object.freeze({
    * `src/style/forest-cover.js` for the fill → edge → rim treatment.
    */
   forestCover: false,
+
+  /**
+   * Swamp-cover overlay — the wetland sibling of `forestCover`: a dedicated,
+   * toggleable "болота и топи" layer that classifies every wetland into a
+   * traversability tier and paints it a graded ORANGE. Like forestCover it
+   * reads the GLOBAL OpenMapTiles `landcover` class=wetland (Tier A, always
+   * present, zero new dependency); unlike it, a source-gated classified GeoJSON
+   * archive (`wetlands`, TERRAIN.wetlands) supplies the per-subtype detail
+   * (Tier B) that the OpenFreeMap build strips out.
+   *
+   * Pure ADDITIVE overlay — it does NOT force the flat preset (wetlands are
+   * sparse; relief context aids reading), which is the sole behavioural
+   * difference from forestCover. Off by default; the choice is persisted under
+   * `cart:features:swampCover`. See `src/style/swamp-cover.js`.
+   */
+  swampCover: false,
 
   /**
    * Forest-mode markup accents — a family of OPTIONAL highlight toggles

@@ -61,6 +61,7 @@ export const CONTROL_LAYER_FEATURE_KEYS = Object.freeze([
   'canopyHeightTint',
   'forestLeafType',
   'forestCover',
+  'swampCover',
   'forestCities',
   'forestWaterAccent',
   'forestRoadsBold',

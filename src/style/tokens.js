@@ -68,6 +68,25 @@ const LIGHT = {
     fill: '#2f7d54',
     edge: '#1c5536',
   }),
+  // Swamp-cover overlay — the wetland sibling of forestCover. A graded ORANGE
+  // "heat ramp" keyed to traversability: hue rotates gold→red AND lightness
+  // falls as the ground gets harder to cross, so the five steps are separable
+  // at a glance (not single-hue saturation; min adjacent CIELAB ΔE ≈ 16).
+  // `base` = the country-wide unclassified wash (Tier A, == tiers.u0); `tiers`
+  // = the data-driven palette (Tier B). Man-made (`mm`) and unclassified
+  // (`u0`) sit deliberately OFF the ramp. Consumed by src/style/swamp-cover.js.
+  swampCover: Object.freeze({
+    base: Object.freeze({ fill: '#ebd6a0', edge: '#c6ac72' }),
+    tiers: Object.freeze({
+      t1: Object.freeze({ fill: '#f5c24d', edge: '#c9922b' }), // легко проходимые
+      t2: Object.freeze({ fill: '#ee9a34', edge: '#be721a' }), // умеренно
+      t3: Object.freeze({ fill: '#e36b25', edge: '#b14c16' }), // труднопроходимые
+      t4: Object.freeze({ fill: '#c1441c', edge: '#8f300f' }), // очень трудно
+      t5: Object.freeze({ fill: '#872814', edge: '#5c1608' }), // непроходимые
+      mm: Object.freeze({ fill: '#e2b3a2', edge: '#b7897a' }), // соляные пруды
+      u0: Object.freeze({ fill: '#ebd6a0', edge: '#c6ac72' }), // тип не указан
+    }),
+  }),
   grass: '#dfe6c8',
   scrub: '#d8e0bd',
   wetland: '#cad9c2',
@@ -445,6 +464,22 @@ const DARK = {
   forestCover: Object.freeze({
     fill: '#245038',
     edge: '#143524',
+  }),
+  // Swamp-cover overlay — dark variant. Same gold→red traversability ramp as
+  // LIGHT, with L* pulled down so the near-opaque fills sit on the deep slate
+  // canvas without glaring while staying legible (even the darkest t5 stays
+  // above the background L*). See LIGHT for the per-tier rationale.
+  swampCover: Object.freeze({
+    base: Object.freeze({ fill: '#cdb679', edge: '#9e8551' }),
+    tiers: Object.freeze({
+      t1: Object.freeze({ fill: '#e7a833', edge: '#b9831f' }),
+      t2: Object.freeze({ fill: '#d5822a', edge: '#a85f14' }),
+      t3: Object.freeze({ fill: '#c55a1e', edge: '#933f12' }),
+      t4: Object.freeze({ fill: '#a2371a', edge: '#71230d' }),
+      t5: Object.freeze({ fill: '#6e2011', edge: '#48120a' }),
+      mm: Object.freeze({ fill: '#c9977f', edge: '#9a6e5b' }),
+      u0: Object.freeze({ fill: '#cdb679', edge: '#9e8551' }),
+    }),
   }),
   grass: '#1f2a1d',
   scrub: '#21291b',
