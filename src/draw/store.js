@@ -36,8 +36,8 @@
  *                                         eraser tool when removing /
  *                                         splitting features.
  * @property {string} color                CSS colour for new features.
- * @property {string} fill                 CSS fill for polygons.
- * @property {number} weight               Line weight in px.
+ * @property {string} fill                 CSS fill for polygons and marker bodies.
+ * @property {number} weight               Stroke/outline weight in px.
  * @property {number} opacity              0..1 stroke opacity (fill follows
  *                                         at a fixed fraction so one slider
  *                                         controls all transparency).

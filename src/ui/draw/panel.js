@@ -8,7 +8,7 @@
  *   • Shape sub-selector (visible only when the shape tool is active)
  *   • Connection-mode picker (none / sequence / mesh / hub / optimal)
  *   • Geodesic toggle + label toggle
- *   • Style fields — colour pickers, stroke width + opacity sliders
+ *   • Style fields — colour pickers, stroke thickness + opacity sliders
  *   • Live stats (marker count, total path length, feature count)
  *   • Action row — undo / redo / delete selected / clear all
  *   • Import / export GeoJSON
@@ -219,7 +219,7 @@ export function renderDrawPanelBody() {
         </div>
         <div class="slider-row">
           <label class="slider-label" for="draw-weight">
-            <span>Толщина линии</span>
+            <span>Толщина обводки</span>
             <span data-ctl="draw-weight-readout">3 px</span>
           </label>
           <input id="draw-weight" type="range" min="1" max="10" step="0.5" value="3" data-ctl="draw-weight">

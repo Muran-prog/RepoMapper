@@ -12,7 +12,7 @@
  *   draw-line           Main stroke for lines, polygon outlines, connections
  *   draw-arrow-head     Arrow heads — filled polygons with no outline
  *   draw-point-halo     Glow under markers (also reads as "selected" state)
- *   draw-point          Marker dot
+ *   draw-point          Marker dot (fill + stroke)
  *   draw-point-label    Marker number / label
  *   draw-vertex-mid     Midpoint handles (small dot at segment midpoints)
  *   draw-vertex         Vertex handles (small circle at each vertex)
@@ -302,6 +302,11 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
     },
 
     // ---- Marker dot ---------------------------------------------------
+    //
+    // Markers use the same style bag as every other drawing tool:
+    // `fill` paints the body, `color` paints the stroke, and `weight`
+    // controls stroke thickness. Existing saved markers without one of
+    // those properties fall back to the current authoring defaults.
     {
       id: LAYERS.point,
       type: 'circle',
@@ -313,13 +318,13 @@ export function makeLayers({ color = '#c66809', fill = '#c66809', weight = 3 } =
       ],
       paint: {
         'circle-radius': ['coalesce', ['get', 'radius'], 8],
-        'circle-color': ['coalesce', ['get', 'color'], color],
+        'circle-color': ['coalesce', ['get', 'fill'], fill],
         'circle-opacity': strokeOpacityExpr,
-        'circle-stroke-color': '#ffffff',
+        'circle-stroke-color': ['coalesce', ['get', 'color'], color],
         'circle-stroke-width': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false], 3,
-          2,
+          '+',
+          ['coalesce', ['get', 'weight'], weight],
+          selectedBoost,
         ],
         'circle-stroke-opacity': strokeOpacityExpr,
         'circle-pitch-alignment': 'viewport',
