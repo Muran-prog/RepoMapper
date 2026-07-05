@@ -56,6 +56,7 @@ async function main() {
     resolveSatelliteImageryPlan,
   } = await importEsm('src/style/satellite.js');
   const { withGridOverlay } = await importEsm('src/style/grid.js');
+  const { withSettlementOutlineOverlay } = await importEsm('src/style/settlements.js');
   const { getProfileConfig } = await importEsm('src/device.js');
   const {
     FEATURES,
@@ -679,8 +680,24 @@ async function main() {
    * smallest spec-valid style that REFERENCES the same source URL,
    * which is what the brief asks for.
    */
+  const modeVectorSource = {
+    type: 'vector',
+    url: OPENFREEMAP.tilejson,
+    attribution: OPENFREEMAP.attribution,
+  };
+
+  const withModeOverlays = (style, theme, features = {}) =>
+    withGridOverlay(
+      withSettlementOutlineOverlay(style, getTokens(theme), {
+        enabled: features.settlementOutline !== false,
+        vectorSource: modeVectorSource,
+      }),
+      getTokens(theme),
+      { enabled: !!features.grid },
+    );
+
   const buildStandardStubStyle = ({ theme = 'light', features = {} } = {}) =>
-    withGridOverlay({
+    withModeOverlays({
       version: 8,
       name: 'Cart · Standard (stub)',
       metadata: { mode: 'standard', upstream: STANDARD_STYLE_URL },
@@ -708,17 +725,17 @@ async function main() {
           paint: { 'background-color': '#f4f1ea' },
         },
       ],
-    }, getTokens(theme), { enabled: !!features.grid });
+    }, theme, features);
 
   /**
    * Locally-built Satellite style — same module the runtime uses, so
    * we validate the actual JSON the user will see.
    */
   const buildSatelliteStubStyle = ({ theme = 'light', features = {} } = {}) =>
-    withGridOverlay(
+    withModeOverlays(
       composeSatelliteStyle(),
-      getTokens(theme),
-      { enabled: !!features.grid },
+      theme,
+      features,
     );
 
   /**
@@ -804,6 +821,7 @@ async function main() {
         for (const modePack of [
           { name: `mode-${mode}`, flags: {} },
           { name: `mode-${mode}-grid`, flags: { grid: true } },
+          { name: `mode-${mode}-no-settlement-outline`, flags: { settlementOutline: false } },
         ]) {
           const features = { ...FEATURES, ...modePack.flags };
           let status = 'ok';

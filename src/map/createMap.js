@@ -66,6 +66,7 @@ import {
   getTouchTuning,
 } from '../device.js';
 import { withGridOverlay } from '../style/grid.js';
+import { withSettlementOutlineOverlay } from '../style/settlements.js';
 import { loadMapMode, saveMapMode } from '../ui/store.js';
 
 // ---------------------------------------------------------------------------
@@ -788,7 +789,7 @@ async function buildModeStyle(opts) {
       if (!upstream || typeof upstream !== 'object') {
         throw new Error('Upstream style is not an object');
       }
-      return withGridOverlay(upstream, getTokens(theme), { enabled: !!features.grid });
+      return withModeOverlays(upstream, getTokens(theme), features);
     } catch (err) {
       // Soft fallback per the brief — render Cart instead and warn
       // exactly once so users see something useful even on bad
@@ -804,9 +805,25 @@ async function buildModeStyle(opts) {
   }
   if (mode === 'satellite') {
     const style = composeSatelliteStyle({ pixelRatio: opts.caps?.dpr });
-    return withGridOverlay(style, getTokens(theme), { enabled: !!features.grid });
+    return withModeOverlays(style, getTokens(theme), features);
   }
   return buildStyle(opts);
+}
+
+function withModeOverlays(style, t, features = {}) {
+  const vectorSource = {
+    type: 'vector',
+    url: OPENFREEMAP.tilejson,
+    attribution: OPENFREEMAP.attribution,
+  };
+  return withGridOverlay(
+    withSettlementOutlineOverlay(style, t, {
+      enabled: features.settlementOutline !== false,
+      vectorSource,
+    }),
+    t,
+    { enabled: !!features.grid },
+  );
 }
 
 /**

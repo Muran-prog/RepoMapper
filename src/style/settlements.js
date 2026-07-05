@@ -69,7 +69,10 @@
  */
 
 import { expZoom, casingWidth, inFilter } from '../utils/interp.js';
-import { SETTLEMENTS_SUPPLEMENT_SOURCE } from './settlements-supplement.js';
+import {
+  SETTLEMENTS_SUPPLEMENT,
+  SETTLEMENTS_SUPPLEMENT_SOURCE,
+} from './settlements-supplement.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -464,4 +467,72 @@ export function settlementOutlineLayers(t) {
       minzoom: 4,
     }),
   ];
+}
+
+/**
+ * Add the settlement-outline stack to a style assembled outside the main
+ * Cart composeLayers/composeSources pipeline.
+ *
+ * @param {object} style MapLibre style JSON.
+ * @param {object} t Theme tokens passed to settlementOutlineLayers().
+ * @param {object} [opts]
+ * @param {boolean} [opts.enabled=true]
+ * @param {object} [opts.vectorSource] Fallback OpenMapTiles vector source.
+ * @param {string} [opts.source='openmaptiles']
+ * @param {string} [opts.beforeLayerId]
+ * @returns {object}
+ */
+export function withSettlementOutlineOverlay(style, t, opts = {}) {
+  if (opts.enabled === false || !style || typeof style !== 'object') return style;
+
+  const source = opts.source ?? SOURCE;
+  const sources = { ...(style.sources ?? {}) };
+  if (!sources[source]) {
+    if (!opts.vectorSource) return style;
+    sources[source] = opts.vectorSource;
+  }
+  if (!sources[SETTLEMENTS_SUPPLEMENT_SOURCE]) {
+    sources[SETTLEMENTS_SUPPLEMENT_SOURCE] = {
+      type: 'geojson',
+      data: SETTLEMENTS_SUPPLEMENT,
+    };
+  }
+
+  const layers = Array.isArray(style.layers) ? style.layers : [];
+  const existingIds = new Set(layers.map((layer) => layer?.id).filter(Boolean));
+  const overlayLayers = settlementOutlineLayers(t)
+    .map((layer) => (
+      source === SOURCE || layer.source !== SOURCE
+        ? layer
+        : { ...layer, source }
+    ))
+    .filter((layer) => !existingIds.has(layer.id));
+
+  if (overlayLayers.length === 0) {
+    return {
+      ...style,
+      sources,
+      layers,
+    };
+  }
+
+  const explicitIndex = opts.beforeLayerId
+    ? layers.findIndex((layer) => layer?.id === opts.beforeLayerId)
+    : -1;
+  const symbolIndex = layers.findIndex((layer) => layer?.type === 'symbol');
+  const insertAt = explicitIndex >= 0
+    ? explicitIndex
+    : symbolIndex >= 0
+    ? symbolIndex
+    : layers.length;
+
+  return {
+    ...style,
+    sources,
+    layers: [
+      ...layers.slice(0, insertAt),
+      ...overlayLayers,
+      ...layers.slice(insertAt),
+    ],
+  };
 }
