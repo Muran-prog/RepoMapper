@@ -55,6 +55,7 @@ async function main() {
     composeSatelliteStyle,
     resolveSatelliteImageryPlan,
   } = await importEsm('src/style/satellite.js');
+  const { withGridOverlay } = await importEsm('src/style/grid.js');
   const { getProfileConfig } = await importEsm('src/device.js');
   const {
     FEATURES,
@@ -678,41 +679,47 @@ async function main() {
    * smallest spec-valid style that REFERENCES the same source URL,
    * which is what the brief asks for.
    */
-  const buildStandardStubStyle = () => ({
-    version: 8,
-    name: 'Cart · Standard (stub)',
-    metadata: { mode: 'standard', upstream: STANDARD_STYLE_URL },
-    sources: {
-      // The same OMT TileJSON URL the upstream Liberty style points at —
-      // we keep the source id stable so any consumers that probe for
-      // `openmaptiles` keep working in tests.
-      openmaptiles: {
-        type: 'vector',
-        // Exact URL the runtime would receive when it fetches the
-        // upstream style; placeholder for the real upstream descriptor.
-        url: OPENFREEMAP.tilejson,
-        attribution: OPENFREEMAP.attribution,
+  const buildStandardStubStyle = ({ theme = 'light', features = {} } = {}) =>
+    withGridOverlay({
+      version: 8,
+      name: 'Cart · Standard (stub)',
+      metadata: { mode: 'standard', upstream: STANDARD_STYLE_URL },
+      sources: {
+        // The same OMT TileJSON URL the upstream Liberty style points at —
+        // we keep the source id stable so any consumers that probe for
+        // `openmaptiles` keep working in tests.
+        openmaptiles: {
+          type: 'vector',
+          // Exact URL the runtime would receive when it fetches the
+          // upstream style; placeholder for the real upstream descriptor.
+          url: OPENFREEMAP.tilejson,
+          attribution: OPENFREEMAP.attribution,
+        },
       },
-    },
-    glyphs: OPENFREEMAP.glyphs,
-    layers: [
-      // Single background layer so the validator has at least one
-      // rendered layer to chew on. Upstream Liberty has 100+ layers;
-      // we don't enumerate them here because the brief explicitly
-      // says we don't validate the third-party stack.
-      {
-        id: 'standard_background',
-        type: 'background',
-        paint: { 'background-color': '#f4f1ea' },
-      },
-    ],
-  });
+      glyphs: OPENFREEMAP.glyphs,
+      layers: [
+        // Single background layer so the validator has at least one
+        // rendered layer to chew on. Upstream Liberty has 100+ layers;
+        // we don't enumerate them here because the brief explicitly
+        // says we don't validate the third-party stack.
+        {
+          id: 'standard_background',
+          type: 'background',
+          paint: { 'background-color': '#f4f1ea' },
+        },
+      ],
+    }, getTokens(theme), { enabled: !!features.grid });
 
   /**
    * Locally-built Satellite style — same module the runtime uses, so
    * we validate the actual JSON the user will see.
    */
-  const buildSatelliteStubStyle = () => composeSatelliteStyle();
+  const buildSatelliteStubStyle = ({ theme = 'light', features = {} } = {}) =>
+    withGridOverlay(
+      composeSatelliteStyle(),
+      getTokens(theme),
+      { enabled: !!features.grid },
+    );
 
   /**
    * Lightweight mode-aware builder. Cart re-uses `buildStyleWithStubs`
@@ -720,8 +727,8 @@ async function main() {
    * skeleton.
    */
   const buildStyleForMode = (mode, args) => {
-    if (mode === 'standard') return buildStandardStubStyle();
-    if (mode === 'satellite') return buildSatelliteStubStyle();
+    if (mode === 'standard') return buildStandardStubStyle(args);
+    if (mode === 'satellite') return buildSatelliteStubStyle(args);
     return buildStyleWithStubs(args);
   };
 
@@ -794,28 +801,33 @@ async function main() {
     if (mode === 'cart') continue; // already covered above
     for (const theme of themes) {
       for (const profile of profiles) {
-        const features = { ...FEATURES };
-        let status = 'ok';
-        let details = '';
-        let layerCount = 0;
-        try {
-          const style = buildStyleForMode(mode, { theme, profile, features, pack: { name: `mode-${mode}` } });
-          layerCount = style.layers.length;
-          const errors = validate(style) || [];
-          if (errors.length > 0) {
-            status = 'fail';
-            details = errors
-              .slice(0, 5)
-              .map((e) => `${e.line ? `L${e.line}: ` : ''}${e.message}`)
-              .join(' | ');
+        for (const modePack of [
+          { name: `mode-${mode}`, flags: {} },
+          { name: `mode-${mode}-grid`, flags: { grid: true } },
+        ]) {
+          const features = { ...FEATURES, ...modePack.flags };
+          let status = 'ok';
+          let details = '';
+          let layerCount = 0;
+          try {
+            const style = buildStyleForMode(mode, { theme, profile, features, pack: modePack });
+            layerCount = style.layers.length;
+            const errors = validate(style) || [];
+            if (errors.length > 0) {
+              status = 'fail';
+              details = errors
+                .slice(0, 5)
+                .map((e) => `${e.line ? `L${e.line}: ` : ''}${e.message}`)
+                .join(' | ');
+              failed++;
+            }
+          } catch (err) {
+            status = 'throw';
+            details = err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : String(err);
             failed++;
           }
-        } catch (err) {
-          status = 'throw';
-          details = err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : String(err);
-          failed++;
+          rows.push({ theme, profile, pack: modePack.name, status, layers: layerCount, details });
         }
-        rows.push({ theme, profile, pack: `mode-${mode}`, status, layers: layerCount, details });
       }
     }
   }

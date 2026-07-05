@@ -347,3 +347,34 @@ export function gridLayers(t, opts = {}) {
     },
   ];
 }
+
+/**
+ * Add the dynamic grid source + overlay layers to an existing style.
+ * Used by non-Cart modes (Standard/Satellite), whose styles are assembled
+ * outside the main composeSources/composeLayers pipeline.
+ *
+ * @param {object} style MapLibre style JSON.
+ * @param {object} t Theme tokens passed to gridLayers().
+ * @param {object} [opts]
+ * @param {boolean} [opts.enabled=false]
+ * @param {string} [opts.source]
+ * @returns {object}
+ */
+export function withGridOverlay(style, t, opts = {}) {
+  if (!opts.enabled || !style || typeof style !== 'object') return style;
+
+  const source = opts.source ?? GRID_SOURCE_ID;
+  const sources = { ...(style.sources ?? {}) };
+  if (!sources[source]) sources[source] = gridSourceSpec();
+
+  const layers = Array.isArray(style.layers) ? style.layers : [];
+  const existingIds = new Set(layers.map((layer) => layer?.id).filter(Boolean));
+  const overlayLayers = gridLayers(t, { source })
+    .filter((layer) => !existingIds.has(layer.id));
+
+  return {
+    ...style,
+    sources,
+    layers: [...layers, ...overlayLayers],
+  };
+}

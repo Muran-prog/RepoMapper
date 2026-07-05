@@ -65,6 +65,7 @@ import {
   getProfileConfig,
   getTouchTuning,
 } from '../device.js';
+import { withGridOverlay } from '../style/grid.js';
 import { loadMapMode, saveMapMode } from '../ui/store.js';
 
 // ---------------------------------------------------------------------------
@@ -719,9 +720,9 @@ export async function applyStyle(map, patch = {}) {
 
   // Route through the mode dispatcher so theme / profile / feature
   // patches keep working in Cart mode AND don't accidentally clobber
-  // a Standard / Satellite style with our composeLayers stack. For the
-  // non-Cart modes we just rebuild the same mode JSON — nothing here
-  // mutates the upstream style.
+  // a Standard / Satellite style with our composeLayers stack. Non-Cart
+  // modes still receive app-owned dynamic overlays such as the coordinate
+  // grid, but not the full Cart relief/road/landcover stack.
   const mode = patch.mode ?? prev.mode ?? DEFAULT_MAP_MODE;
 
   const style = await buildModeStyle({
@@ -765,7 +766,7 @@ export async function applyStyle(map, patch = {}) {
  * Dispatch on `mode` to produce the appropriate MapLibre style JSON.
  *
  *   • cart       — the full composeLayers / composeSources stack
- *   • standard   — fetched-as-is third-party style; no local edits
+ *   • standard   — third-party style plus app-owned dynamic overlays
  *   • satellite  — locally-composed minimal raster + labels skeleton
  *
  * The Standard branch falls back to Cart with a single console.warn if
@@ -776,7 +777,7 @@ export async function applyStyle(map, patch = {}) {
  * `map.setStyle` and any post-load state seeding.
  */
 async function buildModeStyle(opts) {
-  const { mode } = opts;
+  const { mode, theme = DEFAULT_THEME, features = {} } = opts;
   if (mode === 'standard') {
     try {
       const upstream = await fetch(STANDARD_STYLE_URL, { cache: 'force-cache' })
@@ -787,7 +788,7 @@ async function buildModeStyle(opts) {
       if (!upstream || typeof upstream !== 'object') {
         throw new Error('Upstream style is not an object');
       }
-      return upstream;
+      return withGridOverlay(upstream, getTokens(theme), { enabled: !!features.grid });
     } catch (err) {
       // Soft fallback per the brief — render Cart instead and warn
       // exactly once so users see something useful even on bad
@@ -802,7 +803,8 @@ async function buildModeStyle(opts) {
     }
   }
   if (mode === 'satellite') {
-    return composeSatelliteStyle({ pixelRatio: opts.caps?.dpr });
+    const style = composeSatelliteStyle({ pixelRatio: opts.caps?.dpr });
+    return withGridOverlay(style, getTokens(theme), { enabled: !!features.grid });
   }
   return buildStyle(opts);
 }
