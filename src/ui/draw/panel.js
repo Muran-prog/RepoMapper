@@ -222,7 +222,7 @@ export function renderDrawPanelBody() {
             <span>Толщина обводки</span>
             <span data-ctl="draw-weight-readout">3 px</span>
           </label>
-          <input id="draw-weight" type="range" min="1" max="10" step="0.5" value="3" data-ctl="draw-weight">
+          <input id="draw-weight" type="range" min="1" max="20" step="0.5" value="3" data-ctl="draw-weight">
         </div>
         <div class="slider-row">
           <label class="slider-label" for="draw-opacity">
