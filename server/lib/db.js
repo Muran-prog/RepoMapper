@@ -259,7 +259,7 @@ export function sanitisePrefs(raw) {
   const validShapes = ['circle', 'rectangle', 'regular', 'arrow', 'star'];
   if (!validShapes.includes(result.shapeType)) result.shapeType = 'circle';
   result.opacity = Math.max(0, Math.min(1, Number(result.opacity) || 0.95));
-  result.weight = Math.max(1, Math.min(20, Number(result.weight) || 3));
+  result.weight = Math.max(1, Math.min(50, Number(result.weight) || 3));
   result.shapeSides = Math.max(3, Math.min(64, Number(result.shapeSides) || 6));
   result.shapeSize = Math.max(1, Math.min(5000, Number(result.shapeSize) || 100));
   result.eraserSize = Math.max(1, Math.min(5000, Number(result.eraserSize) || 30));

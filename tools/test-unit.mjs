@@ -104,7 +104,7 @@ ok(feats.length === 1, 'keeps only valid GeoJSON features');
 ok(db.sanitiseFeatures(null).length === 0, 'null features -> []');
 const prefs = db.sanitisePrefs({ connectionMode: 'bogus', shapeType: 'nope', opacity: 5, weight: 999 });
 ok(prefs.connectionMode === 'none' && prefs.shapeType === 'circle', 'bad enums coerced to safe defaults');
-ok(prefs.opacity === 1 && prefs.weight === 20, 'numeric ranges clamped');
+ok(prefs.opacity === 1 && prefs.weight === 50, 'numeric ranges clamped');
 ok(db.sanitisePrefs(null) === null, 'null prefs -> null');
 ok(db.sanitiseJsonObject({ a: 1 }).a === 1, 'json object passthrough');
 ok(db.sanitiseJsonObject([1, 2]) === null, 'arrays rejected');
