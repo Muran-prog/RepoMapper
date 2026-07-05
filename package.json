@@ -10,6 +10,7 @@
     "smoke-tsp": "node tools/smoke-tsp.mjs",
     "smoke-contours": "node tools/smoke-contours.mjs",
     "dump-ramp": "node tools/dump-ramp.mjs",
+    "import-settlement-contours": "node tools/import-settlement-contours.mjs",
     "check": "npm run validate && npm run smoke && npm run smoke-tsp && npm run smoke-contours",
     "serve": "python3 -m http.server 8080"
   },

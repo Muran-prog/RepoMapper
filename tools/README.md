@@ -134,6 +134,38 @@ download `planetiler.jar`, drop it next to the scripts (or set `PLANETILER_JAR`)
    with the real `pmtiles://` URLs of your hosted archives. Then reload
    the map — the layers light up automatically.
 
+## Settlement contour import
+
+User-drawn settlement contours exported from the app can be promoted into
+`src/style/settlements-supplement.js` so they ship for everyone, exactly like
+the curated `Заросляк` contour.
+
+Use `tools/import-settlement-contours.mjs`; it has no external dependencies and
+is dry-run by default:
+
+```bash
+npm run import-settlement-contours -- ../repomapper-export-1783268027369.json
+npm run import-settlement-contours -- ../repomapper-export-1783268027369.json --write
+```
+
+The importer understands full account exports and scoped contour exports. It
+extracts only `settlement-contour` polygons, drops hidden/malformed entries,
+rounds coordinates to 6 decimals, removes the repeated closing vertex, and
+deduplicates against existing hardcoded rings. It also catches likely same-place
+duplicates by overlapping bbox + centroid distance, so already-curated contours
+such as `Заросляк` do not get a second frame.
+
+After a write pass, run:
+
+```bash
+npm run import-settlement-contours -- ../repomapper-export-1783268027369.json
+npm run check
+```
+
+The second dry-run should report `added: 0`; that confirms the import is
+idempotent. `npm run check` validates the generated MapLibre style and existing
+smoke tests.
+
 ## Notes per archive
 
 ### Carpathian DEM (Copernicus GLO-30)

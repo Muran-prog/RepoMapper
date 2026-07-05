@@ -273,6 +273,7 @@ Cart/
 │   │   │                  #   Carpathian double-casing
 │   │   ├── buildings.js   # 2D + 3D extrusion
 │   │   ├── boundaries.js  # admin lines
+│   │   ├── settlements-supplement.js # hardcoded user-curated settlement contours
 │   │   ├── labels.js      # density-aware, fade-in, shielded labels
 │   │   └── hypso/         # HYPSOMETRIC SUBSYSTEM
 │   │       ├── ramps.js      # 7 ramp presets × light/dark + bathymetry stops
@@ -311,6 +312,7 @@ Cart/
     ├── dump-ramp.mjs               # Node ramp-table parser (CIELAB densifier)
     ├── dump-worldcover-ramp.mjs    # Node WorldCover colour-table emitter
     ├── dump-canopy-ramp.mjs        # Node ETH canopy ramp emitter (alpha-aware)
+    ├── import-settlement-contours.mjs # RepoMapper export → hardcoded contours
     ├── smoke-hypso.mjs            # headless paint-property smoke test
     └── README.md
 ```
@@ -332,6 +334,23 @@ Cart/
 | **Elevation profile**  | Click-to-draw polyline → SVG chart with tooltip + CSV export           | `enableHypsoProfile` (high/med)|
 | **Colourblind-safe**   | Luminance-led palette, badge in picker, OS `prefers-contrast: more` auto-flip | per-ramp `colorblindSafe`     |
 | **Perceptual blend**   | CIELAB densification of every ramp before MapLibre's linear-RGB interp | `densifyStopsLab` (~50 LOC, no deps) |
+
+### Hardcoded Settlement Contours
+
+Manual contours drawn in the app can be promoted into the shipped map style
+through `src/style/settlements-supplement.js`. Do not paste a large export by
+hand. Use the importer so the format stays stable and duplicate contours are
+filtered against existing hardcoded entries such as `Заросляк`:
+
+```bash
+npm run import-settlement-contours -- ../repomapper-export-1783268027369.json
+npm run import-settlement-contours -- ../repomapper-export-1783268027369.json --write
+```
+
+The dry-run reports how many `settlement-contour` polygons will be added,
+skipped as malformed/hidden, or skipped as duplicates. The write pass appends
+new entries with 6-decimal `[lng, lat]` rings, no repeated closing vertex, and
+provenance notes that include the source export and original contour id.
 
 ## Controls
 
