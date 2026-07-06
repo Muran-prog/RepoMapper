@@ -77,7 +77,7 @@ import {
   savePrefs,
 } from './store.js';
 import { runTool } from './tools.js';
-import { createFreeDrawRecorder } from './freedraw.js';
+import { createFreeDrawRecorder, strokePolygon } from './freedraw.js';
 import { createEraserRecorder, eraseFeatureInRadius } from './eraser.js';
 import { buildMeasureFeatures, distanceForMarker } from './measure.js';
 
@@ -839,20 +839,35 @@ export function createDrawEngine(map) {
       };
       rerender();
     },
-    onCommit: (geom) => {
+    onCommit: (geom, meta) => {
       const hadDraft = !!state.draft;
       state.draft = null;
       if (geom) {
+        const screenRing = strokePolygon(meta?.screenPoints || [], Math.max(1.5, Number(prefs.weight) / 2 || 1.5));
+        const ring = screenRing
+          .map(([x, y]) => {
+            try {
+              const ll = map.unproject([x, y]);
+              return [ll.lng, ll.lat];
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean);
+        const geometry = ring.length >= 4
+          ? { type: 'Polygon', coordinates: [ring] }
+          : geom;
         addFeature({
           type: 'Feature',
           id: nextId('pencil'),
-          geometry: geom,
+          geometry,
           properties: {
             kind: 'pencil',
             color: prefs.color,
-            fill: prefs.fill,
+            fill: prefs.color,
             weight: prefs.weight,
             opacity: prefs.opacity,
+            fixedMapSize: geometry.type === 'Polygon',
           },
         });
       } else if (hadDraft) {

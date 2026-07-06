@@ -122,6 +122,137 @@ export function chaikin(pts) {
   return out;
 }
 
+function unit(dx, dy) {
+  const len = Math.hypot(dx, dy);
+  return len > 1e-6 ? [dx / len, dy / len] : null;
+}
+
+function leftNormal(t) {
+  return [-t[1], t[0]];
+}
+
+function add(a, b) {
+  return [a[0] + b[0], a[1] + b[1]];
+}
+
+function mul(a, k) {
+  return [a[0] * k, a[1] * k];
+}
+
+function angleOf(v) {
+  return Math.atan2(v[1], v[0]);
+}
+
+function normAngle(a) {
+  const twoPi = Math.PI * 2;
+  let out = a % twoPi;
+  if (out < 0) out += twoPi;
+  return out;
+}
+
+function ccwContains(start, end, angle) {
+  let s = normAngle(start);
+  let e = normAngle(end);
+  let a = normAngle(angle);
+  if (e < s) e += Math.PI * 2;
+  if (a < s) a += Math.PI * 2;
+  return a >= s && a <= e;
+}
+
+function arcPoints(center, fromVec, toVec, throughVec, radius, steps = 8) {
+  const from = angleOf(fromVec);
+  const to = angleOf(toVec);
+  const through = angleOf(throughVec);
+  const ccw = ccwContains(from, to, through);
+  let end = to;
+  if (ccw) {
+    while (end < from) end += Math.PI * 2;
+  } else {
+    while (end > from) end -= Math.PI * 2;
+  }
+
+  const out = [];
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const a = from + (end - from) * t;
+    out.push([
+      center[0] + Math.cos(a) * radius,
+      center[1] + Math.sin(a) * radius,
+    ]);
+  }
+  return out;
+}
+
+/**
+ * Convert a screen-space pencil centreline into a filled stroke polygon.
+ *
+ * MapLibre line-width is defined in viewport pixels, so a tiny hand-drawn
+ * mark made at z20 would keep a 3px stroke at z8 and visually balloon over
+ * a huge area. Persisting the pencil stroke as a geographic polygon fixes the
+ * size in map space: it looks the same when authored, then shrinks naturally
+ * as the user zooms out.
+ *
+ * @param {Array<[number, number]>} pts Screen-pixel centreline.
+ * @param {number} radiusPx Half stroke width in screen pixels.
+ * @returns {Array<[number, number]>} Closed screen-pixel polygon ring.
+ */
+export function strokePolygon(pts, radiusPx) {
+  const points = (pts || []).filter((p) =>
+    Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+  const radius = Math.max(0.75, Number(radiusPx) || 1.5);
+  if (!points.length) return [];
+
+  if (points.length === 1) {
+    const [x, y] = points[0];
+    const ring = [];
+    const steps = 16;
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      ring.push([x + Math.cos(a) * radius, y + Math.sin(a) * radius]);
+    }
+    ring.push(ring[0].slice());
+    return ring;
+  }
+
+  const tangents = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    tangents.push(unit(b[0] - a[0], b[1] - a[1]) || tangents[tangents.length - 1] || [1, 0]);
+  }
+
+  const left = [];
+  const right = [];
+  for (let i = 0; i < points.length; i++) {
+    const prevT = tangents[Math.max(0, i - 1)];
+    const nextT = tangents[Math.min(tangents.length - 1, i)];
+    const prevN = leftNormal(prevT);
+    const nextN = leftNormal(nextT);
+    let n = unit(prevN[0] + nextN[0], prevN[1] + nextN[1]) || nextN;
+    let scale = radius;
+    const denom = Math.abs(n[0] * nextN[0] + n[1] * nextN[1]);
+    if (denom > 1e-3) scale = Math.min(radius / denom, radius * 2.5);
+    n = mul(n, scale);
+    left.push(add(points[i], n));
+    right.push(add(points[i], mul(n, -1)));
+  }
+
+  const startT = tangents[0];
+  const endT = tangents[tangents.length - 1];
+  const startN = leftNormal(startT);
+  const endN = leftNormal(endT);
+  const endCap = arcPoints(points[points.length - 1], endN, mul(endN, -1), endT, radius);
+  const startCap = arcPoints(points[0], mul(startN, -1), startN, mul(startT, -1), radius);
+  const ring = [
+    ...left,
+    ...endCap,
+    ...right.slice().reverse(),
+    ...startCap,
+  ];
+  ring.push(ring[0].slice());
+  return ring;
+}
+
 /**
  * Create a free-draw recorder bound to a MapLibre map.
  *
@@ -146,9 +277,10 @@ export function chaikin(pts) {
  * @param {function(Array<[number, number]>):void} [opts.onPreview]
  *        Called with screen-pixel samples on every animation frame so
  *        the caller can draw a live preview.
- * @param {function(GeoJSON.LineString|null):void} [opts.onCommit]
+ * @param {function(GeoJSON.LineString|null, object|null):void} [opts.onCommit]
  *        Called on pointerup/cancel with the simplified geographic
- *        LineString, or `null` if the stroke was too short / cancelled.
+ *        LineString plus screen-space metadata, or `null` if the stroke was
+ *        too short / cancelled.
  */
 export function createFreeDrawRecorder(map, opts = {}) {
   const {
@@ -224,7 +356,10 @@ export function createFreeDrawRecorder(map, opts = {}) {
       })
       .filter(Boolean);
     if (coords.length < 2) return null;
-    return { type: 'LineString', coordinates: coords };
+    return {
+      geometry: { type: 'LineString', coordinates: coords },
+      screenPoints: simplified,
+    };
   };
 
   // Pointer event handlers — attached to the map container directly.
@@ -264,7 +399,8 @@ export function createFreeDrawRecorder(map, opts = {}) {
     const pts = samples.slice();
     resetStroke();
     restoreMapGestures();
-    onCommit?.(finalise(pts));
+    const result = finalise(pts);
+    onCommit?.(result?.geometry ?? null, result ? { screenPoints: result.screenPoints } : null);
   };
 
   const onPointerCancel = (e) => {
@@ -273,7 +409,7 @@ export function createFreeDrawRecorder(map, opts = {}) {
     try { container.releasePointerCapture(pointerId); } catch { /* */ }
     resetStroke();
     restoreMapGestures();
-    onCommit?.(null);
+    onCommit?.(null, null);
   };
 
   // Prevent the browser from turning a touch-drag into a page scroll
