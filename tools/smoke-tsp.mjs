@@ -764,7 +764,54 @@ const PTS = [
 }
 
 // ---------------------------------------------------------------------------
-// Test 9: persisted `connectionMode: 'optimal'` loads as-is.
+// Test 9: authoritative server refresh replaces the live feature set.
+//
+// This is intentionally NOT importGeoJSON() semantics. Account refresh already
+// hydrated the kv store from the server; the live engine must mirror that
+// collection exactly instead of appending duplicate copies with regenerated ids.
+// ---------------------------------------------------------------------------
+{
+  resetStorage();
+  const engine = createDrawEngine(makeMockMap());
+  engine.setConnectionMode('sequence');
+  placeMarker(engine, PTS[0]);
+  placeMarker(engine, PTS[1]);
+
+  const serverFeatures = [
+    {
+      type: 'Feature',
+      id: 'srv-marker-1',
+      geometry: { type: 'Point', coordinates: [25.0, 49.0] },
+      properties: { kind: 'marker' },
+    },
+    {
+      type: 'Feature',
+      id: 'srv-marker-2',
+      geometry: { type: 'Point', coordinates: [25.2, 49.2] },
+      properties: { kind: 'marker' },
+    },
+  ];
+  kv.setItem('cart:draw:features:v1', JSON.stringify({ version: 1, features: serverFeatures }));
+  const replaced = engine.replaceAll(serverFeatures, { persist: false, history: false });
+
+  invariantCheck('server replace returns incoming feature count', replaced, 2);
+  invariantCheck(
+    'server replace does not append duplicate local features',
+    engine.exportGeoJSON().features.length,
+    2,
+  );
+  invariantCheck(
+    'server replace preserves authoritative ids',
+    engine.exportGeoJSON().features.map((f) => f.id),
+    ['srv-marker-1', 'srv-marker-2'],
+  );
+  invariantCheck('server replace rebuilds marker order', engine.getState().markerCount, 2);
+
+  engine.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: persisted `connectionMode: 'optimal'` loads as-is.
 //
 // `optimal` is a first-class mode, so a previously-persisted value
 // must survive reload unchanged. The fresh engine should be in optimal

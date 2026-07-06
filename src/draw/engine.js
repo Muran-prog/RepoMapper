@@ -116,6 +116,7 @@ function nextId(prefix = 'f') {
  * @property {function():number} optimizeRoute  Explicit TSP action, see below.
  * @property {function():object} exportGeoJSON
  * @property {function(object):number} importGeoJSON
+ * @property {function(object|Array, object=):number} replaceAll
  * @property {function(string, Function):function():void} on   Subscribe to engine events.
  * @property {function():void} dispose
  */
@@ -242,11 +243,24 @@ export function createDrawEngine(map) {
   // Persistence — debounced so a fast drag doesn't hammer localStorage.
   // -------------------------------------------------------------------
   let saveTimer = null;
+  let persistBurstOpen = false;
+  const persistSnapshot = () => {
+    saveFeatures(Array.from(state.features.values()));
+  };
   const schedulePersist = () => {
+    // Mark the account-store key dirty immediately, before the network
+    // debounce. Otherwise a focus/manual server refresh can arrive during
+    // this engine-level debounce window and treat a just-authored marker as
+    // "not local" yet.
+    if (!persistBurstOpen) {
+      persistBurstOpen = true;
+      persistSnapshot();
+    }
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      saveFeatures(Array.from(state.features.values()));
+      persistBurstOpen = false;
+      persistSnapshot();
     }, SAVE_DEBOUNCE_MS);
   };
 
@@ -1776,6 +1790,54 @@ export function createDrawEngine(map) {
     return added;
   };
 
+  /**
+   * Replace the live drawing set with an authoritative collection. This is
+   * intentionally different from importGeoJSON(), which merges user-imported
+   * files and regenerates ids. Server refresh must preserve ids, clear stale
+   * local copies, and avoid scheduling a persistence echo while account-store
+   * is applying remote data.
+   */
+  const replaceAll = (input, opts = {}) => {
+    const list = Array.isArray(input)
+      ? input
+      : Array.isArray(input?.features)
+        ? input.features
+        : [];
+    const {
+      persist = true,
+      history: keepHistory = true,
+    } = opts;
+
+    if (keepHistory) pushHistory();
+    state.features.clear();
+    state.markerOrder = [];
+    state.selectedId = null;
+    state.draft = null;
+    state.drag = null;
+
+    let added = 0;
+    for (const f of list) {
+      if (!f || !f.geometry) continue;
+      const next = deepClone(f);
+      const id = typeof next.id === 'string' && next.id ? next.id : nextId(next.properties?.kind ?? 'imp');
+      next.id = id;
+      if (!next.properties) next.properties = {};
+      state.features.set(id, next);
+      if (next.properties.kind === 'marker') state.markerOrder.push(id);
+      added++;
+    }
+
+    state.markerOrder.forEach((mid, i) => {
+      const m = state.features.get(mid);
+      if (m && m.properties) m.properties.order = i + 1;
+    });
+
+    if (persist) flushPersist();
+    emit('change');
+    rerender();
+    return added;
+  };
+
   const dispose = () => {
     pencilRecorder.dispose();
     eraserRecorder.dispose();
@@ -1811,7 +1873,8 @@ export function createDrawEngine(map) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    saveFeatures(Array.from(state.features.values()));
+    persistBurstOpen = false;
+    persistSnapshot();
   };
 
   const handle = {
@@ -1830,7 +1893,7 @@ export function createDrawEngine(map) {
     }),
     undo, redo,
     clearAll, deleteSelected, cancelDraft,
-    exportGeoJSON, importGeoJSON,
+    exportGeoJSON, importGeoJSON, replaceAll,
     /**
      * Read the style bag (`color` / `fill` / `weight` / `opacity`) of a
      * feature by id, or of the current selection when no id is given.

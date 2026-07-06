@@ -482,9 +482,13 @@ export function applyRemote(payload, { drawEngine, contourEngine } = {}) {
     // local pending edit for it (otherwise we'd revert the user's own change).
     if (!_dirty.has(FEATURES_KEY)) {
       const feats = parseOr(_kv[FEATURES_KEY], null);
-      if (feats?.features && drawEngine?.importGeoJSON) {
+      if (feats?.features && (drawEngine?.replaceAll || drawEngine?.importGeoJSON)) {
         try {
-          drawEngine.importGeoJSON({ type: 'FeatureCollection', features: feats.features });
+          if (drawEngine.replaceAll) {
+            drawEngine.replaceAll(feats.features, { persist: false, history: false });
+          } else {
+            drawEngine.importGeoJSON({ type: 'FeatureCollection', features: feats.features });
+          }
         } catch (e) { console.error('[account-store] apply features:', e); }
       }
     }
