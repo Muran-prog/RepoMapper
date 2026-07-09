@@ -62,6 +62,7 @@ import {
   deleteVertex,
   centroidOf,
 } from './edit.js';
+import { applySettlementContourLayerOrder } from '../map/layer-order.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -399,6 +400,7 @@ export function createSettlementContourEngine(map) {
       for (const spec of overlayLayerSpecs()) {
         if (!map.getLayer(spec.id)) map.addLayer(spec);
       }
+      applySettlementContourLayerOrder(map);
       return true;
     } catch {
       return false;

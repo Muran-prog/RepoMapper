@@ -80,6 +80,7 @@ import { runTool } from './tools.js';
 import { createFreeDrawRecorder, strokePolygon } from './freedraw.js';
 import { createEraserRecorder, eraseFeatureInRadius } from './eraser.js';
 import { buildMeasureFeatures, distanceForMarker } from './measure.js';
+import { applySettlementContourLayerOrder } from '../map/layer-order.js';
 
 const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
@@ -337,6 +338,7 @@ export function createDrawEngine(map) {
         }
       }
     }
+    applySettlementContourLayerOrder(map);
     return allLayersPresent
       && !!map.getSource(SOURCE_ID)
       && !!map.getSource(MEASURE_SOURCE_ID);

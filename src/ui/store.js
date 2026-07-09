@@ -72,6 +72,7 @@ export const CONTROL_LAYER_FEATURE_KEYS = Object.freeze([
   'carpathianTrails',
   'hazardousTerrain',
   'settlementOutline',
+  'settlementContoursTop',
   'roadsOrangeBold',
   'grid',
 ]);

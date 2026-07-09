@@ -26,6 +26,7 @@
  */
 
 import { applyStyle, applyMapMode } from '../map/createMap.js';
+import { applySettlementContourLayerOrder } from '../map/layer-order.js';
 import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
 import { getProfileConfig } from '../device.js';
 import { DEFAULT_THEME } from '../config.js';
@@ -493,12 +494,13 @@ function renderLayersPanelBody() {
     ${accordionMarkup({
       id: 'layers-roads',
       title: 'Дороги и поселения',
-      meta: '2',
+      meta: '3',
       open: true,
       body: `
         <div class="rows">
           ${richRow({ ctl: 'roadsOrangeBold', title: 'Выделенные дороги', desc: 'Утолщённые главные дороги с заливкой и обводкой', rowAttr: 'data-ctl-row="roadsOrangeBold"' })}
           ${richRow({ ctl: 'settlementOutline', title: 'Контуры населённых пунктов', desc: 'Заметная рамка вокруг сёл, посёлков и городов', rowAttr: 'data-ctl-row="settlementOutline"' })}
+          ${richRow({ ctl: 'settlementContoursTop', title: 'Контуры поверх рисования', desc: 'Автоматические и ручные контуры всегда выше нарисованных объектов', rowAttr: 'data-ctl-row="settlementContoursTop"' })}
         </div>
       `,
     })}
@@ -1092,6 +1094,9 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
       // Settlement outlines — heavy road-style violet frame around
       // residential / suburb / quarter / neighbourhood polygons.
       settlementOutline: restoredPrefs.layerFeatures.settlementOutline,
+      // Optional z-order override: keep settlement contours above
+      // every user drawing layer.
+      settlementContoursTop: restoredPrefs.layerFeatures.settlementContoursTop,
       // Bold orange road treatment — orange fills + casings + glow +
       // boosted widths on hierarchy roads.
       roadsOrangeBold: restoredPrefs.layerFeatures.roadsOrangeBold,
@@ -1110,6 +1115,15 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
       profileConfig: getProfileConfig(profileName, caps),
       featureOverrides: state.layerFeatures,
     });
+    syncSettlementContourLayerOrder();
+  };
+
+  const syncSettlementContourLayerOrder = () => {
+    const apply = () => applySettlementContourLayerOrder(map, {
+      contoursOnTop: !!state.layerFeatures.settlementContoursTop,
+    });
+    apply();
+    try { map.once?.('idle', apply); } catch { /* map may be mid-dispose */ }
   };
 
   // ----- Map-mode switcher (segmented control beside the brand chip) ---
@@ -1132,6 +1146,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
       syncModeAttr();
       try {
         await applyMapMode(map, next);
+        syncSettlementContourLayerOrder();
       } catch (err) {
         // The mode router itself does graceful fallback for Standard;
         // if anything else throws here we want the user to know the
@@ -1401,6 +1416,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
   wireToggle('hazardousTerrain');
   wireToggle('carpathianTrails');
   wireToggle('settlementOutline');
+  wireToggle('settlementContoursTop');
   wireToggle('roadsOrangeBold');
   wireToggle('grid');
 
@@ -1520,6 +1536,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
   // drawing engine it owns its own style-rebuild resilience, so no theme
   // wiring is needed here — it re-reads the active theme on reinstall.
   installContourUI(map, panelsHost);
+  syncSettlementContourLayerOrder();
 
   // ----- Data management panel ------------------------------------------
   //

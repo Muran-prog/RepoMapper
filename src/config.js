@@ -929,6 +929,14 @@ export const FEATURES = Object.freeze({
   settlementOutline: true,
 
   /**
+   * Settlement contour z-order override. Off keeps drawing as the top
+   * app-authored overlay. On lifts both automatic settlement outlines
+   * and manual settlement contours above the drawing stack, so new
+   * strokes/markers render underneath those contours.
+   */
+  settlementContoursTop: false,
+
+  /**
    * Coordinate grid — a toggleable 1 km × 1 km reference overlay drawn
    * over the Ukrainian extent. Pure-geometry, network-free, and populated
    * dynamically near the current viewport; see src/style/grid.js.
