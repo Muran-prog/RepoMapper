@@ -1318,7 +1318,13 @@ export function createDrawEngine(map) {
     styleSettleRetryArmed = true;
     const retry = () => {
       styleSettleRetryArmed = false;
-      tryInstallAndRender();
+      // `idle` usually implies the style has settled, but another
+      // engine's idle handler may have just dirtied it again (e.g. a
+      // z-order pass moving layers). If installation still can't
+      // proceed, re-arm for the NEXT idle instead of silently giving
+      // up — otherwise the drawings stay gone until a full page
+      // reload, since no further styledata may ever arrive.
+      if (!tryInstallAndRender()) scheduleStyleSettleRetry();
     };
     // `idle` fires after every setStyle once the new style has fully
     // settled (sources registered, sprite/glyphs loaded, first frame

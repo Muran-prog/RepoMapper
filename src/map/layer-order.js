@@ -66,24 +66,78 @@ function firstExistingLayer(map, ids) {
   return null;
 }
 
+/** Current style layer-id order, or null while the style is mid-swap. */
+function currentLayerOrder(map) {
+  try {
+    const layers = map?.getStyle?.()?.layers;
+    return Array.isArray(layers) ? layers.map((l) => l.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function sameSequence(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Move the existing subset of `ids` to the top of the stack — but ONLY
+ * when they aren't already there. `map.moveLayer` dirties the style and
+ * emits a fresh `styledata` even when the layer doesn't actually change
+ * position; since this helper runs from the engines' styledata-driven
+ * `ensureLayers` passes, unconditional moves create an endless
+ * styledata → move → styledata feedback loop that keeps the map from
+ * ever settling (and wipes out the drawing engine's reinstall window).
+ * The no-op guard makes the pass truly idempotent so the loop converges.
+ */
 function moveExistingLayersToTop(map, ids) {
   if (!map?.getLayer || !map?.moveLayer) return;
-  for (const id of ids) {
+  const existing = ids.filter((id) => {
+    try { return !!map.getLayer(id); } catch { return false; }
+  });
+  if (!existing.length) return;
+  const order = currentLayerOrder(map);
+  if (order && sameSequence(order.slice(-existing.length), existing)) return;
+  for (const id of existing) {
     try {
-      if (map.getLayer(id)) map.moveLayer(id);
+      map.moveLayer(id);
     } catch {
       /* style may be mid-swap; the next styledata/idle pass retries */
     }
   }
 }
 
+/**
+ * Move the existing subset of `ids` directly before `beforeId`, skipping
+ * the moves entirely when they're already in place (same no-op rationale
+ * as `moveExistingLayersToTop`).
+ */
 function moveExistingLayersBefore(map, ids, beforeId) {
   if (!beforeId || !map?.getLayer || !map?.moveLayer) return;
-  for (const id of ids) {
+  const existing = ids.filter((id) => {
+    try { return id !== beforeId && !!map.getLayer(id); } catch { return false; }
+  });
+  if (!existing.length) return;
+  try {
+    if (!map.getLayer(beforeId)) return;
+  } catch {
+    return;
+  }
+  const order = currentLayerOrder(map);
+  if (order) {
+    const anchorIdx = order.indexOf(beforeId);
+    if (
+      anchorIdx >= existing.length
+      && sameSequence(order.slice(anchorIdx - existing.length, anchorIdx), existing)
+    ) return;
+  }
+  for (const id of existing) {
     try {
-      if (id !== beforeId && map.getLayer(id) && map.getLayer(beforeId)) {
-        map.moveLayer(id, beforeId);
-      }
+      map.moveLayer(id, beforeId);
     } catch {
       /* style may be mid-swap; the next styledata/idle pass retries */
     }

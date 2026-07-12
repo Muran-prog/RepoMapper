@@ -891,7 +891,11 @@ export function createSettlementContourEngine(map) {
     retryArmed = true;
     map.once('idle', () => {
       retryArmed = false;
-      tryInstallAndRender();
+      // If the style was dirtied again between the idle signal and this
+      // callback (another engine's idle pass may move layers), re-arm
+      // for the next idle rather than dropping the reinstall on the
+      // floor — no further styledata is guaranteed to arrive.
+      if (!tryInstallAndRender()) scheduleRetry();
     });
   };
   const onStyleData = () => {
