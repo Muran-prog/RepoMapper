@@ -282,6 +282,10 @@ async function flush() {
     for (const k of sentDirty) { _dirty.delete(k); _blocked.add(k); }
   }
 
+  // Everything pending is confirmed on the server — the crash-recovery
+  // outbox (if any) is now stale and must not resurrect old state later.
+  if (res.ok && !_dirty.size && !_removed.size) clearOutbox();
+
   // New edits arrived during the push, or it failed (network) — try again.
   // Blocked keys are no longer in _dirty, so this won't spin on oversize data.
   if (_dirty.size || _removed.size) scheduleFlush();
@@ -292,6 +296,121 @@ export async function flushPending() {
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
   await flush();
   return !_dirty.size && !_removed.size;
+}
+
+// ---------------------------------------------------------------------------
+// Unload flushers — engine-level debounce draining.
+// ---------------------------------------------------------------------------
+// The draw / contour engines debounce their own kv writes (SAVE_DEBOUNCE_MS).
+// The store's save-on-exit beacon is registered at boot — BEFORE the engines
+// exist — so on pagehide it fires FIRST, building its payload from a kv that
+// may not yet contain an edit still sitting in an engine's debounce timer.
+// Engines register a synchronous "drain my pending save into kv now" callback
+// here, and beaconNow() runs them all before building the beacon payload, so
+// the last edit always makes it into the exit save regardless of listener
+// registration order.
+
+/** @type {Set<() => void>} */
+const _unloadFlushers = new Set();
+
+/**
+ * Register a synchronous callback that drains any engine-level pending
+ * (debounced) persistence into the kv store. Called right before the
+ * save-on-exit beacon builds its payload. Returns an unregister function.
+ */
+export function registerUnloadFlusher(fn) {
+  if (typeof fn !== 'function') return () => {};
+  _unloadFlushers.add(fn);
+  return () => { _unloadFlushers.delete(fn); };
+}
+
+function drainUnloadFlushers() {
+  for (const fn of _unloadFlushers) {
+    try { fn(); } catch { /* one broken flusher must not break the rest */ }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Unload outbox — quick-reload durability.
+// ---------------------------------------------------------------------------
+// The exit beacon is fire-and-forget: on a fast reload the new page's boot
+// GET routinely reaches the server BEFORE the beacon POST is processed, so
+// boot hydrates the pre-edit snapshot and the last-second edit silently
+// vanishes (the classic "place a marker, reload within a second, it's gone").
+// To close that race we ALSO write the pending dirty payload synchronously to
+// localStorage at exit. At the next boot, after server hydration, the outbox
+// is layered back on top and re-marked dirty, so the edit survives no matter
+// who won the beacon-vs-boot race. The outbox is deleted once everything
+// pending has been confirmed saved, so it can never resurrect stale state.
+
+const OUTBOX_KEY = 'cart:unload-outbox:v1';
+/** Ignore outboxes older than this — protects a rarely-used device from
+ *  clobbering newer multi-device state with week-old leftovers. */
+const OUTBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function writeOutbox() {
+  const ls = rawLocalStorage();
+  if (!ls) return;
+  try {
+    if (!_dirty.size && !_removed.size) { ls.removeItem(OUTBOX_KEY); return; }
+    const kvOut = {};
+    for (const k of _dirty) {
+      if (_kv[k] !== undefined) kvOut[k] = _kv[k];
+    }
+    ls.setItem(OUTBOX_KEY, JSON.stringify({
+      ts: Date.now(),
+      kv: kvOut,
+      removed: [..._removed],
+    }));
+  } catch { /* quota / private mode — beacon remains the fallback */ }
+}
+
+function clearOutbox() {
+  const ls = rawLocalStorage();
+  if (!ls) return;
+  try { ls.removeItem(OUTBOX_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * Re-apply the previous session's unsent dirty set on top of the freshly
+ * hydrated server state and mark it dirty again. Returns true when anything
+ * was applied (caller then triggers a flush).
+ */
+function applyOutbox() {
+  const ls = rawLocalStorage();
+  if (!ls) return false;
+  let raw = null;
+  try { raw = ls.getItem(OUTBOX_KEY); } catch { return false; }
+  if (raw == null) return false;
+  // Consume it immediately — from here on the data lives in _kv/_dirty and
+  // a failed save will simply write a fresh outbox at the next exit.
+  try { ls.removeItem(OUTBOX_KEY); } catch { /* ignore */ }
+
+  const box = parseOr(raw, null);
+  if (!box || typeof box !== 'object') return false;
+  if (typeof box.ts !== 'number' || Date.now() - box.ts > OUTBOX_MAX_AGE_MS) return false;
+
+  let applied = false;
+  if (box.kv && typeof box.kv === 'object') {
+    for (const [k, v] of Object.entries(box.kv)) {
+      if (typeof v !== 'string') continue;
+      if (_kv[k] === v) continue; // beacon won the race — already on server
+      _kv[k] = v;
+      _dirty.add(k);
+      _removed.delete(k);
+      applied = true;
+    }
+  }
+  if (Array.isArray(box.removed)) {
+    for (const k of box.removed) {
+      if (typeof k !== 'string' || STRUCTURED_KEYS.has(k)) continue;
+      if (k in _kv) delete _kv[k];
+      _dirty.delete(k);
+      _removed.add(k);
+      applied = true;
+    }
+  }
+  return applied;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +433,10 @@ function listCartKeys(ls) {
   try {
     for (let i = 0; i < ls.length; i++) {
       const k = ls.key(i);
-      if (k && k.startsWith('cart:')) keys.push(k);
+      // The unload outbox is infrastructure, not user state: it must never
+      // be migrated into the settings blob, and it must survive until
+      // applyOutbox() consumes it AFTER this migration pass runs.
+      if (k && k.startsWith('cart:') && k !== OUTBOX_KEY) keys.push(k);
     }
   } catch { /* ignore */ }
   return keys;
@@ -399,9 +521,14 @@ export async function initAccountState() {
       hydrateFromServer(payload.data);
       // Server reached → safe to migrate legacy local data up and wipe it.
       needsPersist = migrateAndClearLocalStorage();
+      // Layer the previous session's unsent exit-save on top of the server
+      // snapshot: on a fast reload the boot GET routinely beats the exit
+      // beacon to the server, so without this the last-second edit is lost.
+      if (applyOutbox()) needsPersist = true;
     } else {
       // Server unreachable — keep working from local data this session.
       seedFromLocalStorageReadOnly();
+      if (applyOutbox()) needsPersist = true;
     }
   } finally {
     _suspend--;
@@ -444,8 +571,17 @@ function installLifecycle() {
   // tab is merely being backgrounded the next flush is harmless, and if it is
   // truly closing it no longer matters.
   const beaconNow = () => {
+    // Drain the engines' pending debounced saves into kv FIRST — this
+    // lifecycle listener is registered at boot, before the engines exist,
+    // so it fires before their own pagehide handlers and would otherwise
+    // beacon a payload that misses the very last edit.
+    drainUnloadFlushers();
     if (!_dirty.size && !_removed.size) return;
     beaconSync(buildPayload(_dirty, _removed));
+    // Synchronous crash/race insurance: if the beacon loses the race with
+    // the next boot's GET (fast reload) or is dropped, the outbox re-applies
+    // this exact payload at the next boot.
+    writeOutbox();
   };
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') beaconNow();

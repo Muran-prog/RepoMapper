@@ -53,7 +53,7 @@
 
 import { getTokens } from '../style/tokens.js';
 import { settlementPerimeterLayers } from '../style/settlements.js';
-import { kv } from '../state/account-store.js';
+import { kv, registerUnloadFlusher } from '../state/account-store.js';
 import {
   listVertices,
   listMidpoints,
@@ -253,18 +253,34 @@ export function createSettlementContourEngine(map) {
   // Persistence (debounced).
   // -------------------------------------------------------------------
   let saveTimer = null;
+  let persistBurstOpen = false;
+  const persistSnapshot = () => {
+    saveContours(state.order.map((id) => state.contours.get(id)).filter(Boolean));
+  };
   const flushPersist = () => {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    saveContours(state.order.map((id) => state.contours.get(id)).filter(Boolean));
+    persistBurstOpen = false;
+    persistSnapshot();
   };
   const schedulePersist = () => {
+    // Persist the FIRST edit of a burst immediately (same pattern as the
+    // draw engine). Otherwise the account-store key stays clean for the
+    // whole debounce window, and a tab-focus server refresh arriving in
+    // that window treats the just-authored contour as "not a local edit"
+    // and replaces it with the stale server copy — contours would simply
+    // vanish until the next full re-render.
+    if (!persistBurstOpen) {
+      persistBurstOpen = true;
+      persistSnapshot();
+    }
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      flushPersist();
+      persistBurstOpen = false;
+      persistSnapshot();
     }, SAVE_DEBOUNCE_MS);
   };
 
@@ -897,6 +913,12 @@ export function createSettlementContourEngine(map) {
       // floor — no further styledata is guaranteed to arrive.
       if (!tryInstallAndRender()) scheduleRetry();
     });
+    // `idle` only fires after a render pass. If the map is ALREADY idle
+    // when we arm this latch (nothing pending, no interaction), the event
+    // may never come and the contour layers stay missing until the user
+    // happens to poke the map (e.g. toggling their visibility). Force a
+    // frame so the idle latch is guaranteed to resolve.
+    try { map.triggerRepaint?.(); } catch { /* map tearing down */ }
   };
   const onStyleData = () => {
     // A theme / quality / map-mode switch swaps the whole style via
@@ -1123,6 +1145,12 @@ export function createSettlementContourEngine(map) {
   // Flush any pending debounced save before the page goes away so a
   // contour drawn moments before a reload / tab close isn't lost.
   const onPageHide = () => flushPersist();
+  // Also register with the account-store's exit beacon: its pagehide
+  // listener was installed at boot (before this engine existed) and fires
+  // FIRST, so without this hook it would beacon a payload built from a kv
+  // that misses the still-debounced edit. The registry drains us before
+  // the payload is built, regardless of listener registration order.
+  const unregisterUnloadFlusher = registerUnloadFlusher(flushPersist);
 
   function dispose() {
     flushPersist();
@@ -1133,6 +1161,7 @@ export function createSettlementContourEngine(map) {
       syncDoubleClickZoom();
       syncDrawPan();
     }
+    unregisterUnloadFlusher();
     window.removeEventListener('pagehide', onPageHide);
     window.removeEventListener('beforeunload', onPageHide);
     map.off('click', onClick);

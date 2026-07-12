@@ -81,6 +81,7 @@ import { createFreeDrawRecorder, strokePolygon } from './freedraw.js';
 import { createEraserRecorder, eraseFeatureInRadius } from './eraser.js';
 import { buildMeasureFeatures, distanceForMarker } from './measure.js';
 import { applySettlementContourLayerOrder } from '../map/layer-order.js';
+import { registerUnloadFlusher } from '../state/account-store.js';
 
 const HISTORY_LIMIT = 60;
 const SAVE_DEBOUNCE_MS = 320;
@@ -1331,6 +1332,11 @@ export function createDrawEngine(map) {
     // rendered) — that's the canonical "done" signal in MapLibre and
     // the most reliable single hook to retry installation on.
     map.once('idle', retry);
+    // `idle` only fires after a render pass; if the map is ALREADY idle
+    // when the latch is armed, no event may ever come and the drawings
+    // stay missing until something else repaints. Force a frame so the
+    // latch is guaranteed to resolve.
+    try { map.triggerRepaint?.(); } catch { /* map tearing down */ }
   };
 
   // -------------------------------------------------------------------
@@ -1883,6 +1889,7 @@ export function createDrawEngine(map) {
     if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
     if (map.getSource(MEASURE_SOURCE_ID)) map.removeSource(MEASURE_SOURCE_ID);
     if (saveTimer) clearTimeout(saveTimer);
+    unregisterUnloadFlusher();
     delete map.__cartDraw;
   };
 
@@ -1899,6 +1906,13 @@ export function createDrawEngine(map) {
     persistBurstOpen = false;
     persistSnapshot();
   };
+
+  // Drain the debounced save into the account store right before its
+  // exit beacon builds the payload — the store's pagehide listener was
+  // registered at boot (before this engine existed) and fires first, so
+  // without this hook an edit still sitting in the debounce window would
+  // miss the exit save and vanish on a quick reload.
+  const unregisterUnloadFlusher = registerUnloadFlusher(flushPersist);
 
   const handle = {
     enable, disable,
