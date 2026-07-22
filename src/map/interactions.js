@@ -44,6 +44,7 @@ import {
   findActiveHypsoLayer,
 } from '../style/hypso/index.js';
 import { syncGridSource } from '../style/grid.js';
+import { installWildlifeLifecycle } from './wildlife.js';
 
 export function installInteractionTuning(map, { caps } = {}) {
   const isTouch = !!caps?.isTouch;
@@ -122,6 +123,7 @@ export function installInteractionTuning(map, { caps } = {}) {
   installHypsoLifecycle(map, { reduceMotion });
   installHypsoZoomBinding(map);
   installGridLifecycle(map);
+  installWildlifeLifecycle(map);
 }
 
 function installGridLifecycle(map) {

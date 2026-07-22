@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wildlife overlay — E2E harness</title>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.7.0/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@5.7.0/dist/maplibre-gl.js"></script>
+    <!-- Real project styles (tokens + wildlife popup/panel CSS). -->
+    <link rel="stylesheet" href="../../styles.css" />
+    <style>
+      html, body { margin: 0; height: 100%; }
+      #map { position: absolute; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script type="module">
+      // Import the REAL feature modules under test.
+      import {
+        withWildlifeOverlay,
+        syncWildlifeSource,
+        wildlifeTileUrl,
+        normalizeWildlifeFilters,
+        WILDLIFE_LAYER_IDS,
+        WILDLIFE_SOURCE_ID,
+      } from '../../src/style/wildlife.js';
+      import { installWildlifeLifecycle } from '../../src/map/wildlife.js';
+
+      window.__errors = [];
+      window.addEventListener('error', (e) => window.__errors.push(String(e.message || e)));
+      window.addEventListener('unhandledrejection', (e) =>
+        window.__errors.push('promise: ' + String((e.reason && e.reason.message) || e.reason)));
+
+      // Theme tokens the layers need (font stack) + popup theming from CSS.
+      const tokens = { font: { bold: ['Noto Sans Bold'], regular: ['Noto Sans Regular'] } };
+
+      // A real, key-free light basemap (CARTO positron) so the overlay is
+      // tested on top of an actual map, and glyphs that carry Noto Sans Bold.
+      const baseStyle = {
+        version: 8,
+        glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+        sources: {
+          carto: {
+            type: 'raster',
+            tiles: [
+              'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+              'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+            ],
+            tileSize: 256,
+            attribution: '© CARTO © OpenStreetMap',
+          },
+        },
+        layers: [
+          { id: 'bg', type: 'background', paint: { 'background-color': '#eef1f4' } },
+          { id: 'carto', type: 'raster', source: 'carto' },
+        ],
+      };
+
+      const filters = normalizeWildlifeFilters({ group: 'all', region: 'ua' });
+      const style = withWildlifeOverlay(baseStyle, tokens, { enabled: true, filters });
+
+      const map = new maplibregl.Map({
+        container: 'map',
+        style,
+        center: [31.1656, 48.3794],
+        zoom: 5.6,
+        attributionControl: false,
+      });
+      window.__map = map;
+
+      // Mirror the production _cart contract the lifecycle + sync rely on.
+      map._cart = {
+        features: { wildlife: true },
+        wildlife: { filters },
+        tokens,
+        wildlifeUrl: wildlifeTileUrl(filters),
+      };
+
+      installWildlifeLifecycle(map);
+
+      map.on('idle', () => { window.__ready = true; });
+
+      // ---- Test hooks --------------------------------------------------
+      window.__state = () => {
+        let src = null;
+        try { src = map.getSource(WILDLIFE_SOURCE_ID); } catch {}
+        let sourceFeatures = 0;
+        try {
+          sourceFeatures = map.querySourceFeatures(WILDLIFE_SOURCE_ID, {
+            sourceLayer: 'occurrence',
+          }).length;
+        } catch {}
+        return {
+          hasSource: !!src,
+          tileUrl: src && src.tiles ? src.tiles[0] : null,
+          layers: WILDLIFE_LAYER_IDS.filter((id) => !!map.getLayer(id)),
+          markers: map.queryRenderedFeatures({ layers: ['wildlife-markers'] }).length,
+          // Heatmap layers are NOT returned by queryRenderedFeatures, so we
+          // prove the heat surface has data via the shared source instead.
+          source: sourceFeatures,
+          zoom: map.getZoom(),
+        };
+      };
+
+      window.__flyTo = (lng, lat, zoom) => new Promise((resolve) => {
+        let done = false;
+        const fin = () => { if (!done) { done = true; resolve(true); } };
+        map.once('idle', fin);
+        setTimeout(fin, 9000); // hard cap so the test never hangs
+        map.jumpTo({ center: [lng, lat], zoom });
+      });
+
+      // Rebuild the whole style with new filters baked in, via
+      // setStyle({diff:false}) — the exact mechanism applyStyle uses in
+      // production. This reliably renders even on a stationary map.
+      window.__rebuildWith = (patch) => {
+        const next = normalizeWildlifeFilters({ ...map._cart.wildlife.filters, ...patch });
+        map._cart.wildlife = { filters: next };
+        const s = withWildlifeOverlay(baseStyle, tokens, { enabled: true, filters: next });
+        map.setStyle(s, { diff: false });
+        map._cart.wildlifeUrl = wildlifeTileUrl(next);
+        return wildlifeTileUrl(next);
+      };
+
+      window.__setFilters = (patch) => window.__rebuildWith(patch);
+
+      // Screen pixel of the largest rendered marker (easiest, most stable hit).
+      window.__biggestMarkerPixel = () => {
+        const feats = map.queryRenderedFeatures({ layers: ['wildlife-markers'] });
+        if (!feats.length) return null;
+        let best = feats[0];
+        for (const f of feats) {
+          if ((f.properties.total || 0) > (best.properties.total || 0)) best = f;
+        }
+        const c = best.geometry && best.geometry.coordinates;
+        if (!c || c.length < 2) return null;
+        const p = map.project({ lng: Number(c[0]), lat: Number(c[1]) });
+        return { x: Math.round(p.x), y: Math.round(p.y), total: best.properties.total };
+      };
+    </script>
+  </body>
+</html>

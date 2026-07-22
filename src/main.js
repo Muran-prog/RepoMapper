@@ -15,7 +15,7 @@ import { detectCaps, deriveProfile, watchViewport } from './device.js';
 import { FEATURES } from './config.js';
 import { ensureAuthenticated, installAuthWatcher } from './ui/auth-gate.js';
 import { initAccountState, flushPending } from './state/account-store.js';
-import { loadControlPrefs } from './ui/store.js';
+import { loadControlPrefs, loadWildlifeFilters } from './ui/store.js';
 
 async function boot() {
   const root = document.getElementById('app');
@@ -72,6 +72,7 @@ async function boot() {
       profile: effectiveProfile,
       theme: controlPrefs.theme,
       featureOverrides: controlPrefs.layerFeatures,
+      wildlifeFilters: loadWildlifeFilters(),
     });
   } catch (err) {
     showFatal(root, err);

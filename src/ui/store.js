@@ -75,6 +75,7 @@ export const CONTROL_LAYER_FEATURE_KEYS = Object.freeze([
   'settlementContoursTop',
   'roadsOrangeBold',
   'grid',
+  'wildlife',
 ]);
 
 const CONTROL_LAYER_FEATURE_KEY_SET = new Set(CONTROL_LAYER_FEATURE_KEYS);
@@ -94,7 +95,11 @@ const LEGACY_LAYER_PREF_KEYS = Object.freeze({
   carpathianTrails: 'cart:features:carpathianTrails',
   roadsOrangeBold: 'cart:features:roadsOrangeBold',
   grid: 'cart:features:grid',
+  wildlife: 'cart:features:wildlife',
 });
+
+/** Storage key for the wildlife overlay's filter object. */
+const WILDLIFE_FILTERS_KEY = 'cart:wildlife:filters:v1';
 
 /**
  * Persistence handle. Backed by the account store (server-synced, in-memory)
@@ -352,5 +357,31 @@ export function saveLayerFeaturePref(key, value) {
     kv.setItem(legacyKey, bool ? '1' : '0');
   } catch {
     /* best-effort */
+  }
+}
+
+/**
+ * Load the persisted wildlife filter object (or null when absent / invalid).
+ * Callers normalise the shape via `normalizeWildlifeFilters`, so this only
+ * needs to return "something object-ish or null".
+ */
+export function loadWildlifeFilters() {
+  try {
+    const raw = kv.getItem(WILDLIFE_FILTERS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the wildlife filter object (best-effort). */
+export function saveWildlifeFilters(filters) {
+  if (!isPlainObject(filters)) return;
+  try {
+    kv.setItem(WILDLIFE_FILTERS_KEY, JSON.stringify(filters));
+  } catch {
+    /* quota / serialise error — best-effort */
   }
 }

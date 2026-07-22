@@ -99,5 +99,8 @@
  *     Last panel module so it can inherit all primitives. */
 @import url("./data-panel.css");
 
+/* Wildlife occurrences — GBIF filter panel + species popup. */
+@import url("./wildlife.css");
+
 /* 15. Authentication gate — full-screen login / registration overlay. */
 @import url("./auth-gate.css");

@@ -29,7 +29,7 @@ import { applyStyle, applyMapMode } from '../map/createMap.js';
 import { applySettlementContourLayerOrder } from '../map/layer-order.js';
 import { flyToPreset, setUserExaggeration } from '../map/interactions.js';
 import { getProfileConfig } from '../device.js';
-import { DEFAULT_THEME } from '../config.js';
+import { DEFAULT_THEME, WILDLIFE } from '../config.js';
 import { mountHypsoUI } from './hypso/index.js';
 import {
   loadUiPrefs,
@@ -38,7 +38,13 @@ import {
   loadControlPrefs,
   saveControlPrefs,
   saveLayerFeaturePref,
+  loadWildlifeFilters,
+  saveWildlifeFilters,
 } from './store.js';
+import {
+  normalizeWildlifeFilters,
+  syncWildlifeSource,
+} from '../style/wildlife.js';
 import { mountModeSwitcher } from './mode-switcher.js';
 import { createDrawEngine } from '../draw/index.js';
 import { renderDrawPanelBody, mountDrawPanel } from './draw/panel.js';
@@ -68,6 +74,9 @@ const ICONS = {
   mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20 L9.5 9 L13 14.5 L17 7 L21 20 Z"/><circle cx="17" cy="5.4" r="1.2" fill="currentColor" stroke="none"/></svg>`,
   waves: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7 Q 7.5 4 12 7 T 21 7"/><path d="M3 12 Q 7.5 9 12 12 T 21 12"/><path d="M3 17 Q 7.5 14 12 17 T 21 17"/></svg>`,
   pin: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22 S 5 14.5 5 9.5 a7 7 0 0 1 14 0 c0 5 -7 12.5 -7 12.5 z"/><circle cx="12" cy="9.5" r="2.5"/></svg>`,
+  // Paw print for the wildlife occurrences section. Same 1.75-stroke rail
+  // vocabulary as its peers.
+  wildlife: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="15.5" rx="3.6" ry="3"/><circle cx="6.8" cy="10.4" r="1.5"/><circle cx="10.4" cy="7.6" r="1.6"/><circle cx="14.2" cy="7.7" r="1.6"/><circle cx="17.4" cy="10.8" r="1.5"/></svg>`,
   // Pencil-on-map glyph that anchors the drawing-engine dock entry. Same
   // 1.75-stroke vocabulary as the rest of the bar so the new button reads
   // as a peer rather than an alien addition.
@@ -437,6 +446,7 @@ const SECTIONS = [
   { id: 'relief',   icon: 'mountain', title: 'Рельеф' },
   { id: 'hypso',    icon: 'waves',    title: 'Гипсометрия' },
   { id: 'places',   icon: 'pin',      title: 'Места' },
+  { id: 'wildlife', icon: 'wildlife', title: 'Дикие животные' },
   { id: 'draw',     icon: 'draw',     title: 'Рисование' },
   { id: 'contours', icon: 'contour',  title: 'Контуры' },
   { id: 'settings', icon: 'sliders',  title: 'Настройки' },
@@ -728,6 +738,101 @@ function renderSearchPanelBody() {
  * and a scrollable body holding every section stacked (only the active
  * one is shown via [data-active]).
  */
+/** Minimal HTML-escape for interpolating config strings into markup. */
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+/**
+ * Wildlife occurrences panel — the master toggle plus a full filter surface
+ * (taxonomic groups, year range, basis-of-record and region scope) and a
+ * density legend. Values are seeded from the persisted filter object so the
+ * first paint matches the user's last session.
+ */
+function renderWildlifePanelBody() {
+  const f = normalizeWildlifeFilters(loadWildlifeFilters());
+  const currentYear = new Date().getFullYear();
+
+  const chips = WILDLIFE.groups
+    .map((g) => {
+      const active = f.group === g.id;
+      return `<button type="button" class="wl-group" data-wl-group="${g.id}"
+                aria-pressed="${active ? 'true' : 'false'}">
+                <span class="wl-group-dot" style="--wl-dot:${g.color}"></span>
+                <span class="wl-group-label">${escHtml(g.label)}</span>
+              </button>`;
+    })
+    .join('');
+
+  const basisOpts = WILDLIFE.basisOptions
+    .map((b) => `<option value="${b.id}"${b.id === f.basis ? ' selected' : ''}>${escHtml(b.label)}</option>`)
+    .join('');
+
+  const regionSeg = WILDLIFE.regionOptions
+    .map((r) => `<button type="button" data-wl-region="${r.id}"
+                   aria-pressed="${r.id === f.region ? 'true' : 'false'}">${escHtml(r.label)}</button>`)
+    .join('');
+
+  return `
+    ${sectionLede('Показывает, где встречаются дикие животные, по данным GBIF — крупнейшего открытого банка биоразнообразия (около 3 млрд наблюдений: iNaturalist, музеи, орнитологи, атласы). Плотность рисуется тепловой картой, а при приближении — отдельными маркерами; клик открывает виды с фото.')}
+    ${accordionMarkup({
+      id: 'wildlife-layer',
+      title: 'Слой животных',
+      meta: '1',
+      open: true,
+      body: `
+        <div class="rows">
+          ${richRow({ ctl: 'wildlife', title: 'Дикие животные', desc: 'Точки наблюдений животных из GBIF поверх любой карты', rowAttr: 'data-ctl-row="wildlife"' })}
+        </div>
+      `,
+    })}
+    ${accordionMarkup({
+      id: 'wildlife-filters',
+      title: 'Фильтры',
+      meta: '4',
+      open: true,
+      body: `
+        <div class="wl-filters" data-wl-filters data-enabled="false">
+          ${groupNote('Фильтры действуют только при включённом слое «Дикие животные».', { tone: 'warn' })}
+
+          <div class="wl-field">
+            <div class="wl-field-label">Группа животных</div>
+            <div class="wl-groups" data-wl-groups>${chips}</div>
+          </div>
+
+          <div class="wl-field">
+            <div class="wl-field-label">Годы наблюдений
+              <span class="wl-year-readout" data-wl-year-readout>${f.yearFrom} – ${f.yearTo}</span>
+            </div>
+            <div class="wl-years">
+              <input type="range" data-ctl="wl-year-from" min="${WILDLIFE.minYear}" max="${currentYear}" value="${f.yearFrom}" step="1" aria-label="Год с">
+              <input type="range" data-ctl="wl-year-to" min="${WILDLIFE.minYear}" max="${currentYear}" value="${f.yearTo}" step="1" aria-label="Год по">
+            </div>
+          </div>
+
+          <div class="wl-field">
+            <div class="wl-field-label">Тип источника</div>
+            <select class="wl-select" data-ctl="wl-basis" aria-label="Тип источника">${basisOpts}</select>
+          </div>
+
+          <div class="wl-field">
+            <div class="wl-field-label">Регион</div>
+            <div class="seg seg-2 wl-region" role="tablist" data-wl-region-seg>${regionSeg}</div>
+          </div>
+
+          <div class="wl-legend" aria-hidden="true">
+            <span class="wl-legend-label">меньше</span>
+            <span class="wl-legend-bar"></span>
+            <span class="wl-legend-label">больше</span>
+          </div>
+        </div>
+      `,
+    })}
+  `;
+}
+
 function renderSidebar(host) {
   host.innerHTML = `
     <div class="sidebar-head">
@@ -741,6 +846,7 @@ function renderSidebar(host) {
       ${sectionShell('relief',   renderReliefPanelBody(),   { title: 'Рельеф' })}
       ${sectionShell('hypso',    renderHypsoPanelBody(),    { title: 'Гипсометрия' })}
       ${sectionShell('places',   renderPlacesPanelBody(),   { title: 'Места' })}
+      ${sectionShell('wildlife', renderWildlifePanelBody(), { title: 'Дикие животные' })}
       ${sectionShell('draw',     renderDrawPanelBody(),     { title: 'Рисование', persistent: true })}
       ${sectionShell('contours', renderContourPanelBody(), { title: 'Контуры', persistent: true })}
       ${sectionShell('settings', renderSettingsPanelBody(), { title: 'Настройки' })}
@@ -1102,6 +1208,8 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
       roadsOrangeBold: restoredPrefs.layerFeatures.roadsOrangeBold,
       // 1 km coordinate grid — off by default.
       grid: restoredPrefs.layerFeatures.grid,
+      // Wildlife occurrences (GBIF) — off by default.
+      wildlife: restoredPrefs.layerFeatures.wildlife,
     },
   };
   const effectiveProfile = () =>
@@ -1348,6 +1456,16 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
       .forEach((input) => { input.disabled = !enabled; });
   }
 
+  // --- Wildlife filter sub-panel --------------------------------------
+  let wildlifeFiltersPanel = null;
+  function setWildlifeFiltersPanelVisible(enabled) {
+    if (!wildlifeFiltersPanel) return;
+    wildlifeFiltersPanel.dataset.enabled = enabled ? 'true' : 'false';
+    wildlifeFiltersPanel
+      .querySelectorAll('button, select, input')
+      .forEach((el) => { el.disabled = !enabled; });
+  }
+
   const wireToggle = (selector, key = selector) => {
     // A control may be MIRRORED across panels (e.g. `settlementOutline`
     // lives both in the Layers panel and in the forest-mode markup
@@ -1384,6 +1502,11 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
         // is on — its toggles have no effect outside this mode.
         setForestMarkupPanelVisible(el.checked);
       }
+      if (key === 'wildlife') {
+        // Reveal the filter sub-panel only while the overlay is on — the
+        // filters have no visible effect otherwise.
+        setWildlifeFiltersPanelVisible(el.checked);
+      }
       // Any user-driven change to one of the four managed flags is
       // the natural deactivation signal for the Flat hypso preset —
       // the computed predicate handles that automatically here.
@@ -1419,6 +1542,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
   wireToggle('settlementContoursTop');
   wireToggle('roadsOrangeBold');
   wireToggle('grid');
+  wireToggle('wildlife');
 
   // ----- Forest-mode markup sub-panel ----------------------------------
   //
@@ -1428,6 +1552,101 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
   // forest-cover choice so the rows read correctly on mount.
   forestMarkupPanel = panelsHost.querySelector('[data-forest-markup-panel]');
   setForestMarkupPanelVisible(!!state.layerFeatures.forestCover);
+
+  // --- Wildlife filters: live wiring ----------------------------------
+  wildlifeFiltersPanel = panelsHost.querySelector('[data-wl-filters]');
+  setWildlifeFiltersPanelVisible(!!state.layerFeatures.wildlife);
+
+  let wlFilters = normalizeWildlifeFilters(
+    (map._cart && map._cart.wildlife && map._cart.wildlife.filters) || loadWildlifeFilters(),
+  );
+  // Make the live map state authoritative from the restored filters so a
+  // later toggle-on rebuilds with exactly what the panel shows.
+  if (map._cart) map._cart.wildlife = { filters: wlFilters };
+
+  const groupBtns = [...panelsHost.querySelectorAll('[data-wl-group]')];
+  const regionBtns = [...panelsHost.querySelectorAll('[data-wl-region]')];
+  const yearFromEl = panelsHost.querySelector('[data-ctl="wl-year-from"]');
+  const yearToEl = panelsHost.querySelector('[data-ctl="wl-year-to"]');
+  const yearReadout = panelsHost.querySelector('[data-wl-year-readout]');
+  const basisEl = panelsHost.querySelector('[data-ctl="wl-basis"]');
+
+  const paintGroupChips = () => {
+    groupBtns.forEach((btn) => {
+      btn.setAttribute('aria-pressed', wlFilters.group === btn.dataset.wlGroup ? 'true' : 'false');
+    });
+  };
+  const paintRegionSeg = () => {
+    regionBtns.forEach((btn) => {
+      btn.setAttribute('aria-pressed', btn.dataset.wlRegion === wlFilters.region ? 'true' : 'false');
+    });
+  };
+
+  let wlDebounce = null;
+  const commitWildlifeFilters = ({ immediate = false } = {}) => {
+    wlFilters = normalizeWildlifeFilters(wlFilters);
+    if (map._cart) map._cart.wildlife = { filters: wlFilters };
+    saveWildlifeFilters(wlFilters);
+    const run = () => syncWildlifeSource(map, map._cart && map._cart.tokens);
+    if (wlDebounce) { clearTimeout(wlDebounce); wlDebounce = null; }
+    if (immediate) run();
+    else wlDebounce = setTimeout(run, 320);
+  };
+
+  // Taxonomic group chips — single-select (one taxon per density map).
+  groupBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      wlFilters.group = btn.dataset.wlGroup;
+      paintGroupChips();
+      commitWildlifeFilters({ immediate: true });
+    });
+  });
+
+  // Year range — two range thumbs kept ordered; live readout, debounced fetch.
+  const syncYearReadout = () => {
+    if (yearReadout) yearReadout.textContent = `${wlFilters.yearFrom} – ${wlFilters.yearTo}`;
+  };
+  if (yearFromEl && yearToEl) {
+    yearFromEl.addEventListener('input', () => {
+      let from = Number(yearFromEl.value);
+      if (from > Number(yearToEl.value)) { yearToEl.value = String(from); }
+      wlFilters.yearFrom = from;
+      wlFilters.yearTo = Number(yearToEl.value);
+      syncYearReadout();
+      commitWildlifeFilters();
+    });
+    yearToEl.addEventListener('input', () => {
+      let to = Number(yearToEl.value);
+      if (to < Number(yearFromEl.value)) { yearFromEl.value = String(to); }
+      wlFilters.yearTo = to;
+      wlFilters.yearFrom = Number(yearFromEl.value);
+      syncYearReadout();
+      commitWildlifeFilters();
+    });
+  }
+
+  // Basis-of-record dropdown.
+  if (basisEl) {
+    basisEl.addEventListener('change', () => {
+      wlFilters.basis = basisEl.value;
+      commitWildlifeFilters({ immediate: true });
+    });
+  }
+
+  // Region scope (Ukraine ↔ worldwide).
+  regionBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.disabled) return;
+      wlFilters.region = btn.dataset.wlRegion;
+      paintRegionSeg();
+      commitWildlifeFilters({ immediate: true });
+    });
+  });
+
+  paintGroupChips();
+  paintRegionSeg();
+  syncYearReadout();
 
   // ----- Flat hypsometric preset --------------------------------------
   //

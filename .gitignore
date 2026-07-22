@@ -49,3 +49,5 @@ tools/planetiler.jar
 /screenshot*.png
 .vercel/
 .vercel
+tools/e2e/debug*.py
+tools/e2e/out/

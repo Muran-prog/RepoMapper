@@ -947,10 +947,107 @@ export const FEATURES = Object.freeze({
    * reload. Off → no source, no layers (silent no-op).
    */
   grid: false,
+
+  /**
+   * Wildlife occurrences — a toggleable overlay that plots the locations of
+   * wild animals from GBIF (Global Biodiversity Information Facility), the
+   * largest free biodiversity aggregator on Earth (~3 billion records that
+   * federate iNaturalist, natural-history museums, eBird, national atlases,
+   * ringing schemes…). No API key, open licences (CC0 / CC-BY / CC-BY-NC).
+   *
+   * Rendering strategy — the layer consumes GBIF's own Maps API v2 density
+   * Mapbox-Vector-Tiles (`/v2/map/occurrence/density/{z}/{x}/{y}.mvt`). The
+   * server aggregates every matching record into per-tile POINT density bins,
+   * so a single vector source paints the ABSOLUTE MAXIMUM of data (millions of
+   * points) with zero client-side pagination — something the record-search
+   * API (hard-capped ~100 k, paginated 300/page) can never do. The tiles are
+   * filtered by taxon group + year range + basis-of-record + country, which
+   * powers the filter panel.
+   *
+   * Interaction — clicking a bin queries the Occurrence Search API around
+   * that point (geoDistance) to surface real records with photos, common /
+   * scientific names, dates, dataset and IUCN Red-List status.
+   *
+   * Architecturally this is an app-owned dynamic overlay (like the coordinate
+   * grid): it lives on top of EVERY map mode (Cart / Standard / Satellite),
+   * is toggled via `applyStyle`, and its filters update the tile source in
+   * place via `syncWildlifeSource` without a full style rebuild. Default OFF;
+   * the choice persists under `cart:features:wildlife`. Network-gated: if the
+   * GBIF tiles are unreachable the map renders identically minus the overlay.
+   */
+  wildlife: false,
 });
 
 /** Default theme on cold boot. The user can flip it from the UI. */
 export const DEFAULT_THEME = 'light'; // 'light' | 'dark'
+
+// ---------------------------------------------------------------------------
+// Wildlife occurrences (GBIF)
+// ---------------------------------------------------------------------------
+//
+// Everything the wildlife overlay needs that is tunable from outside the
+// render pipeline. The taxon groups are GBIF backbone class/kingdom keys,
+// verified against api.gbif.org/v1/species/{key}:
+//
+//   Animalia (all)  1     Mammalia   359    Aves        212
+//   Reptilia        358   Amphibia   131    Actinopt.   204  (ray-finned fish)
+//   Insecta         216   Arachnida  367    Mollusca     52
+//
+// The `color` on each group is what the marker/heat ramp leans toward and
+// what the legend swatch shows, chosen to stay clear of the existing palette
+// (roads = orange, trails = red, hypso = green→ochre, hazards = magenta/teal).
+
+export const WILDLIFE = Object.freeze({
+  /**
+   * Pre-defined density tile endpoint. Returns POINT geometry (one point per
+   * aggregation bin, carrying a `total` count) — ideal for crisp circle
+   * markers and a heatmap surface. It accepts a single taxonKey plus `year`,
+   * `basisOfRecord` and `country`, which is exactly the filter surface we
+   * expose. (The ad-hoc endpoint allows many taxonKeys but returns coarse
+   * polygon cells that don't render as clean markers, so we prefer this.)
+   */
+  tileUrl: 'https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}.mvt',
+  /** Record-search endpoint — powers the click-through detail popup. */
+  searchUrl: 'https://api.gbif.org/v1/occurrence/search',
+  /** The (single) source-layer name inside every GBIF density tile. */
+  sourceLayer: 'occurrence',
+  /** Native max zoom of the GBIF tile pyramid; MapLibre over-zooms beyond. */
+  tileMaxZoom: 14,
+  /** Earliest year the year-range slider allows. */
+  minYear: 1900,
+  /** Radius (km) used for the click-through occurrence lookup. */
+  popupRadiusKm: 30,
+
+  /** Taxonomic groups surfaced as filter chips. `key` = GBIF taxonKey. */
+  groups: Object.freeze([
+    { id: 'all',        key: 1,   label: 'Все животные',   color: '#22d3a6' },
+    { id: 'mammals',    key: 359, label: 'Млекопитающие',  color: '#fb923c' },
+    { id: 'birds',      key: 212, label: 'Птицы',          color: '#38bdf8' },
+    { id: 'reptiles',   key: 358, label: 'Рептилии',       color: '#a3e635' },
+    { id: 'amphibians', key: 131, label: 'Земноводные',    color: '#2dd4bf' },
+    { id: 'fish',       key: 204, label: 'Рыбы',           color: '#60a5fa' },
+    { id: 'insects',    key: 216, label: 'Насекомые',      color: '#facc15' },
+    { id: 'arachnids',  key: 367, label: 'Паукообразные',  color: '#c084fc' },
+    { id: 'molluscs',   key: 52,  label: 'Моллюски',       color: '#f472b6' },
+  ]),
+
+  /** Basis-of-record options for the source dropdown. */
+  basisOptions: Object.freeze([
+    { id: 'all',               label: 'Любой источник' },
+    { id: 'HUMAN_OBSERVATION', label: 'Наблюдения людей' },
+    { id: 'MACHINE_OBSERVATION', label: 'Датчики и камеры' },
+    { id: 'PRESERVED_SPECIMEN', label: 'Музейные образцы' },
+    { id: 'LIVING_SPECIMEN',   label: 'Живые коллекции' },
+    { id: 'MATERIAL_SAMPLE',   label: 'Пробы материала' },
+    { id: 'FOSSIL_SPECIMEN',   label: 'Ископаемые' },
+  ]),
+
+  /** Region scope — Ukraine (this map's home extent) vs the whole planet. */
+  regionOptions: Object.freeze([
+    { id: 'ua',    label: 'Украина',   country: 'UA' },
+    { id: 'world', label: 'Весь мир',  country: null },
+  ]),
+});
 
 // ---------------------------------------------------------------------------
 // Map-mode switcher.

@@ -66,6 +66,11 @@ import {
   getTouchTuning,
 } from '../device.js';
 import { withGridOverlay } from '../style/grid.js';
+import {
+  withWildlifeOverlay,
+  normalizeWildlifeFilters,
+  wildlifeTileUrl,
+} from '../style/wildlife.js';
 import { withSettlementOutlineOverlay } from '../style/settlements.js';
 import { loadMapMode, saveMapMode } from '../ui/store.js';
 
@@ -574,6 +579,10 @@ export async function createMap(container, opts = {}) {
   const requestedMode = opts.mode ?? loadMapMode();
   const mode = MAP_MODES.includes(requestedMode) ? requestedMode : DEFAULT_MAP_MODE;
 
+  // Wildlife overlay filter state — caller can pre-seed via opts.wildlifeFilters
+  // (the UI persists the user's choice and forwards it at boot).
+  const wildlifeFilters = normalizeWildlifeFilters(opts.wildlifeFilters);
+
   const style = await buildModeStyle({
     mode,
     theme,
@@ -582,6 +591,7 @@ export async function createMap(container, opts = {}) {
     layerOpts,
     caps,
     hypsoState,
+    wildlifeFilters,
   });
 
   const map = new ml.Map({
@@ -633,6 +643,12 @@ export async function createMap(container, opts = {}) {
     userExaggerationMul: 1,
     hypso: hypsoState,
     mode,
+    // Wildlife overlay state — filter object + theme tokens (fallback for
+    // syncWildlifeSource) + the tile URL baked into the initial style so the
+    // first sync is a no-op when nothing changed.
+    wildlife: { filters: wildlifeFilters },
+    tokens: getTokens(theme),
+    wildlifeUrl: features.wildlife ? wildlifeTileUrl(wildlifeFilters) : '',
   };
   seedHypsoState(map, hypsoState);
 
@@ -726,6 +742,12 @@ export async function applyStyle(map, patch = {}) {
   // grid, but not the full Cart relief/road/landcover stack.
   const mode = patch.mode ?? prev.mode ?? DEFAULT_MAP_MODE;
 
+  // Wildlife filters ride along across every rebuild (theme / quality / mode /
+  // layer toggle) unless the caller explicitly patches them.
+  const wildlifeFilters = normalizeWildlifeFilters(
+    patch.wildlifeFilters ?? (prev.wildlife && prev.wildlife.filters),
+  );
+
   const style = await buildModeStyle({
     mode,
     theme,
@@ -734,6 +756,7 @@ export async function applyStyle(map, patch = {}) {
     layerOpts,
     caps,
     hypsoState,
+    wildlifeFilters,
     map,
   });
   map.setStyle(style, { diff: false });
@@ -752,6 +775,9 @@ export async function applyStyle(map, patch = {}) {
     layerOpts,
     hypso: hypsoState,
     mode,
+    wildlife: { filters: wildlifeFilters },
+    tokens: getTokens(theme),
+    wildlifeUrl: features.wildlife ? wildlifeTileUrl(wildlifeFilters) : '',
   };
   seedHypsoState(map, hypsoState);
   return map;
@@ -778,6 +804,19 @@ export async function applyStyle(map, patch = {}) {
  * `map.setStyle` and any post-load state seeding.
  */
 async function buildModeStyle(opts) {
+  const { theme = DEFAULT_THEME, features = {} } = opts;
+  const style = await buildBaseModeStyle(opts);
+  // Wildlife is an app-owned dynamic overlay that lives on TOP of every map
+  // mode (Cart / Standard / Satellite), exactly like the coordinate grid.
+  // Wrapping here — after the per-mode base style is built — keeps a single
+  // integration point for all three modes.
+  return withWildlifeOverlay(style, getTokens(theme), {
+    enabled: !!features.wildlife,
+    filters: opts.wildlifeFilters,
+  });
+}
+
+async function buildBaseModeStyle(opts) {
   const { mode, theme = DEFAULT_THEME, features = {} } = opts;
   if (mode === 'standard') {
     try {

@@ -37,6 +37,8 @@ export const SETTING_ICONS = Object.freeze({
   roadsOrangeBold: svg('<path d="M8 21 L10 3"/><path d="M16 21 L14 3"/><path d="M12 6 V8 M12 11 V13 M12 16 V18"/>'),
   settlementOutline: svg('<rect x="4" y="4" width="16" height="16" rx="1" stroke-dasharray="3 2"/><rect x="9" y="9" width="6" height="6"/>'),
   settlementContoursTop: svg('<path d="M12 4 L20 8 L12 12 L4 8 Z"/><path d="M7 12 L4 13.5 L12 17.5 L20 13.5 L17 12"/><path d="M8.5 19 H15.5"/><path d="M12 14 V22"/><path d="M9 17 L12 14 L15 17"/>'),
+  // Paw print — the wildlife occurrence overlay. Main pad + four toe beans.
+  wildlife: svg('<ellipse cx="12" cy="15.5" rx="3.6" ry="3"/><circle cx="6.8" cy="10.4" r="1.5"/><circle cx="10.4" cy="7.6" r="1.6"/><circle cx="14.2" cy="7.7" r="1.6"/><circle cx="17.4" cy="10.8" r="1.5"/>'),
   grid: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="1"/><path d="M9 3.5 V20.5 M15 3.5 V20.5 M3.5 9 H20.5 M3.5 15 H20.5"/>'),
 
   // ---- Relief: base ----------------------------------------------------
