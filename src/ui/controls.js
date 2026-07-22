@@ -1358,9 +1358,7 @@ export function mountControls(map, sidebar, scrim, { caps, profile, controlPrefs
     scrim,
     caps,
   });
-  ['search', 'layers', 'relief', 'hypso', 'places', 'draw', 'contours', 'settings', 'data'].forEach((id) =>
-    controller.register(id),
-  );
+  SECTIONS.forEach(({ id }) => controller.register(id));
   controller.install({ defaultId: 'layers' });
 
   // ----- Theme toggle (in the rail foot) ------------------------------
